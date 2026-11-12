@@ -43,3 +43,4 @@ Then follow [`docs/runbook-phase-0.md`](docs/runbook-phase-0.md) for the account
 
 Phase 0 (setup) is implemented in code; the account-level steps in the runbook still need to be
 executed by hand (Supabase project, GitHub OAuth app, Vercel project, Inngest app, provider keys).
+# agent
