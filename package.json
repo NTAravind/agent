@@ -1,26 +1,21 @@
 {
-  "name": "agent",
+  "name": "agent-monorepo",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "next": "16.4.5",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "dev:api": "npm run dev --workspace api",
+    "dev:mobile": "npm run start --workspace mobile",
+    "build": "npm run build --workspace api",
+    "start": "npm run start --workspace api",
+    "lint": "npm run lint --workspace api && npm run lint --workspace mobile",
+    "typecheck": "npm run typecheck --workspace @agent/shared && npm run typecheck --workspace api && npm run typecheck --workspace mobile",
+    "postinstall": "node scripts/check-env.mjs"
   },
   "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.5",
-    "tailwindcss": "^4",
     "typescript": "^5"
   }
 }

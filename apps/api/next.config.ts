@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   experimental: {
     agentFeedback: true,
   },
   cacheComponents: true,
   partialPrefetching: true,
+  // The shared workspace package ships TypeScript source.
+  transpilePackages: ["@agent/shared"],
   turbopack: {
     rules: {
       "*.css": {

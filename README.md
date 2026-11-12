@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agent
 
-## Getting Started
+Personal AI agent: Expo mobile client + Next.js API on Vercel, Supabase for data/auth, Inngest for durable runs, LangGraph for the agent loop.
 
-First, run the development server:
+Built as an npm-workspaces monorepo:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+apps/api          Next.js 16 (App Router) — API routes, Inngest endpoint, shadcn/ui
+apps/mobile       Expo SDK 58 + Expo Router — iOS/Android client
+packages/shared   zod schemas and shared types (@agent/shared)
+docs/spec         product + technical specs (source of truth)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install                 # from the repo root, installs all workspaces
+cp apps/api/.env.example apps/api/.env.local
+cp apps/mobile/.env.example apps/mobile/.env
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then follow [`docs/runbook-phase-0.md`](docs/runbook-phase-0.md) for the account-level steps
+(Supabase, GitHub OAuth, Vercel, Inngest, provider API keys).
 
-## Learn More
+## Commands
 
-To learn more about Next.js, take a look at the following resources:
+| Command | What it does |
+|---|---|
+| `npm run dev:api` | Next.js dev server on :3000 |
+| `npm run dev:mobile` | Expo dev server |
+| `npm run build` | Production build of the API |
+| `npm run lint` | ESLint (api) + Expo lint (mobile) |
+| `npm run typecheck` | `tsc --noEmit` for every workspace |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Endpoints
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Route | Auth | Description |
+|---|---|---|
+| `GET /api/health` | Bearer Supabase JWT | Liveness + current user. Also the Phase 0 acceptance probe. |
+| `GET/POST/PUT /api/inngest` | Inngest signing key | Inngest function endpoint. |
 
-## Deploy on Vercel
+## Phase status
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Phase 0 (setup) is implemented in code; the account-level steps in the runbook still need to be
+executed by hand (Supabase project, GitHub OAuth app, Vercel project, Inngest app, provider keys).

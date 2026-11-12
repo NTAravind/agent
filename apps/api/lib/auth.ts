@@ -1,0 +1,61 @@
+import { apiError } from "@agent/shared";
+import { supabaseAnon } from "@/lib/supabase/client";
+import { optionalEnv, requiredEnv } from "@/lib/env";
+
+export class AuthError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status = 401,
+  ) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+export type AuthedUser = {
+  id: string;
+  email: string | null;
+};
+
+function bearerToken(request: Request): string | null {
+  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match ? match[1]!.trim() : null;
+}
+
+/**
+ * Verifies the Supabase JWT on the request and enforces the single-user
+ * allow-list (ALLOWED_USER_ID).
+ */
+export async function requireUser(request: Request): Promise<AuthedUser> {
+  const token = bearerToken(request);
+  if (!token) {
+    throw new AuthError("unauthorized", "Missing Authorization: Bearer <token> header.");
+  }
+
+  const { data, error } = await supabaseAnon().auth.getUser(token);
+  if (error || !data.user) {
+    throw new AuthError("unauthorized", "Invalid or expired access token.");
+  }
+
+  const allowedUserId = requiredEnv("ALLOWED_USER_ID");
+  if (data.user.id !== allowedUserId) {
+    throw new AuthError("forbidden", "This account is not allowed to use the API.", 403);
+  }
+
+  return { id: data.user.id, email: data.user.email ?? null };
+}
+
+/** Wraps a route handler so auth/server errors become the shared error envelope. */
+export function toErrorResponse(error: unknown): Response {
+  if (error instanceof AuthError) {
+    return apiError(error.code, error.message, error.status);
+  }
+  const message = error instanceof Error ? error.message : "Unexpected server error.";
+  console.error("[api]", error);
+  return apiError("internal_error", message, 500);
+}
+
+export const allowedUserId = (): string | undefined => optionalEnv("ALLOWED_USER_ID");
