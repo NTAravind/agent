@@ -56,9 +56,33 @@ with `403 forbidden`.
 
 - `GOOGLE_GENERATIVE_AI_API_KEY` — <https://aistudio.google.com/apikey>
 - `GROQ_API_KEY` — <https://console.groq.com/keys>
-- `OPENROUTER_API_KEY` — <https://openrouter.ai/keys>
+- `OPENROUTER_API_KEY` — <https://openrouter.ai/settings/keys>
 
-Add all three to the Vercel environment. They are server-only: never use an `EXPO_PUBLIC_*` name.
+Add all three to the Vercel environment **and** to `apps/api/.env.local`. They are server-only: never use an `EXPO_PUBLIC_*` name.
+
+Verify them with the live provider check (consumes a few free-tier tokens):
+
+```bash
+npm run check:providers --workspace api
+```
+
+Notes from the first run (2026-11-13):
+- **OpenRouter keys must start with `sk-or-v1-`.** A key copied without that prefix is rejected with `401 Missing Authentication header` — the `/api/v1/models` endpoint still returns 200, so do not use it to validate a key.
+- `google:gemini-3.8-flash` currently answers `503 high demand` on the free tier. The default model is `google:gemini-3.6-flash` until Google's capacity recovers (`apps/api/lib/models/registry.ts`).
+- Groq's `llama-3.1-8b-instant` and `llama-3.3-70b-versatile` were shut down for free/developer tiers on 2026-08-16; the registry uses `openai/gpt-oss-*` and `qwen/qwen3.8-27b` instead.
+
+## 6b. Database migrations
+
+`db/migrations/*.sql` holds the schema for the app. Apply them in order:
+
+1. Supabase dashboard → **SQL Editor** → paste the file contents → **Run**.
+2. Or with the CLI: `supabase db push` (needs `DATABASE_URL` with the DB password).
+
+| Migration | What it creates |
+|---|---|
+| `0001_provider_usage.sql` | `provider_usage` table + RLS (drives the usage meter) |
+
+Until `0001` is applied, LLM calls still work — usage rows are silently skipped.
 
 ## 7. Mobile app
 

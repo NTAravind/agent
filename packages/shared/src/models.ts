@@ -5,7 +5,7 @@ export const PROVIDERS = ["google", "groq", "openrouter"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /**
- * Registry ids look like "google:gemini-flash". The provider part is the
+ * Registry ids look like "google:gemini-3.8-flash". The provider part is the
  * prefix before the first colon; the rest is the provider-specific model id.
  */
 export const ModelIdSchema = z
@@ -14,6 +14,17 @@ export const ModelIdSchema = z
   .regex(/^[a-z]+:[a-zA-Z0-9._\-/]+$/, "Model id must look like 'provider:model-id'");
 
 export type ModelId = string;
+
+/** Capabilities a request can need from a model. */
+export const MODEL_CAPABILITIES = [
+  "tools",
+  "vision",
+  "structuredOutput",
+  "reasoning",
+  "pdf",
+] as const;
+
+export type ModelCapability = (typeof MODEL_CAPABILITIES)[number];
 
 export const ModelCapabilitiesSchema = z.object({
   tools: z.boolean(),
@@ -25,7 +36,19 @@ export const ModelCapabilitiesSchema = z.object({
 
 export type ModelCapabilities = z.infer<typeof ModelCapabilitiesSchema>;
 
-export const ModelInfoSchema = z.object({
+/** What a single request needs. Only `true` entries are requirements. */
+export const RequiredCapabilitiesSchema = z.object({
+  tools: z.boolean().optional(),
+  vision: z.boolean().optional(),
+  structuredOutput: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+  pdf: z.boolean().optional(),
+});
+
+export type RequiredCapabilities = z.infer<typeof RequiredCapabilitiesSchema>;
+
+/** A registry entry, before the server decides whether its provider is usable. */
+export const ModelRegistryEntrySchema = z.object({
   id: ModelIdSchema,
   provider: z.enum(PROVIDERS),
   providerModelId: z.string(),
@@ -35,6 +58,12 @@ export const ModelInfoSchema = z.object({
   /** Safe to receive note- or memory-derived context. */
   privateOk: z.boolean(),
   tier: z.enum(["free", "paid"]),
+});
+
+export type ModelRegistryEntry = z.infer<typeof ModelRegistryEntrySchema>;
+
+/** A registry entry plus the server-side availability of its provider. */
+export const ModelInfoSchema = ModelRegistryEntrySchema.extend({
   /** Whether an API key for this provider is configured on the server. */
   available: z.boolean(),
 });

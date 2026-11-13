@@ -18,4 +18,5 @@ jobs:
       - run: npm run typecheck --workspace @agent/shared
       - run: npm run typecheck --workspace api
       - run: npm run lint --workspace api
+      - run: npm test
       - run: npm run build --workspace api

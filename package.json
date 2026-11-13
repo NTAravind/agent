@@ -13,7 +13,8 @@
     "start": "npm run start --workspace api",
     "lint": "npm run lint --workspace api && npm run lint --workspace mobile",
     "typecheck": "npm run typecheck --workspace @agent/shared && npm run typecheck --workspace api && npm run typecheck --workspace mobile",
-    "postinstall": "node scripts/check-env.mjs"
+    "postinstall": "node scripts/check-env.mjs",
+    "test": "npm run test --workspace api"
   },
   "devDependencies": {
     "typescript": "^5"

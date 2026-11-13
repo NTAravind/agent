@@ -31,16 +31,40 @@ Then follow [`docs/runbook-phase-0.md`](docs/runbook-phase-0.md) for the account
 | `npm run build` | Production build of the API |
 | `npm run lint` | ESLint (api) + Expo lint (mobile) |
 | `npm run typecheck` | `tsc --noEmit` for every workspace |
+| `npm test` | Provider-layer unit tests (resolver, capability gate, fallback ordering) |
+| `npm run check:providers --workspace api` | Live check: same prompt on Google/Groq/OpenRouter + forced-429 fallback |
+| `node scripts/check-env.mjs` | Lists env vars that are still missing |
+| `node scripts/verify-setup.mjs --remote` | End-to-end setup verification (Supabase, allow-list, deployed API, Inngest) |
 
 ## Endpoints
 
 | Route | Auth | Description |
 |---|---|---|
 | `GET /api/health` | Bearer Supabase JWT | Liveness + current user. Also the Phase 0 acceptance probe. |
+| `GET /api/models` | Bearer Supabase JWT | Model registry, provider availability, today's usage. |
 | `GET/POST/PUT /api/inngest` | Inngest signing key | Inngest function endpoint. |
+
+## Model access
+
+All LLM calls go through `apps/api/lib/models/` — no route may import a provider package directly.
+
+```ts
+import { generateTextWithFallback } from "@/lib/models";
+
+const { text, modelId, attempts } = await generateTextWithFallback({
+  prompt: "…",
+  modelIds: ["google:gemini-3.6-flash"], // optional; default = model + fallbacks
+  userId,
+});
+```
+
+The chain retries once on 429/5xx/timeout, then moves to the next model, skipping any fallback that
+lacks a capability the request needs (`vision`, `tools`, …). Every attempt is logged to
+`provider_usage`.
 
 ## Phase status
 
-Phase 0 (setup) is implemented in code; the account-level steps in the runbook still need to be
-executed by hand (Supabase project, GitHub OAuth app, Vercel project, Inngest app, provider keys).
+Phase 0 (setup) and Phase 0.5 (provider layer) are implemented and verified live. Remaining manual
+steps: re-copy the OpenRouter key (must start with `sk-or-v1-`), add the three provider keys to the
+Vercel environment, and apply `db/migrations/0001_provider_usage.sql`.
 # agent
