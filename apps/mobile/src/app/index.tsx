@@ -52,6 +52,15 @@ export default function HomeScreen() {
       <Text style={styles.title}>Agent</Text>
       <Text style={styles.subtitle}>Signed in as {session?.user.email ?? session?.user.id}</Text>
 
+      <View style={styles.actions}>
+        <Pressable style={styles.primaryButton} onPress={() => router.push("/chat")}>
+          <Text style={styles.primaryButtonText}>Open chat</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push("/threads")}>
+          <Text style={styles.secondaryButtonText}>Threads</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Protected API</Text>
         <Text style={styles.cardBody}>
@@ -82,13 +91,16 @@ const styles = StyleSheet.create({
   container: { padding: 24, gap: 16, flexGrow: 1 },
   title: { fontSize: 28, fontWeight: '600' },
   subtitle: { fontSize: 14, opacity: 0.7 },
+  actions: { flexDirection: 'row', gap: 10 },
+  primaryButton: { backgroundColor: '#208AEF', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center' },
+  primaryButtonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: { borderWidth: 1, borderColor: '#8884', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center' },
+  secondaryButtonText: { fontWeight: '600' },
   card: { borderWidth: 1, borderColor: '#8884', borderRadius: 12, padding: 16, gap: 12 },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   cardBody: { fontSize: 13, opacity: 0.7 },
   button: { backgroundColor: '#208AEF', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontWeight: '600' },
-  secondaryButton: { borderWidth: 1, borderColor: '#8884', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
-  secondaryButtonText: { fontWeight: '600' },
   code: { fontSize: 12, fontFamily: 'Courier' },
   error: { fontSize: 13, color: '#c0392b' },
 });
