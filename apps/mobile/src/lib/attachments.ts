@@ -45,18 +45,19 @@ async function uploadFile(
     },
   });
 
-  const response = await fetch(signed.signedUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": mediaType,
-      Authorization: `Bearer ${signed.token}`,
-      "x-upsert": "false",
-    },
-    body: uri as unknown as BodyInit,
-  });
+  // React Native uploads local files as multipart form data.
+  const form = new FormData();
+  form.append("file", { uri, name: fileName, type: mediaType } as unknown as Blob);
 
-  if (!response.ok) {
-    throw new Error(`Upload failed (${response.status}).`);
+  const { error } = await supabase.storage
+    .from("attachments")
+    .uploadToSignedUrl(signed.storagePath, signed.token, form, {
+      contentType: mediaType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Upload failed: ${error.message}`);
   }
 
   return { documentId: signed.documentId, mediaType, name: fileName };

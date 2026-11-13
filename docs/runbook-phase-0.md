@@ -81,8 +81,13 @@ Notes from the first run (2026-11-13):
 | Migration | What it creates |
 |---|---|
 | `0001_provider_usage.sql` | `provider_usage` table + RLS (drives the usage meter) |
+| `0002_chat.sql` | `threads`, `messages`, `documents` tables + RLS + the `attachments` storage bucket |
 
-Until `0001` is applied, LLM calls still work — usage rows are silently skipped.
+Fastest path: paste the whole [`db/apply.sql`](../db/apply.sql) file (both migrations in order) into
+the SQL Editor and press Run.
+
+Until the migrations are applied, LLM calls still work — usage rows are silently skipped — but chat
+requests fail, because the chat route writes to `threads` and `messages`.
 
 ## 7. Mobile app
 
