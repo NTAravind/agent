@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { apiFetch, API_BASE_URL, ApiRequestError } from '@/lib/api';
+import { apiFetchDebug, API_BASE_URL, ApiRequestError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
@@ -10,6 +10,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { session, isLoading, signOut } = useSession();
   const [health, setHealth] = useState<string | null>(null);
+  const [debug, setDebug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -23,15 +24,23 @@ export default function HomeScreen() {
     setChecking(true);
     setError(null);
     setHealth(null);
+    setDebug(null);
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session) {
         throw new ApiRequestError(401, 'unauthorized', 'No active session.');
       }
-      const result = await apiFetch<Record<string, unknown>>('/api/health', {
+      const result = await apiFetchDebug('/api/health', {
         token: sessionData.session.access_token,
       });
-      setHealth(JSON.stringify(result, null, 2));
+      setDebug(
+        `url: ${result.url}\nheaders: ${result.headerNames.join(', ')}\ntoken length: ${result.tokenLength}\nstatus: ${result.status}`,
+      );
+      if (result.status === 200) {
+        setHealth(result.body);
+      } else {
+        setError(`HTTP ${result.status}: ${result.body}`);
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? `${err.code}: ${err.message}` : String(err));
     } finally {
@@ -69,6 +78,7 @@ export default function HomeScreen() {
         <Pressable style={styles.button} onPress={checkHealth} disabled={checking}>
           {checking ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Check /api/health</Text>}
         </Pressable>
+        {debug ? <Text style={styles.code}>{debug}</Text> : null}
         {health ? <Text style={styles.code}>{health}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>

@@ -25,6 +25,15 @@ function bearerToken(request: Request): string | null {
   return match ? match[1]!.trim() : null;
 }
 
+/** Header names that arrived, for diagnosing "missing Authorization" errors. */
+function receivedHeaderNames(request: Request): string[] {
+  try {
+    return [...request.headers.keys()];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Verifies the Supabase JWT on the request and enforces the single-user
  * allow-list (ALLOWED_USER_ID).
@@ -32,6 +41,10 @@ function bearerToken(request: Request): string | null {
 export async function requireUser(request: Request): Promise<AuthedUser> {
   const token = bearerToken(request);
   if (!token) {
+    console.warn(
+      "[auth] request without a usable Authorization header. Received headers:",
+      receivedHeaderNames(request).join(", ") || "(none)",
+    );
     throw new AuthError("unauthorized", "Missing Authorization: Bearer <token> header.");
   }
 
