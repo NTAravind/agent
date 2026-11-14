@@ -6,10 +6,14 @@ Built as an npm-workspaces monorepo:
 
 ```
 apps/api          Next.js 16 (App Router) — API routes, Inngest endpoint, shadcn/ui
-apps/mobile       Expo SDK 58 + Expo Router — iOS/Android client
+apps/mobile       Expo SDK 58 + Expo Router — iOS/Android client, HeroUI Native UI
 packages/shared   zod schemas and shared types (@agent/shared)
 docs/spec         product + technical specs (source of truth)
 ```
+
+The mobile UI uses [HeroUI Native](https://heroui.com/native) (`heroui-native`) on
+Uniwind/Tailwind v4. Root layout order: `GestureHandlerRootView` → `HeroUINativeProvider` →
+app. Component reference: <https://heroui.com/native/llms.txt>.
 
 ## Setup
 
