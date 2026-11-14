@@ -95,7 +95,7 @@ export function Composer({
           isDisabled={!canSend}
           accessibilityLabel="Send message"
         >
-          {isStreaming ? <Spinner size="sm" color="accent-foreground" /> : <Button.Label>Send</Button.Label>}
+          {isStreaming ? <Spinner size="sm" color="default" /> : <Button.Label>Send</Button.Label>}
         </Button>
       </View>
     </View>

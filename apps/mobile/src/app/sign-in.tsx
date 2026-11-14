@@ -72,7 +72,7 @@ export default function SignInScreen() {
         isDisabled={busy || !isSupabaseConfigured}
       >
         {busy ? (
-          <Spinner size="sm" color="accent-foreground" />
+          <Spinner size="sm" color="default" />
         ) : (
           <Button.Label>
             {mode === 'sign-up' ? 'Create account' : 'Sign in with email'}
