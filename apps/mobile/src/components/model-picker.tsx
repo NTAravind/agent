@@ -32,8 +32,8 @@ export function ModelPicker({ models, selectedId, onSelect }: Props) {
       }}
       presentation="bottom-sheet"
     >
-      <Select.Trigger className="min-w-[150px] rounded-full border border-border px-3 py-2">
-        <Select.Value placeholder="Select model" />
+      <Select.Trigger className="max-w-[220px] flex-row items-center gap-1 rounded-full border border-border bg-surface px-3 py-2">
+        <Select.Value placeholder="Select model" numberOfLines={1} className="shrink" />
         <Select.TriggerIndicator />
       </Select.Trigger>
 

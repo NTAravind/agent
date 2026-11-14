@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Avatar, Button, Card, Spinner, Typography } from 'heroui-native';
 import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { apiFetchDebug, API_BASE_URL, ApiRequestError } from '@/lib/api';
 import { useSession } from '@/lib/session';
@@ -9,6 +10,7 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { session, isLoading, signOut } = useSession();
   const [health, setHealth] = useState<string | null>(null);
   const [debug, setDebug] = useState<string | null>(null);
@@ -64,7 +66,15 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingHorizontal: 16,
+          paddingBottom: insets.bottom + 24,
+          gap: 16,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-row items-center gap-3">
           <Avatar size="md">
             <Avatar.Fallback>
@@ -79,32 +89,30 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <Card>
+        <Card className="rounded-2xl">
           <Card.Body className="gap-3">
             <Card.Title>Chat</Card.Title>
             <Card.Description>
               Talk to the model of your choice. Switch models any time from the chat header.
             </Card.Description>
-            <Button onPress={() => router.push('/chat')}>
-              <Button.Label>Open chat</Button.Label>
-            </Button>
-            <Button variant="secondary" onPress={() => router.push('/threads')}>
-              <Button.Label>Threads</Button.Label>
-            </Button>
+            <View className="gap-2">
+              <Button size="lg" onPress={() => router.push('/chat')}>
+                <Button.Label>Open chat</Button.Label>
+              </Button>
+              <Button size="md" variant="secondary" onPress={() => router.push('/threads')}>
+                <Button.Label>Threads</Button.Label>
+              </Button>
+            </View>
           </Card.Body>
         </Card>
 
-        <Card>
+        <Card className="rounded-2xl">
           <Card.Body className="gap-3">
             <Card.Title>API status</Card.Title>
-            <Card.Description>
+            <Card.Description numberOfLines={1}>
               {API_BASE_URL ? API_BASE_URL : 'EXPO_PUBLIC_API_BASE_URL is not set.'}
             </Card.Description>
-            <Button
-              variant="outline"
-              onPress={() => void checkHealth()}
-              isDisabled={checking}
-            >
+            <Button size="md" variant="outline" onPress={() => void checkHealth()} isDisabled={checking}>
               {checking ? <Spinner size="sm" /> : <Button.Label>Check /api/health</Button.Label>}
             </Button>
 
@@ -146,7 +154,7 @@ export default function HomeScreen() {
           </Alert>
         ) : null}
 
-        <Button variant="ghost" onPress={() => void signOut()}>
+        <Button size="md" variant="ghost" onPress={() => void signOut()}>
           <Button.Label>Sign out</Button.Label>
         </Button>
       </ScrollView>

@@ -1,15 +1,20 @@
 import { useState } from 'react';
 import { Alert, Button, Input, Spinner, Typography } from 'heroui-native';
-import { View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authRedirectUrl, signInWithEmail, signInWithGitHub, signUpWithEmail } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { useKeyboardHeight } from '@/lib/use-keyboard-height';
 
 type Mode = 'sign-in' | 'sign-up';
 
 export default function SignInScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
+
   const [mode, setMode] = useState<Mode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -45,103 +50,127 @@ export default function SignInScreen() {
       await signInWithEmail(email.trim(), password);
     });
 
+  const bottomPadding = keyboardHeight > 0 ? 16 : insets.bottom + 24;
+
   return (
-    <View className="flex-1 justify-center gap-3 bg-background px-5 py-8">
-      <Typography type="h2">Sign in</Typography>
-
-      <Input
-        placeholder="you@example.com"
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        isDisabled={busy}
-      />
-
-      <Input
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        isDisabled={busy}
-      />
-
-      <Button
-        onPress={() => void handleEmailAuth()}
-        isDisabled={busy || !isSupabaseConfigured}
+    <KeyboardAvoidingView
+      className="flex-1 bg-background"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 24,
+          paddingBottom: bottomPadding,
+          gap: 12,
+        }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
-        {busy ? (
-          <Spinner size="sm" color="default" />
-        ) : (
+        <View className="gap-1">
+          <Typography type="h2">Sign in</Typography>
+          <Typography type="body-sm" color="muted">
+            Use the account allow-listed on the server.
+          </Typography>
+        </View>
+
+        <Input
+          placeholder="you@example.com"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          textContentType="emailAddress"
+          value={email}
+          onChangeText={setEmail}
+          isDisabled={busy}
+        />
+
+        <Input
+          placeholder="Password"
+          secureTextEntry
+          textContentType="password"
+          value={password}
+          onChangeText={setPassword}
+          isDisabled={busy}
+        />
+
+        <Button size="lg" onPress={() => void handleEmailAuth()} isDisabled={busy || !isSupabaseConfigured}>
+          {busy ? (
+            <Spinner size="sm" color="default" />
+          ) : (
+            <Button.Label>{mode === 'sign-up' ? 'Create account' : 'Sign in with email'}</Button.Label>
+          )}
+        </Button>
+
+        <Button
+          size="md"
+          variant="ghost"
+          onPress={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}
+          isDisabled={busy}
+        >
           <Button.Label>
-            {mode === 'sign-up' ? 'Create account' : 'Sign in with email'}
+            {mode === 'sign-in' ? 'Need an account? Create one' : 'Have an account? Sign in'}
           </Button.Label>
-        )}
-      </Button>
+        </Button>
 
-      <Button variant="ghost" onPress={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}>
-        <Button.Label>
-          {mode === 'sign-in' ? 'Need an account? Create one' : 'Have an account? Sign in'}
-        </Button.Label>
-      </Button>
+        <View className="my-1 flex-row items-center gap-3">
+          <View className="h-px flex-1 bg-separator" />
+          <Typography type="body-xs" color="muted">
+            or
+          </Typography>
+          <View className="h-px flex-1 bg-separator" />
+        </View>
 
-      <View className="my-2 flex-row items-center gap-3">
-        <View className="h-px flex-1 bg-separator" />
-        <Typography type="body-xs" color="muted">
-          or
-        </Typography>
-        <View className="h-px flex-1 bg-separator" />
-      </View>
+        <Button
+          size="lg"
+          variant="secondary"
+          onPress={() => void run(signInWithGitHub)}
+          isDisabled={busy || !isSupabaseConfigured}
+        >
+          <Button.Label>Continue with GitHub</Button.Label>
+        </Button>
 
-      <Button
-        variant="secondary"
-        onPress={() => void run(signInWithGitHub)}
-        isDisabled={busy || !isSupabaseConfigured}
-      >
-        <Button.Label>Continue with GitHub</Button.Label>
-      </Button>
+        {!isSupabaseConfigured ? (
+          <Alert status="warning">
+            <Alert.Content>
+              <Alert.Title>Not configured</Alert.Title>
+              <Alert.Description>
+                Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in
+                apps/mobile/.env
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
 
-      {!isSupabaseConfigured ? (
-        <Alert status="warning">
-          <Alert.Content>
-            <Alert.Title>Not configured</Alert.Title>
-            <Alert.Description>
-              Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in
-              apps/mobile/.env
-            </Alert.Description>
-          </Alert.Content>
-        </Alert>
-      ) : null}
+        {error ? (
+          <Alert status="danger">
+            <Alert.Content>
+              <Alert.Title>Sign-in failed</Alert.Title>
+              <Alert.Description>{error}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
 
-      {error ? (
-        <Alert status="danger">
-          <Alert.Content>
-            <Alert.Title>Sign-in failed</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      ) : null}
+        {notice ? (
+          <Alert status="success">
+            <Alert.Content>
+              <Alert.Title>Almost there</Alert.Title>
+              <Alert.Description>{notice}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
 
-      {notice ? (
-        <Alert status="success">
-          <Alert.Content>
-            <Alert.Title>Almost there</Alert.Title>
-            <Alert.Description>{notice}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      ) : null}
-
-      <View className="mt-2 gap-1 rounded-xl bg-surface-secondary p-3">
-        <Typography type="body-xs" className="font-semibold">
-          GitHub OAuth needs a development build
-        </Typography>
-        <Typography type="body-xs" color="muted">
-          Expo Go cannot handle custom OAuth redirect schemes, so use email + password here. With a
-          development build (npx expo run:android), GitHub OAuth works with the redirect URL:
-        </Typography>
-        <Typography type="code">{authRedirectUrl}</Typography>
-      </View>
-    </View>
+        <View className="mt-2 gap-1 rounded-2xl bg-surface-secondary p-3">
+          <Typography type="body-xs" weight="semibold">
+            GitHub OAuth needs a development build
+          </Typography>
+          <Typography type="body-xs" color="muted">
+            Expo Go cannot handle custom OAuth redirect schemes, so use email + password here. With a
+            development build (npx expo run:android), GitHub OAuth works with the redirect URL:
+          </Typography>
+          <Typography type="code">{authRedirectUrl}</Typography>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

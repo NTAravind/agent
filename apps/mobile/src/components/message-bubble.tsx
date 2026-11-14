@@ -14,12 +14,16 @@ export function MessageBubble({ role, parts, modelLabel }: Props) {
 
   return (
     <View className={isUser ? 'items-end' : 'items-start'}>
-      <Card className="max-w-[88%]">
-        <Card.Body className="gap-2">
+      <Card className={`max-w-[88%] rounded-2xl ${isUser ? 'bg-accent' : 'bg-surface'}`}>
+        <Card.Body className="gap-2 px-3 py-2">
           {parts.map((part, index) => {
             if (part.type === 'text') {
               return (
-                <Typography key={index} type="body">
+                <Typography
+                  key={index}
+                  type="body"
+                  className={isUser ? 'text-accent-foreground' : 'text-foreground'}
+                >
                   {String(part.text ?? '')}
                 </Typography>
               );
@@ -45,7 +49,11 @@ export function MessageBubble({ role, parts, modelLabel }: Props) {
                 );
               }
               return (
-                <Typography key={index} type="body-sm">
+                <Typography
+                  key={index}
+                  type="body-sm"
+                  className={isUser ? 'text-accent-foreground' : 'text-foreground'}
+                >
                   {`📎 ${String(part.filename ?? 'attachment')}`}
                 </Typography>
               );

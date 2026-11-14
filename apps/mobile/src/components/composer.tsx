@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Chip, Spinner, TextArea, Typography } from 'heroui-native';
+import { Button, Chip, Spinner, TextArea } from 'heroui-native';
 import { View } from 'react-native';
 
 import type { PendingAttachment } from '@/lib/attachments';
@@ -40,7 +40,7 @@ export function Composer({
   };
 
   return (
-    <View className="gap-2 border-t border-separator bg-background px-3 py-2">
+    <View className="gap-2 border-t border-separator bg-background px-3 pt-2">
       {attachments.length > 0 ? (
         <View className="flex-row flex-wrap gap-1.5">
           {attachments.map((attachment) => (
@@ -49,6 +49,7 @@ export function Composer({
               variant="soft"
               size="sm"
               onPress={() => onRemoveAttachment(attachment.documentId)}
+              accessibilityLabel={`Remove ${attachment.name}`}
             >
               <Chip.Label>{attachment.name}</Chip.Label>
             </Chip>
@@ -58,43 +59,38 @@ export function Composer({
 
       <View className="flex-row items-end gap-2">
         <Button
-          size="sm"
+          size="md"
           variant="secondary"
           isIconOnly
           onPress={() => void withBusy(onAttachImage)}
           isDisabled={uploading}
           accessibilityLabel="Attach an image"
         >
-          {uploading ? <Spinner size="sm" /> : <Typography type="body-sm">🖼</Typography>}
+          {uploading ? <Spinner size="sm" /> : <Button.Label>🖼</Button.Label>}
         </Button>
 
         <Button
-          size="sm"
+          size="md"
           variant="secondary"
           isIconOnly
           onPress={() => void withBusy(onAttachDocument)}
           isDisabled={uploading}
           accessibilityLabel="Attach a document"
         >
-          <Typography type="body-sm">📄</Typography>
+          <Button.Label>📄</Button.Label>
         </Button>
 
         <TextArea
           className="flex-1"
+          containerClassName="flex-1"
           placeholder="Message…"
           value={value}
           onChangeText={onChangeText}
           editable={!disabled}
-          numberOfLines={1}
           rows={1}
         />
 
-        <Button
-          size="sm"
-          onPress={onSend}
-          isDisabled={!canSend}
-          accessibilityLabel="Send message"
-        >
+        <Button size="md" onPress={onSend} isDisabled={!canSend} accessibilityLabel="Send message">
           {isStreaming ? <Spinner size="sm" color="default" /> : <Button.Label>Send</Button.Label>}
         </Button>
       </View>
