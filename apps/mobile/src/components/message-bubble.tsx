@@ -1,75 +1,72 @@
-import { StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
+import { Image } from 'expo-image';
+import { Card, Typography } from 'heroui-native';
+import { View } from 'react-native';
 
 type Props = {
-  role: "user" | "assistant" | "system" | "tool";
+  role: 'user' | 'assistant' | 'system' | 'tool';
   parts: { type: string; [key: string]: unknown }[];
   /** Model that produced this reply (assistant only). */
   modelLabel?: string | null;
 };
 
 export function MessageBubble({ role, parts, modelLabel }: Props) {
-  const isUser = role === "user";
+  const isUser = role === 'user';
 
   return (
-    <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-      {parts.map((part, index) => {
-        if (part.type === "text") {
-          return (
-            <Text key={index} style={styles.text}>
-              {String(part.text ?? "")}
-            </Text>
-          );
-        }
-        if (part.type === "reasoning") {
-          return (
-            <Text key={index} style={styles.reasoning}>
-              {String(part.text ?? "")}
-            </Text>
-          );
-        }
-        if (part.type === "file") {
-          const url = part.url as string | undefined;
-          const mediaType = String(part.mediaType ?? "");
-          if (url && mediaType.startsWith("image/")) {
-            return <Image key={index} source={{ uri: url }} style={styles.image} contentFit="cover" />;
-          }
-          return (
-            <Text key={index} style={styles.file}>
-              📎 {String(part.filename ?? "attachment")}
-            </Text>
-          );
-        }
-        if (part.type === "error") {
-          return (
-            <Text key={index} style={styles.error}>
-              {String(part.errorText ?? "Something went wrong.")}
-            </Text>
-          );
-        }
-        return null;
-      })}
+    <View className={isUser ? 'items-end' : 'items-start'}>
+      <Card className="max-w-[88%]">
+        <Card.Body className="gap-2">
+          {parts.map((part, index) => {
+            if (part.type === 'text') {
+              return (
+                <Typography key={index} type="body">
+                  {String(part.text ?? '')}
+                </Typography>
+              );
+            }
+            if (part.type === 'reasoning') {
+              return (
+                <Typography key={index} type="body-sm" color="muted">
+                  {String(part.text ?? '')}
+                </Typography>
+              );
+            }
+            if (part.type === 'file') {
+              const url = part.url as string | undefined;
+              const mediaType = String(part.mediaType ?? '');
+              if (url && mediaType.startsWith('image/')) {
+                return (
+                  <Image
+                    key={index}
+                    source={{ uri: url }}
+                    style={{ width: 180, height: 180, borderRadius: 12 }}
+                    contentFit="cover"
+                  />
+                );
+              }
+              return (
+                <Typography key={index} type="body-sm">
+                  {`📎 ${String(part.filename ?? 'attachment')}`}
+                </Typography>
+              );
+            }
+            if (part.type === 'error') {
+              return (
+                <Typography key={index} type="body-sm" className="text-danger">
+                  {String(part.errorText ?? 'Something went wrong.')}
+                </Typography>
+              );
+            }
+            return null;
+          })}
 
-      {!isUser && modelLabel ? <Text style={styles.meta}>{modelLabel}</Text> : null}
+          {!isUser && modelLabel ? (
+            <Typography type="body-xs" color="muted" className="self-end">
+              {modelLabel}
+            </Typography>
+          ) : null}
+        </Card.Body>
+      </Card>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  bubble: {
-    maxWidth: "85%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginVertical: 4,
-    gap: 6,
-  },
-  bubbleUser: { alignSelf: "flex-end", backgroundColor: "#208AEF" },
-  bubbleAssistant: { alignSelf: "flex-start", backgroundColor: "#f2f2f7" },
-  text: { fontSize: 15, color: "#111", lineHeight: 21 },
-  reasoning: { fontSize: 13, color: "#666", fontStyle: "italic" },
-  file: { fontSize: 13, color: "#333" },
-  image: { width: 180, height: 180, borderRadius: 10 },
-  error: { fontSize: 13, color: "#b91c1c" },
-  meta: { fontSize: 10, color: "#888", alignSelf: "flex-end" },
-});

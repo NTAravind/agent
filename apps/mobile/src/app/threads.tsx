@@ -1,20 +1,23 @@
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from 'react';
+import { Alert, Button, ListGroup, Spinner, Typography } from 'heroui-native';
+import { ScrollView, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import type { Thread } from '@agent/shared';
 
-import { deleteThread, fetchThreads } from "@/lib/models";
-import type { Thread } from "@agent/shared";
+import { deleteThread, fetchThreads } from '@/lib/models';
 
 export default function ThreadsScreen() {
   const router = useRouter();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setThreads(await fetchThreads());
-    } catch (error) {
-      console.warn("[threads] could not load threads:", error);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -27,79 +30,67 @@ export default function ThreadsScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Threads</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.link}>Close</Text>
-        </Pressable>
+    <View className="flex-1 bg-background">
+      <View className="flex-row items-center justify-between border-b border-separator px-4 py-3">
+        <Typography type="h3">Threads</Typography>
+        <Button size="sm" variant="ghost" onPress={() => router.back()}>
+          <Button.Label>Close</Button.Label>
+        </Button>
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
+        <View className="flex-1 items-center justify-center">
+          <Spinner />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
-          {threads.length === 0 ? <Text style={styles.empty}>No conversations yet.</Text> : null}
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+          {error ? (
+            <Alert status="danger">
+              <Alert.Content>
+                <Alert.Title>Could not load threads</Alert.Title>
+                <Alert.Description>{error}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
 
-          {threads.map((thread) => (
-            <Pressable
-              key={thread.id}
-              style={styles.row}
-              onPress={() => router.push({ pathname: "/chat", params: { threadId: thread.id } })}
-            >
-              <View style={styles.rowText}>
-                <Text style={styles.rowTitle} numberOfLines={1}>
-                  {thread.title ?? "Untitled"}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {new Date(thread.updated_at).toLocaleString()}
-                  {thread.model ? ` · ${thread.model}` : ""}
-                </Text>
-              </View>
+          {threads.length === 0 && !error ? (
+            <Typography type="body-sm" color="muted" className="mt-10 text-center">
+              No conversations yet.
+            </Typography>
+          ) : null}
 
-              <Pressable
-                onPress={() => {
-                  void deleteThread(thread.id).then(load);
-                }}
-                accessibilityLabel="Delete thread"
-              >
-                <Text style={styles.delete}>Delete</Text>
-              </Pressable>
-            </Pressable>
-          ))}
+          {threads.length > 0 ? (
+            <ListGroup>
+              {threads.map((thread) => (
+                <ListGroup.Item
+                  key={thread.id}
+                  onPress={() =>
+                    router.push({ pathname: '/chat', params: { threadId: thread.id } })
+                  }
+                >
+                  <ListGroup.ItemContent>
+                    <ListGroup.ItemTitle>{thread.title ?? 'Untitled'}</ListGroup.ItemTitle>
+                    <ListGroup.ItemDescription>
+                      {`${new Date(thread.updated_at).toLocaleString()}${
+                        thread.model ? ` · ${thread.model}` : ''
+                      }`}
+                    </ListGroup.ItemDescription>
+                  </ListGroup.ItemContent>
+                  <ListGroup.ItemSuffix>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => void deleteThread(thread.id).then(load)}
+                    >
+                      <Button.Label>Delete</Button.Label>
+                    </Button>
+                  </ListGroup.ItemSuffix>
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
+          ) : null}
         </ScrollView>
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  title: { fontSize: 20, fontWeight: "700" },
-  link: { fontSize: 15, color: "#208AEF", fontWeight: "600" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: { padding: 12, gap: 8 },
-  empty: { textAlign: "center", color: "#888", marginTop: 40 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: "#f7f7f8",
-  },
-  rowText: { flex: 1, gap: 4 },
-  rowTitle: { fontSize: 15, fontWeight: "600" },
-  rowMeta: { fontSize: 11, color: "#888" },
-  delete: { fontSize: 13, color: "#b91c1c", fontWeight: "600" },
-});

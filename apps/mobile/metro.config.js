@@ -1,5 +1,6 @@
-// Metro config for a monorepo: the shared package lives outside this app.
+// Metro config for a monorepo + HeroUI Native (Uniwind / Tailwind v4).
 const { getDefaultConfig } = require('expo/metro-config');
+const { withUniwindConfig } = require('uniwind/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
@@ -12,6 +13,8 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-config.resolver.disableHierarchicalLookup = true;
 
-module.exports = config;
+module.exports = withUniwindConfig(config, {
+  cssEntryFile: './global.css',
+  dtsFile: './src/uniwind-types.d.ts',
+});

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Button, Input, Spinner, Typography } from 'heroui-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { authRedirectUrl, signInWithEmail, signInWithGitHub, signUpWithEmail } from '@/lib/auth';
@@ -45,128 +46,102 @@ export default function SignInScreen() {
     });
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign in</Text>
+    <View className="flex-1 justify-center gap-3 bg-background px-5 py-8">
+      <Typography type="h2">Sign in</Typography>
 
-      <TextInput
-        style={styles.input}
+      <Input
         placeholder="you@example.com"
-        placeholderTextColor="#888"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
-        editable={!busy}
+        isDisabled={busy}
       />
 
-      <TextInput
-        style={styles.input}
+      <Input
         placeholder="Password"
-        placeholderTextColor="#888"
         secureTextEntry
         value={password}
         onChangeText={setPassword}
-        editable={!busy}
+        isDisabled={busy}
       />
 
-      <Pressable
-        style={[styles.button, busy && styles.buttonDisabled]}
+      <Button
         onPress={() => void handleEmailAuth()}
-        disabled={busy || !isSupabaseConfigured}
+        isDisabled={busy || !isSupabaseConfigured}
       >
         {busy ? (
-          <ActivityIndicator color="#fff" />
+          <Spinner size="sm" color="accent-foreground" />
         ) : (
-          <Text style={styles.buttonText}>
+          <Button.Label>
             {mode === 'sign-up' ? 'Create account' : 'Sign in with email'}
-          </Text>
+          </Button.Label>
         )}
-      </Pressable>
+      </Button>
 
-      <Pressable
-        onPress={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}
-        disabled={busy}
-      >
-        <Text style={styles.link}>
+      <Button variant="ghost" onPress={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}>
+        <Button.Label>
           {mode === 'sign-in' ? 'Need an account? Create one' : 'Have an account? Sign in'}
-        </Text>
-      </Pressable>
+        </Button.Label>
+      </Button>
 
-      <View style={styles.divider}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
-        <View style={styles.dividerLine} />
+      <View className="my-2 flex-row items-center gap-3">
+        <View className="h-px flex-1 bg-separator" />
+        <Typography type="body-xs" color="muted">
+          or
+        </Typography>
+        <View className="h-px flex-1 bg-separator" />
       </View>
 
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+      <Button
+        variant="secondary"
         onPress={() => void run(signInWithGitHub)}
-        disabled={busy || !isSupabaseConfigured}
+        isDisabled={busy || !isSupabaseConfigured}
       >
-        <Text style={styles.secondaryButtonText}>Continue with GitHub</Text>
-      </Pressable>
+        <Button.Label>Continue with GitHub</Button.Label>
+      </Button>
 
       {!isSupabaseConfigured ? (
-        <Text style={styles.error}>
-          Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env
-        </Text>
+        <Alert status="warning">
+          <Alert.Content>
+            <Alert.Title>Not configured</Alert.Title>
+            <Alert.Description>
+              Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in
+              apps/mobile/.env
+            </Alert.Description>
+          </Alert.Content>
+        </Alert>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-      <View style={styles.hintBox}>
-        <Text style={styles.hintTitle}>
-          GitHub OAuth needs a development build in Expo Go
-        </Text>
-        <Text style={styles.hintText}>
+      {error ? (
+        <Alert status="danger">
+          <Alert.Content>
+            <Alert.Title>Sign-in failed</Alert.Title>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      ) : null}
+
+      {notice ? (
+        <Alert status="success">
+          <Alert.Content>
+            <Alert.Title>Almost there</Alert.Title>
+            <Alert.Description>{notice}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      ) : null}
+
+      <View className="mt-2 gap-1 rounded-xl bg-surface-secondary p-3">
+        <Typography type="body-xs" className="font-semibold">
+          GitHub OAuth needs a development build
+        </Typography>
+        <Typography type="body-xs" color="muted">
           Expo Go cannot handle custom OAuth redirect schemes, so use email + password here. With a
-          development build (`npx expo run:android`), GitHub OAuth works with the redirect URL:
-        </Text>
-        <Text selectable style={styles.hintValue}>
-          {authRedirectUrl}
-        </Text>
+          development build (npx expo run:android), GitHub OAuth works with the redirect URL:
+        </Typography>
+        <Typography type="code">{authRedirectUrl}</Typography>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
-  title: { fontSize: 28, fontWeight: '600' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
-  button: { backgroundColor: '#111', borderRadius: 8, paddingVertical: 14, alignItems: 'center' },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  secondaryButtonText: { fontWeight: '600' },
-  link: { fontSize: 14, color: '#208AEF', textAlign: 'center' },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 4 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#e5e5ea' },
-  dividerText: { fontSize: 12, opacity: 0.5 },
-  error: { fontSize: 13, color: '#c0392b' },
-  notice: { fontSize: 13, color: '#15803d' },
-  hintBox: {
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#f2f2f7',
-    gap: 6,
-  },
-  hintTitle: { fontSize: 11, fontWeight: '700', opacity: 0.7 },
-  hintValue: { fontSize: 12, fontFamily: 'Courier' },
-  hintText: { fontSize: 11, opacity: 0.6 },
-});

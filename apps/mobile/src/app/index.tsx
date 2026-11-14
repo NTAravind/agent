@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Avatar, Button, Card, Spinner, Typography } from 'heroui-native';
+import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { apiFetchDebug, API_BASE_URL, ApiRequestError } from '@/lib/api';
@@ -34,7 +35,9 @@ export default function HomeScreen() {
         token: sessionData.session.access_token,
       });
       setDebug(
-        `url: ${result.url}\nheaders: ${result.headerNames.join(', ')}\ntoken length: ${result.tokenLength}\nstatus: ${result.status}`,
+        `${result.url}\nheaders: ${result.headerNames.join(', ')}\ntoken length: ${
+          result.tokenLength
+        }\nstatus: ${result.status}`,
       );
       if (result.status === 200) {
         setHealth(result.body);
@@ -50,67 +53,103 @@ export default function HomeScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
+      <View className="flex-1 items-center justify-center bg-background">
+        <Spinner />
       </View>
     );
   }
 
+  const email = session?.user.email ?? session?.user.id ?? '';
+  const initials = email.slice(0, 2).toUpperCase();
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Agent</Text>
-      <Text style={styles.subtitle}>Signed in as {session?.user.email ?? session?.user.id}</Text>
+    <View className="flex-1 bg-background">
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <View className="flex-row items-center gap-3">
+          <Avatar size="md">
+            <Avatar.Fallback>
+              <Typography type="body-sm">{initials}</Typography>
+            </Avatar.Fallback>
+          </Avatar>
+          <View className="flex-1">
+            <Typography type="h3">Agent</Typography>
+            <Typography type="body-sm" color="muted" numberOfLines={1}>
+              {email}
+            </Typography>
+          </View>
+        </View>
 
-      <View style={styles.actions}>
-        <Pressable style={styles.primaryButton} onPress={() => router.push("/chat")}>
-          <Text style={styles.primaryButtonText}>Open chat</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => router.push("/threads")}>
-          <Text style={styles.secondaryButtonText}>Threads</Text>
-        </Pressable>
-      </View>
+        <Card>
+          <Card.Body className="gap-3">
+            <Card.Title>Chat</Card.Title>
+            <Card.Description>
+              Talk to the model of your choice. Switch models any time from the chat header.
+            </Card.Description>
+            <Button onPress={() => router.push('/chat')}>
+              <Button.Label>Open chat</Button.Label>
+            </Button>
+            <Button variant="secondary" onPress={() => router.push('/threads')}>
+              <Button.Label>Threads</Button.Label>
+            </Button>
+          </Card.Body>
+        </Card>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Protected API</Text>
-        <Text style={styles.cardBody}>
-          {API_BASE_URL ? `Calling ${API_BASE_URL}/api/health` : 'EXPO_PUBLIC_API_BASE_URL is not set.'}
-        </Text>
-        <Pressable style={styles.button} onPress={checkHealth} disabled={checking}>
-          {checking ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Check /api/health</Text>}
-        </Pressable>
-        {debug ? <Text style={styles.code}>{debug}</Text> : null}
-        {health ? <Text style={styles.code}>{health}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </View>
+        <Card>
+          <Card.Body className="gap-3">
+            <Card.Title>API status</Card.Title>
+            <Card.Description>
+              {API_BASE_URL ? API_BASE_URL : 'EXPO_PUBLIC_API_BASE_URL is not set.'}
+            </Card.Description>
+            <Button
+              variant="outline"
+              onPress={() => void checkHealth()}
+              isDisabled={checking}
+            >
+              {checking ? <Spinner size="sm" /> : <Button.Label>Check /api/health</Button.Label>}
+            </Button>
 
-      {!isSupabaseConfigured ? (
-        <Text style={styles.error}>
-          Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env
-        </Text>
-      ) : null}
+            {health ? (
+              <Alert status="success">
+                <Alert.Content>
+                  <Alert.Title>Connected</Alert.Title>
+                  <Alert.Description>{health}</Alert.Description>
+                </Alert.Content>
+              </Alert>
+            ) : null}
 
-      <Pressable style={styles.secondaryButton} onPress={() => void signOut()}>
-        <Text style={styles.secondaryButtonText}>Sign out</Text>
-      </Pressable>
-    </ScrollView>
+            {error ? (
+              <Alert status="danger">
+                <Alert.Content>
+                  <Alert.Title>Request failed</Alert.Title>
+                  <Alert.Description>{error}</Alert.Description>
+                </Alert.Content>
+              </Alert>
+            ) : null}
+
+            {debug ? (
+              <Typography type="body-xs" color="muted">
+                {debug}
+              </Typography>
+            ) : null}
+          </Card.Body>
+        </Card>
+
+        {!isSupabaseConfigured ? (
+          <Alert status="warning">
+            <Alert.Content>
+              <Alert.Title>Not configured</Alert.Title>
+              <Alert.Description>
+                Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in
+                apps/mobile/.env
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
+
+        <Button variant="ghost" onPress={() => void signOut()}>
+          <Button.Label>Sign out</Button.Label>
+        </Button>
+      </ScrollView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { padding: 24, gap: 16, flexGrow: 1 },
-  title: { fontSize: 28, fontWeight: '600' },
-  subtitle: { fontSize: 14, opacity: 0.7 },
-  actions: { flexDirection: 'row', gap: 10 },
-  primaryButton: { backgroundColor: '#208AEF', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '700' },
-  secondaryButton: { borderWidth: 1, borderColor: '#8884', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 18, alignItems: 'center' },
-  secondaryButtonText: { fontWeight: '600' },
-  card: { borderWidth: 1, borderColor: '#8884', borderRadius: 12, padding: 16, gap: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '600' },
-  cardBody: { fontSize: 13, opacity: 0.7 },
-  button: { backgroundColor: '#208AEF', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  code: { fontSize: 12, fontFamily: 'Courier' },
-  error: { fontSize: 13, color: '#c0392b' },
-});

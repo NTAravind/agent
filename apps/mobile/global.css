@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+@import 'uniwind';
+@import 'heroui-native/styles';
+
+/* Our own source files (Tailwind v4 scans the CSS directory by default, but
+   being explicit keeps the monorepo layout predictable). */
+@source './src/**/*.{ts,tsx}';

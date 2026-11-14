@@ -1,25 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useChat } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useChat } from '@ai-sdk/react';
+import { Alert, Button, Spinner, Typography } from 'heroui-native';
+import type { UIMessage } from 'ai';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { Composer } from "@/components/composer";
-import { MessageBubble } from "@/components/message-bubble";
-import { ModelPicker } from "@/components/model-picker";
-import { pickAndUploadDocument, pickAndUploadImages, type PendingAttachment } from "@/lib/attachments";
-import { ResilientChatTransport } from "@/lib/chat-transport";
-import { fetchModels, fetchThread, type ModelOption } from "@/lib/models";
-import { supabase } from "@/lib/supabase";
+import { Composer } from '@/components/composer';
+import { MessageBubble } from '@/components/message-bubble';
+import { ModelPicker } from '@/components/model-picker';
+import {
+  pickAndUploadDocument,
+  pickAndUploadImages,
+  type PendingAttachment,
+} from '@/lib/attachments';
+import { ResilientChatTransport } from '@/lib/chat-transport';
+import { fetchModels, fetchThread, type ModelOption } from '@/lib/models';
+import { supabase } from '@/lib/supabase';
 
 /** A chat id is generated on the client so the server can create the thread
  *  with it — no round trip is needed to learn the thread id. */
@@ -34,7 +30,7 @@ export default function ChatScreen() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string>(params.threadId ?? newChatId());
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(Boolean(params.threadId));
 
@@ -62,7 +58,7 @@ export default function ChatScreen() {
     id: threadId,
   });
 
-  const isStreaming = status === "streaming" || status === "submitted";
+  const isStreaming = status === 'streaming' || status === 'submitted';
 
   // Registry + default model.
   useEffect(() => {
@@ -89,7 +85,7 @@ export default function ChatScreen() {
         thread.messages.map((message) => ({
           id: message.id,
           role: message.role,
-          parts: message.parts as UIMessage["parts"],
+          parts: message.parts as UIMessage['parts'],
         })) as UIMessage[],
       );
       setLoadingHistory(false);
@@ -103,7 +99,7 @@ export default function ChatScreen() {
     const text = input.trim();
     if (!text) return;
 
-    setInput("");
+    setInput('');
     setAttachments([]);
     await sendMessage({ text });
   }, [input, sendMessage]);
@@ -115,36 +111,41 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      className="flex-1 bg-background"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={80}
     >
-      <View style={styles.header}>
-        <Pressable onPress={() => router.push("/threads")} accessibilityLabel="Threads">
-          <Text style={styles.headerButton}>☰</Text>
-        </Pressable>
+      <View className="flex-row items-center justify-between gap-2 border-b border-separator px-3 py-2">
+        <Button size="sm" variant="ghost" isIconOnly onPress={() => router.push('/threads')}>
+          <Typography type="body">☰</Typography>
+        </Button>
 
         <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />
 
-        <Pressable
+        <Button
+          size="sm"
+          variant="ghost"
+          isIconOnly
           onPress={() => {
             setMessages([]);
             setThreadId(newChatId());
           }}
           accessibilityLabel="New chat"
         >
-          <Text style={styles.headerButton}>＋</Text>
-        </Pressable>
+          <Typography type="body">＋</Typography>
+        </Button>
       </View>
 
       {loadingHistory ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
+        <View className="flex-1 items-center justify-center">
+          <Spinner />
         </View>
       ) : (
-        <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 24 }}>
           {messages.length === 0 ? (
-            <Text style={styles.empty}>Ask anything. Pick a model with the button above.</Text>
+            <Typography type="body-sm" color="muted" className="mt-10 text-center">
+              Ask anything. Pick a model with the button above.
+            </Typography>
           ) : null}
 
           {messages.map((message) => (
@@ -152,15 +153,17 @@ export default function ChatScreen() {
               key={message.id}
               role={message.role}
               parts={message.parts as { type: string; [key: string]: unknown }[]}
-              modelLabel={message.role === "assistant" ? modelLabel : null}
+              modelLabel={message.role === 'assistant' ? modelLabel : null}
             />
           ))}
 
           {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorTitle}>Request failed</Text>
-              <Text style={styles.errorText}>{error.message}</Text>
-            </View>
+            <Alert status="danger">
+              <Alert.Content>
+                <Alert.Title>Request failed</Alert.Title>
+                <Alert.Description>{error.message}</Alert.Description>
+              </Alert.Content>
+            </Alert>
           ) : null}
         </ScrollView>
       )}
@@ -186,31 +189,3 @@ export default function ChatScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    gap: 8,
-  },
-  headerButton: { fontSize: 20, paddingHorizontal: 6 },
-  messages: { flex: 1 },
-  messagesContent: { padding: 12, paddingBottom: 24 },
-  empty: { textAlign: "center", color: "#888", marginTop: 40, fontSize: 14 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  errorBox: {
-    backgroundColor: "#fef2f2",
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-    gap: 4,
-  },
-  errorTitle: { fontWeight: "700", color: "#b91c1c", fontSize: 13 },
-  errorText: { color: "#7f1d1d", fontSize: 12 },
-});
