@@ -34,6 +34,13 @@ function receivedHeaderNames(request: Request): string[] {
   }
 }
 
+/** Where a header-less request came from (browser navigation vs. app fetch). */
+function requestOrigin(request: Request): string {
+  const referer = request.headers.get("referer") ?? "none";
+  const agent = request.headers.get("user-agent") ?? "none";
+  return `referer=${referer} user-agent=${agent}`;
+}
+
 /**
  * Verifies the Supabase JWT on the request and enforces the single-user
  * allow-list (ALLOWED_USER_ID).
@@ -44,6 +51,8 @@ export async function requireUser(request: Request): Promise<AuthedUser> {
     console.warn(
       "[auth] request without a usable Authorization header. Received headers:",
       receivedHeaderNames(request).join(", ") || "(none)",
+      "|",
+      requestOrigin(request),
     );
     throw new AuthError("unauthorized", "Missing Authorization: Bearer <token> header.");
   }
