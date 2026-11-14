@@ -54,3 +54,23 @@ export async function exchangeCode(code: string): Promise<void> {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) throw error;
 }
+
+/**
+ * Email + password sign-in.
+ *
+ * This is the path that works in Expo Go: it needs no redirect at all, so it
+ * is not affected by Expo Go's inability to handle custom OAuth schemes
+ * (https://docs.expo.dev/guides/authentication/). GitHub OAuth stays enabled
+ * for development builds, where `agentapp://auth/callback` works.
+ */
+export async function signInWithEmail(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+/** Creates an account with an email + password (email confirmation is off on
+ *  a fresh Supabase project unless you turn it on). */
+export async function signUpWithEmail(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+}

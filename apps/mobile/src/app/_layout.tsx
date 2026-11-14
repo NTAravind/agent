@@ -1,10 +1,15 @@
 import "@/lib/polyfills";
 
 import { Stack } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { SessionProvider } from "@/lib/session";
+
+// Lets expo-web-browser close the auth popup / custom tab once the OAuth
+// redirect lands (required by Expo's authentication guide).
+WebBrowser.maybeCompleteAuthSession();
 
 export default function RootLayout() {
   return (
