@@ -58,7 +58,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     throw new ApiRequestError(
       response.status,
       error?.code ?? 'internal_error',
-      error?.message ?? `Request failed with status ${response.status}`
+      `${error?.message ?? `Request failed with status ${response.status}`} [${response.status} ${text.slice(0, 200)}]`
     );
   }
 
