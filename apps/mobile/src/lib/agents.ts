@@ -1,4 +1,4 @@
-import type { AgentRun, RunEvent, StartRunResponse } from "@agent/shared";
+import type { AgentRun, Approval, RunEvent, StartRunResponse } from "@agent/shared";
 
 import { apiFetch } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -39,10 +39,24 @@ export async function fetchRuns(): Promise<RunListItem[]> {
 export type RunDetail = {
   run: AgentRun;
   events: RunEvent[];
+  pendingApprovals?: Approval[];
 };
 
 export async function fetchRun(id: string): Promise<RunDetail> {
   const token = await accessToken();
   if (!token) throw new Error('Not signed in.');
   return await apiFetch<RunDetail>(`/api/runs/${id}`, { token });
+}
+
+/** Records an approve/deny decision; the run resumes via Inngest. */
+export async function decideApproval(
+  id: string,
+  decision: 'approve' | 'deny',
+): Promise<void> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  await apiFetch<{ ok: boolean }>(`/api/approvals/${id}`, {
+    token,
+    init: { method: 'POST', body: JSON.stringify({ decision }) },
+  });
 }

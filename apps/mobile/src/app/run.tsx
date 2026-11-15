@@ -3,10 +3,10 @@ import { Button, Card, Chip, Spinner, Typography } from 'heroui-native';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { RunEvent } from '@agent/shared';
+import type { Approval, RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
-import { fetchRun, type RunDetail } from '@/lib/agents';
+import { decideApproval, fetchRun, type RunDetail } from '@/lib/agents';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
 
@@ -68,10 +68,23 @@ export default function RunScreen() {
 
   const run = detail?.run;
   const events = detail?.events ?? [];
+  const pendingApprovals = detail?.pendingApprovals ?? [];
   const answer =
     run?.status === 'succeeded' && run.result && typeof run.result === 'object'
       ? String((run.result as { answer?: string }).answer ?? '')
       : '';
+
+  const handleDecision = useCallback(
+    async (approval: Approval, decision: 'approve' | 'deny') => {
+      try {
+        await decideApproval(approval.id, decision);
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [load],
+  );
 
   return (
     <View className="flex-1 bg-background">
@@ -147,6 +160,35 @@ export default function RunScreen() {
             {run.error}
           </Typography>
         ) : null}
+
+        {pendingApprovals.map((approval) => (
+          <Card key={approval.id} className="rounded-2xl border border-warning">
+            <Card.Body className="gap-2">
+              <Card.Title>Approval needed</Card.Title>
+              <Typography type="body-sm">
+                {`The agent wants to use "${approval.tool_name ?? 'a sensitive tool'}".`}
+              </Typography>
+              {typeof approval.args === 'object' && approval.args !== null ? (
+                <Typography type="body-xs" color="muted" numberOfLines={6}>
+                  {JSON.stringify(approval.args, null, 1).slice(0, 600)}
+                </Typography>
+              ) : null}
+              <View className="flex-row gap-2 pt-1">
+                <Button size="sm" onPress={() => void handleDecision(approval, 'approve')}>
+                  <Button.Label>Approve</Button.Label>
+                </Button>
+                <Button size="sm" variant="secondary" onPress={() => void handleDecision(approval, 'deny')}>
+                  <Button.Label>Deny</Button.Label>
+                </Button>
+              </View>
+              {approval.expires_at ? (
+                <Typography type="body-xs" color="muted">
+                  {`Expires ${new Date(approval.expires_at).toLocaleString()} — expired approvals count as a denial.`}
+                </Typography>
+              ) : null}
+            </Card.Body>
+          </Card>
+        ))}
 
         <View className="gap-1.5">
           {events.map((event: RunEvent) => (

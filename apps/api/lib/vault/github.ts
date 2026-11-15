@@ -103,8 +103,7 @@ export async function listVaultFiles(): Promise<Array<{ path: string; sha: strin
 }
 
 /** Downloads a single markdown file's content. */
-export async function fetchVaultFile(path: string): Promise<VaultFile | null> {
-  const repo = vaultRepo();
+export async function fetchVaultFile(path: string): Promise<VaultFile | null> {  const repo = vaultRepo();
   if (!repo) throw new Error("GITHUB_VAULT_REPO is not set.");
 
   const entry = await githubFetch<GitHubContent>(
@@ -122,4 +121,63 @@ export async function fetchVaultFile(path: string): Promise<VaultFile | null> {
       : entry.content;
 
   return { path: entry.path, sha: entry.sha, content };
+}
+
+/**
+ * Creates or updates a markdown file in the vault.
+ *
+ * Only used by `write_note`, which is approval-gated. The file's existing
+ * blob sha is required when overwriting (GitHub requirement); a 409 means
+ * someone changed the file in the meantime.
+ */
+export async function putVaultFile(path: string, content: string): Promise<{ sha: string; url: string }> {
+  const repo = vaultRepo();
+  if (!repo) throw new Error("GITHUB_VAULT_REPO is not set.");
+
+  if (!/^[\w\-. \/()'"&+#]+$/.test(path) || path.includes("..")) {
+    throw new Error(`Refusing to write an unsafe path: ${path}`);
+  }
+
+  let existingSha: string | undefined;
+  try {
+    const existing = await githubFetch<GitHubContent>(
+      `/repos/${repo.owner}/${repo.repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(repo.branch)}`,
+    );
+    if (existing.type === "file") existingSha = existing.sha;
+  } catch {
+    // 404 — the file does not exist yet.
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${repo.owner}/${repo.repo}/contents/${encodeURIComponent(path)}`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${vaultToken()}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `agent: write ${path}`,
+        content: Buffer.from(content, "utf8").toString("base64"),
+        branch: repo.branch,
+        ...(existingSha ? { sha: existingSha } : {}),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub write failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  const payload = (await response.json()) as {
+    content?: { sha?: string; html_url?: string };
+  };
+
+  return {
+    sha: payload.content?.sha ?? "",
+    url: payload.content?.html_url ?? "",
+  };
 }

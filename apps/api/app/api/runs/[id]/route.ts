@@ -1,9 +1,10 @@
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { getRunWithEvents } from "@/lib/agent/runs";
+import { listPendingByRun } from "@/lib/approvals";
 
 /**
- * GET /api/runs/:id — one run plus its timeline events (the timeline UI
- * polls this while the run is in flight).
+ * GET /api/runs/:id — one run plus its timeline events and any pending
+ * approvals (the timeline UI polls this while the run is in flight).
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -18,7 +19,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       );
     }
 
-    return Response.json(data);
+    const pendingApprovals = await listPendingByRun(id);
+
+    return Response.json({ ...data, pendingApprovals });
   } catch (error) {
     return toErrorResponse(error);
   }

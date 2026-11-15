@@ -55,3 +55,20 @@ export const StartRunResponseSchema = z.object({
 });
 
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>;
+
+export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired"]);
+
+export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
+
+export const ApprovalSchema = z.object({
+  id: z.string().uuid(),
+  run_id: z.string().uuid(),
+  tool_name: z.string().nullable(),
+  args: z.unknown().nullable(),
+  reason: z.string().nullable(),
+  status: ApprovalStatusSchema,
+  created_at: z.string(),
+  expires_at: z.string().nullable(),
+});
+
+export type Approval = z.infer<typeof ApprovalSchema>;

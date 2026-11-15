@@ -1,9 +1,9 @@
 import { step } from "inngest";
 
-import { runAgent } from "@/lib/agent/graph";
+import { runAgent, resumeAgentRun } from "@/lib/agent/graph";
 import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
-import { agentRunRequested, chatCompleted, vaultChanged } from "@/lib/inngest/events";
+import { agentRunRequested, approvalDecided, chatCompleted, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
@@ -86,9 +86,33 @@ export const agentRunFunction = inngest.createFunction(
   },
 );
 
+/**
+ * Resumes a run parked on an approval decision (LangGraph interrupt →
+ * Command({ resume })). The graph continues from the tool gate.
+ */
+export const approvalResumeFunction = inngest.createFunction(
+  {
+    id: "approval-resume",
+    retries: 3,
+    triggers: { event: approvalDecided },
+    onFailure: async ({ event, error }) => {
+      const data = (event as { data?: { runId?: string } }).data;
+      if (data?.runId) {
+        await failRun(data.runId, error instanceof Error ? error.message : String(error));
+      }
+    },
+  },
+  async ({ event }) => {
+    const { runId, userId } = event.data;
+
+    return await step.run("resume-agent-graph", () => resumeAgentRun({ runId, userId }));
+  },
+);
+
 export const functions = [
   keepalive,
   chatCompletedFunction,
   vaultChangedFunction,
   agentRunFunction,
+  approvalResumeFunction,
 ];
