@@ -1,4 +1,4 @@
-import { generateText, type ToolSet } from "ai";
+import { generateText, isStepCount, type ToolSet } from "ai";
 import type { RequiredCapabilities } from "@agent/shared";
 
 import { withFallback, type FallbackAttempt } from "./fallback";
@@ -15,6 +15,8 @@ export type GenerateWithFallbackOptions = {
   temperature?: number;
   maxOutputTokens?: number;
   tools?: ToolSet;
+  /** How many tool round-trips one call may take. Default: one step. */
+  stopWhen?: ReturnType<typeof isStepCount>;
   abortSignal?: AbortSignal;
   retriesPerModel?: number;
   /** Retries inside the AI SDK per call. Default 1 (the chain adds its own). */
@@ -51,6 +53,7 @@ export async function generateTextWithFallback(
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
         ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
         ...(options.tools ? { tools: options.tools } : {}),
+        ...(options.stopWhen ? { stopWhen: options.stopWhen } : {}),
         ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
         maxRetries: options.maxRetries ?? 1,
       }),

@@ -108,6 +108,18 @@ export default function HomeScreen() {
 
         <Card className="rounded-2xl">
           <Card.Body className="gap-3">
+            <Card.Title>Agents</Card.Title>
+            <Card.Description>
+              Give the agent a longer task — it plans, researches and reports back, even after you close the app.
+            </Card.Description>
+            <Button size="md" variant="secondary" onPress={() => router.push('/agents')}>
+              <Button.Label>Open agents</Button.Label>
+            </Button>
+          </Card.Body>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <Card.Body className="gap-3">
             <Card.Title>Knowledge</Card.Title>
             <Card.Description>
               Browse the notes synced from your vault, and everything the agent remembers about you.

@@ -8,8 +8,6 @@ export type ChatTransportOptions = {
   model?: string | null;
   /** Returns the current Supabase access token. */
   getToken: () => Promise<string | null>;
-  /** Returns the attachments queued for the next message. */
-  getAttachments?: () => { documentId: string; mediaType: string; name?: string }[];
 };
 
 function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
@@ -59,7 +57,6 @@ export class XhrChatTransport<UI_MESSAGE extends UIMessage> implements ChatTrans
       messages,
       threadId: this.options.threadId ?? undefined,
       model: this.options.model ?? undefined,
-      attachments: this.options.getAttachments?.() ?? undefined,
       ...(body ?? {}),
     });
 
@@ -153,14 +150,15 @@ export class ResilientChatTransport<UI_MESSAGE extends UIMessage>
     this.primary = new DefaultChatTransport<UI_MESSAGE>({
       api: `${API_BASE_URL}/api/chat`,
       fetch: expoFetch as unknown as typeof globalThis.fetch,
-      prepareSendMessagesRequest: async ({ messages }) => {
+      prepareSendMessagesRequest: async ({ messages, body }) => {
         const token = await options.getToken();
         return {
           body: {
             messages,
             threadId: options.threadId ?? undefined,
             model: options.model ?? undefined,
-            attachments: options.getAttachments?.() ?? undefined,
+            // Attachments (and any extra fields) come from the send call.
+            ...(body ?? {}),
           },
           headers: token ? ({ Authorization: `Bearer ${token}` } as Record<string, string>) : {},
         };

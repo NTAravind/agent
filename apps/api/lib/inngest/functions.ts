@@ -1,7 +1,9 @@
 import { step } from "inngest";
 
+import { runAgent } from "@/lib/agent/graph";
+import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
-import { chatCompleted, vaultChanged } from "@/lib/inngest/events";
+import { agentRunRequested, chatCompleted, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
@@ -60,4 +62,33 @@ export const vaultChangedFunction = inngest.createFunction(
   },
 );
 
-export const functions = [keepalive, chatCompletedFunction, vaultChangedFunction];
+/**
+ * Executes an agent run in durable steps. The graph itself is checkpointed to
+ * Postgres after every node, so if the serverless invocation dies mid-run the
+ * Inngest retry resumes from the last checkpoint instead of restarting.
+ */
+export const agentRunFunction = inngest.createFunction(
+  {
+    id: "agent-run",
+    retries: 3,
+    triggers: { event: agentRunRequested },
+    onFailure: async ({ event, error }) => {
+      const data = (event as { data?: { runId?: string } }).data;
+      if (data?.runId) {
+        await failRun(data.runId, error instanceof Error ? error.message : String(error));
+      }
+    },
+  },
+  async ({ event }) => {
+    const { runId, userId, goal } = event.data;
+
+    return await step.run("execute-agent-graph", () => runAgent({ runId, userId, goal }));
+  },
+);
+
+export const functions = [
+  keepalive,
+  chatCompletedFunction,
+  vaultChangedFunction,
+  agentRunFunction,
+];

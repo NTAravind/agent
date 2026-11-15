@@ -4,8 +4,9 @@ import { Alert, Button, Spinner } from 'heroui-native';
 import type { UIMessage } from 'ai';
 import {
   KeyboardAvoidingView,
-  Platform,
+  Pressable,
   ScrollView,
+  Text,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -34,6 +35,13 @@ function newChatId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const SUGGESTIONS = [
+  'Summarize a document',
+  'Explain a concept simply',
+  'Help me write an email',
+  'Debug some code',
+];
+
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ threadId?: string }>();
@@ -46,7 +54,6 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(Boolean(params.threadId));
-
   const scrollRef = useRef<ScrollViewInstance>(null);
   const atBottomRef = useRef(true);
 
@@ -59,14 +66,8 @@ export default function ChatScreen() {
           const { data } = await supabase.auth.getSession();
           return data.session?.access_token ?? null;
         },
-        getAttachments: () =>
-          attachments.map((attachment) => ({
-            documentId: attachment.documentId,
-            mediaType: attachment.mediaType,
-            name: attachment.name,
-          })),
       }),
-    [threadId, modelId, attachments],
+    [threadId, modelId],
   );
 
   const { messages, setMessages, sendMessage, regenerate, error, status } = useChat<UIMessage>({
@@ -75,6 +76,7 @@ export default function ChatScreen() {
   });
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+  const isEmpty = messages.length === 0;
 
   // Registry + default model.
   useEffect(() => {
@@ -111,12 +113,9 @@ export default function ChatScreen() {
     };
   }, [params.threadId, setMessages]);
 
-  // Keep the newest message in view, but never yank the user back down while
-  // they are reading earlier messages.
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const distanceFromBottom =
-      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
     atBottomRef.current = distanceFromBottom < 96;
   }, []);
 
@@ -125,15 +124,29 @@ export default function ChatScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text) return;
+  const handleSend = useCallback(
+    async (override?: string) => {
+      const text = (override ?? input).trim();
+      if (!text) return;
 
-    setInput('');
-    setAttachments([]);
-    atBottomRef.current = true;
-    await sendMessage({ text });
-  }, [input, sendMessage]);
+      atBottomRef.current = true;
+      setInput('');
+      // Attachments travel in the send body: they are read synchronously from
+      // state here, then cleared once the send has been handed off.
+      const pending = sendMessage({ text }, {
+        body: {
+          attachments: attachments.map((attachment) => ({
+            documentId: attachment.documentId,
+            mediaType: attachment.mediaType,
+            name: attachment.name,
+          })),
+        },
+      });
+      setAttachments([]);
+      await pending;
+    },
+    [attachments, input, sendMessage],
+  );
 
   const modelLabel = useMemo(() => {
     if (!modelId) return null;
@@ -145,8 +158,11 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
+      // The avoiding view begins at the window edge, so it has no header offset.
+      keyboardVerticalOffset={0}
     >
+      {/* Header: menu · model picker · new chat — minimal, no divider noise */}
       <AppHeader
         left={
           <Button
@@ -167,6 +183,8 @@ export default function ChatScreen() {
             isIconOnly
             onPress={() => {
               setMessages([]);
+              setAttachments([]);
+              setInput('');
               setThreadId(newChatId());
             }}
             accessibilityLabel="New chat"
@@ -180,30 +198,38 @@ export default function ChatScreen() {
         <View className="flex-1 items-center justify-center">
           <Spinner />
         </View>
+      ) : isEmpty ? (
+        /* Empty state: greeting and quick-start suggestions. */
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-center text-3xl font-semibold text-foreground">
+            How can I help you today?
+          </Text>
+          <Text className="mt-2 text-center text-base text-muted">
+            Pick a model above, or attach an image or PDF.
+          </Text>
+          <View className="mt-8 flex-row flex-wrap justify-center gap-2">
+            {SUGGESTIONS.map((suggestion) => (
+              <Pressable
+                key={suggestion}
+                onPress={() => setInput(suggestion)}
+                className="rounded-full border border-border bg-surface px-4 py-2 active:opacity-70"
+              >
+                <Text className="text-sm text-foreground">{suggestion}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       ) : (
         <ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 20 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           onScroll={onScroll}
           onContentSizeChange={scrollToBottom}
           scrollEventThrottle={32}
         >
-          {messages.length === 0 ? (
-            <View className="mt-16 items-center gap-1">
-              <Alert status="accent">
-                <Alert.Content>
-                  <Alert.Title>Ask anything</Alert.Title>
-                  <Alert.Description>
-                    Pick a model with the button above, or attach an image or a PDF.
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </View>
-          ) : null}
-
           {messages.map((message) => (
             <MessageBubble
               key={message.id}
@@ -212,6 +238,12 @@ export default function ChatScreen() {
               modelLabel={message.role === 'assistant' ? modelLabel : null}
             />
           ))}
+
+          {status === 'submitted' ? (
+            <View className="items-start">
+              <Spinner size="sm" />
+            </View>
+          ) : null}
 
           {error ? (
             <Alert status="danger">
@@ -229,7 +261,8 @@ export default function ChatScreen() {
         </ScrollView>
       )}
 
-      <View style={{ paddingBottom: composerBottomPadding }}>
+      {/* Composer: floating rounded card pinned to the bottom */}
+      <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: composerBottomPadding }}>
         <Composer
           value={input}
           onChangeText={setInput}

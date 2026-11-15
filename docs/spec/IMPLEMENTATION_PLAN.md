@@ -68,10 +68,11 @@ Notes: Groq's `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` were shut down 
 **Done when:** agent cites an old note and recalls a stated preference in a new thread.
 
 ## Phase 3: Agent graph (5–7 days)
-- [ ] LangGraph single agent (plan → act → observe), Postgres checkpointer, max-step guard
-- [ ] Graph nodes obtain models only via `getModel()`/`withFallback`; per-node model choice (e.g. fast Groq model for routing/summaries, stronger model for final answer)
-- [ ] Run via Inngest durable steps; `agent_runs`/`run_events`; timeline UI
-- [ ] Retry/self-correction node
+- [x] LangGraph single agent (plan → act → observe), Postgres checkpointer, max-step guard (`apps/api/lib/agent/` — state, graph, checkpointer, runs; `db/migrations/0005_agent_runs.sql` — **needs to be applied**; max 10 act steps, 5 tool rounds per act)
+- [x] Graph nodes obtain models only via `getModel()`/`withFallback`; per-node model choice (fast lite model for plan/observe/self-correct, default for act, strongest for finalize — all `privateOk`, Groq/OpenRouter remain cross-provider fallbacks)
+- [x] Run via Inngest durable steps; `agent_runs`/`run_events`; timeline UI (Inngest `agent-run` function with checkpointer resume + onFailure; `POST /api/agents/run`, `GET /api/runs`, `GET /api/runs/:id`; mobile Agents screen + run timeline with polling)
+- [x] Retry/self-correction node (`self_correct` on failed steps, `revise` from observe)
+- Pending: user to provide `DATABASE_URL` (Supabase pooler URI) for the checkpointer; end-to-end run verification.
 **Done when:** a 5-minute research task runs after closing the app and posts its result.
 
 ## Phase 4: Approvals (2–3 days)

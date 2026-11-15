@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Button, Chip, Spinner, TextArea } from 'heroui-native';
-import { View } from 'react-native';
+import { Button, Chip, Spinner } from 'heroui-native';
+import { Alert, TextInput, View } from 'react-native';
 
 import type { PendingAttachment } from '@/lib/attachments';
 
@@ -16,6 +16,11 @@ type Props = {
   disabled?: boolean;
 };
 
+/**
+ * Single-card composer. Text input on top, then a toolbar
+ * row with a single "+" attach button on the left and a round send button on
+ * the right.
+ */
 export function Composer({
   value,
   onChangeText,
@@ -39,8 +44,16 @@ export function Composer({
     }
   };
 
+  const openAttachMenu = () => {
+    Alert.alert('Add to chat', undefined, [
+      { text: 'Photo', onPress: () => void withBusy(onAttachImage) },
+      { text: 'Document (PDF)', onPress: () => void withBusy(onAttachDocument) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   return (
-    <View className="gap-2 border-t border-separator bg-background px-3 pt-2">
+    <View className="gap-2 rounded-3xl border border-border bg-surface px-3 pb-2 pt-3">
       {attachments.length > 0 ? (
         <View className="flex-row flex-wrap gap-1.5">
           {attachments.map((attachment) => (
@@ -51,47 +64,45 @@ export function Composer({
               onPress={() => onRemoveAttachment(attachment.documentId)}
               accessibilityLabel={`Remove ${attachment.name}`}
             >
-              <Chip.Label>{attachment.name}</Chip.Label>
+              <Chip.Label numberOfLines={1}>{`${attachment.name}  ✕`}</Chip.Label>
             </Chip>
           ))}
         </View>
       ) : null}
 
-      <View className="flex-row items-end gap-2">
+      <TextInput
+        className="max-h-40 min-h-[40px] px-1 text-base text-foreground"
+        placeholder="Message…"
+        placeholderTextColor="#9ca3af"
+        value={value}
+        onChangeText={onChangeText}
+        editable={!disabled}
+        multiline
+        textAlignVertical="top"
+      />
+
+      <View className="flex-row items-center justify-between">
         <Button
-          size="md"
-          variant="secondary"
+          size="sm"
+          variant="ghost"
           isIconOnly
-          onPress={() => void withBusy(onAttachImage)}
-          isDisabled={uploading}
-          accessibilityLabel="Attach an image"
+          className="rounded-full"
+          onPress={openAttachMenu}
+          isDisabled={uploading || disabled}
+          accessibilityLabel="Add attachment"
         >
-          {uploading ? <Spinner size="sm" /> : <Button.Label>🖼</Button.Label>}
+          {uploading ? <Spinner size="sm" /> : <Button.Label>＋</Button.Label>}
         </Button>
 
         <Button
-          size="md"
-          variant="secondary"
+          size="sm"
           isIconOnly
-          onPress={() => void withBusy(onAttachDocument)}
-          isDisabled={uploading}
-          accessibilityLabel="Attach a document"
+          className="rounded-full"
+          onPress={onSend}
+          isDisabled={!canSend}
+          accessibilityLabel="Send message"
         >
-          <Button.Label>📄</Button.Label>
-        </Button>
-
-        <TextArea
-          className="flex-1"
-          containerClassName="flex-1"
-          placeholder="Message…"
-          value={value}
-          onChangeText={onChangeText}
-          editable={!disabled}
-          rows={1}
-        />
-
-        <Button size="md" onPress={onSend} isDisabled={!canSend} accessibilityLabel="Send message">
-          {isStreaming ? <Spinner size="sm" color="default" /> : <Button.Label>Send</Button.Label>}
+          {isStreaming ? <Spinner size="sm" color="default" /> : <Button.Label>↑</Button.Label>}
         </Button>
       </View>
     </View>
