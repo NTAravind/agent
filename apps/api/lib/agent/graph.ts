@@ -131,13 +131,13 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
       prompt: `Break this goal into 2-5 concrete research steps. Each step should be doable with web search, page fetching and searching the user's notes.\n\nGoal: ${goal}`,
     });
 
-    const plan = object.steps;
-    await nodeEvent("plan", "node_end", { plan });
-    return { plan, stepIndex: 0 };
+    const planSteps = object.steps;
+    await nodeEvent("plan", "node_end", { plan: planSteps });
+    return { planSteps, stepIndex: 0 };
   };
 
   const actNode = async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
-    const step = state.plan[state.stepIndex] ?? state.goal;
+    const step = state.planSteps[state.stepIndex] ?? state.goal;
     const revision = state.revisionNote
       ? `\n\nYour previous attempt at this step failed: ${state.revisionNote}\nTry a different approach.`
       : "";
@@ -149,7 +149,7 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
         prompt: [
           `Overall goal: ${goal}`,
           `Plan:`,
-          ...state.plan.map((s, index) => `${index + 1}. ${s}`),
+          ...state.planSteps.map((s, index) => `${index + 1}. ${s}`),
           ``,
           `Execute ONLY this step: ${step}${revision}`,
           state.findings.length > 0
@@ -230,8 +230,8 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
       usage,
       prompt: [
         `Goal: ${goal}`,
-        `Plan: ${state.plan.join(" | ") || "(none)"}`,
-        `Current step: ${state.stepIndex + 1} of ${state.plan.length}`,
+        `Plan: ${state.planSteps.join(" | ") || "(none)"}`,
+        `Current step: ${state.stepIndex + 1} of ${state.planSteps.length}`,
         `Last step ${state.failed ? "FAILED" : "succeeded"}${state.revisionNote ? `: ${state.revisionNote}` : ""}`,
         `Findings so far:\n${state.findings.map((finding) => `- ${finding.step}: ${finding.summary}`).join("\n") || "(none)"}`,
         ``,
@@ -274,7 +274,7 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
       usage,
       prompt: [
         `Goal: ${goal}`,
-        `Step that failed: ${state.plan[state.stepIndex] ?? state.goal}`,
+        `Step that failed: ${state.planSteps[state.stepIndex] ?? state.goal}`,
         `Failure: ${state.revisionNote ?? "unknown"}`,
         ``,
         `Describe a different way to achieve this step (different query, different source, or skip to what can be answered).`,

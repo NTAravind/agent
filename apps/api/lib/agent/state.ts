@@ -19,7 +19,8 @@ export const AgentState = Annotation.Root({
   runId: Annotation<string>,
   goal: Annotation<string>,
 
-  plan: Annotation<string[]>({
+  /** The research steps produced by the plan node. */
+  planSteps: Annotation<string[]>({
     reducer: (_prev, next) => next ?? _prev,
     default: () => [],
   }),

@@ -46,19 +46,33 @@ export async function updateRun(
     finished_at: string | null;
   }>,
 ): Promise<void> {
-  await supabaseAdmin().from("agent_runs").update(patch).eq("id", runId);
+  try {
+    const { error } = await supabaseAdmin().from("agent_runs").update(patch).eq("id", runId);
+    if (error) console.warn("[agent/runs] could not update run:", error.message);
+  } catch (error) {
+    console.warn("[agent/runs] could not update run:", error);
+  }
 }
 
+/**
+ * Writes one row to run_events. Never throws: the timeline is observability,
+ * it must not break a run (e.g. before the migration is applied).
+ */
 export async function appendRunEvent(
   runId: string,
   type: RunEventType,
   payload?: Record<string, unknown>,
 ): Promise<void> {
-  await supabaseAdmin().from("run_events").insert({
-    run_id: runId,
-    type,
-    payload: payload ?? null,
-  });
+  try {
+    const { error } = await supabaseAdmin().from("run_events").insert({
+      run_id: runId,
+      type,
+      payload: payload ?? null,
+    });
+    if (error) console.warn("[agent/runs] could not append event:", error.message);
+  } catch (error) {
+    console.warn("[agent/runs] could not append event:", error);
+  }
 }
 
 export async function getRunWithEvents(runId: string): Promise<{
