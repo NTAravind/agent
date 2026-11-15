@@ -9,12 +9,16 @@
  */
 import { resumeAgentRun } from "@/lib/agent/graph";
 
-const [runId, userId] = process.argv.slice(2);
+async function main(): Promise<void> {
+  const [runId, userId] = process.argv.slice(2);
 
-if (!runId || !userId) {
-  console.error("Usage: npx tsx --env-file=.env.local scripts/dev-resume.ts <runId> <userId>");
-  process.exit(1);
+  if (!runId || !userId) {
+    console.error("Usage: npx tsx --env-file=.env.local scripts/dev-resume.ts <runId> <userId>");
+    process.exit(1);
+  }
+
+  const result = await resumeAgentRun({ runId, userId });
+  console.log(JSON.stringify(result, null, 1));
 }
 
-const result = await resumeAgentRun({ runId, userId });
-console.log(JSON.stringify(result, null, 1));
+void main();

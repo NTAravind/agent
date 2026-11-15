@@ -76,9 +76,18 @@ Notes: Groq's `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` were shut down 
 **Done when:** a 5-minute research task runs after closing the app and posts its result.
 
 ## Phase 4: Approvals (2–3 days)
-- [ ] `interrupt()` + `approvals` + approval card + `approval/decided` resume
-- [ ] `write_note` and other sensitive tools gated
+- [x] `interrupt()` + `approvals` + approval card + `approval/decided` resume
+- [x] `write_note` and other sensitive tools gated
 **Done when:** deny re-plans, approve proceeds, expiry works.
+**Status (2026-11-15):** code-complete, verified locally. Approve → `write_note`
+wrote `Phase4/approval-test.md` to the vault after resume; deny → agent
+re-planned and did not write; expiry → gate marks a TTL-passed approval
+`expired`, treated as denied, agent re-planned without writing. Fixes found
+during verification: LangGraph JS `invoke()` resolves on interrupt (detected
+via `__interrupt__` on the result, not a throw), and the default recursion
+limit (25) was too low for the checkpointed act loop (now 150; the graph's
+own step/round guards remain the stop conditions). Pending: deployed app
+phone test (approval card) — blocked today by Gemini free-tier daily quota.
 
 ## Phase 5: Canvas (4–6 days)
 - [ ] Shared `Canvas` zod schema, renderer for core components, fixtures first

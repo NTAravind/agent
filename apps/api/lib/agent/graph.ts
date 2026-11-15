@@ -26,6 +26,7 @@ import {
   type ToolName,
 } from "@/lib/agent/tools";
 import { createApproval, findLatestApprovalForRunTool } from "@/lib/approvals";
+import { supabaseAdmin } from "@/lib/supabase/server";
 import { generateTextWithFallback } from "@/lib/models/generate";
 import { withFallback } from "@/lib/models/fallback";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID } from "@/lib/models/registry";
@@ -45,9 +46,19 @@ import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID } from "@/lib/models/registry"
  * graph continues from the gate.
  */
 
-const FAST_MODELS = ["google:gemini-3.5-flash-lite", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
-const ACT_MODELS = [DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
-const FINAL_MODELS = ["google:gemini-3.8-flash", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+/**
+ * Dev-only hook: extra model ids prepended to every agent chain
+ * (AGENT_MODELS_PREPEND="groq:gpt-oss-120b"). Useful when a provider's free
+ * tier is rate-limited and the default chain needs bypassing locally.
+ */
+const PREPENDED_MODELS = (process.env.AGENT_MODELS_PREPEND ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+const FAST_MODELS = [...PREPENDED_MODELS, "google:gemini-3.5-flash-lite", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+const ACT_MODELS = [...PREPENDED_MODELS, DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+const FINAL_MODELS = [...PREPENDED_MODELS, "google:gemini-3.8-flash", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
 
 type UsageSink = {
   add(input?: number | null, output?: number | null): void;
@@ -279,6 +290,17 @@ function buildGraph(deps: GraphDeps) {
         void interrupt({ approvalId: row.id, tool: sensitive.name });
       }
 
+      // A pending row that passed its TTL counts as expired (denied) — a
+      // forgotten card can never act silently.
+      if (row.status === "pending" && row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+        await supabaseAdmin()
+          .from("approvals")
+          .update({ status: "expired", decided_at: new Date().toISOString() })
+          .eq("id", row.id);
+        row = { ...row, status: "expired" };
+        await appendRunEvent(runId, "error", { approvalId: row.id, message: "approval expired" });
+      }
+
       // After a resume (or for an already-decided row) branch on the DB.
       const status = row.status;
       if (status === "approved") {
@@ -486,6 +508,17 @@ async function finalizeRun(
   return { status: "failed" };
 }
 
+/**
+ * Detects an interrupted invoke. In LangGraph JS the interrupt does not
+ * reject the invoke — it resolves and the pending interrupts come back on
+ * the result (a throwing GraphInterrupt can still happen in edge cases, so
+ * runAgent also keeps the catch-based check).
+ */
+function hasInterrupts(finalState: unknown): boolean {
+  const interrupts = (finalState as { __interrupt__?: unknown })?.__interrupt__;
+  return Array.isArray(interrupts) ? interrupts.length > 0 : Boolean(interrupts);
+}
+
 function isGraphInterrupt(error: unknown): boolean {
   if (error instanceof GraphInterrupt) return true;
   const name = (error as { name?: string })?.name ?? "";
@@ -519,10 +552,22 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
   const compiled = buildGraph({ runId, userId, usage }).compile({ checkpointer });
 
   try {
-    const finalState = await compiled.invoke(
+    const finalState = (await compiled.invoke(
       { userId, runId, goal },
-      { configurable: { thread_id: `agent-run-${runId}` } },
-    );
+      // Recursion limit: each act round is 3 super-steps (act_llm + gate +
+      // exec); the graph's own guards (MAX_AGENT_STEPS, MAX_TOOL_ROUNDS_
+      // PER_STEP) are the intended stop conditions, not this cap.
+      {
+        configurable: { thread_id: `agent-run-${runId}` },
+        recursionLimit: 150,
+      },
+    )) as AgentStateType;
+
+    if (hasInterrupts(finalState)) {
+      // Parked on an approval; the approval/decided event resumes the graph.
+      await updateRun(runId, { status: "awaiting_approval" });
+      return { status: "awaiting_approval" };
+    }
 
     return await finalizeRun(runId, finalState, usage.total());
   } catch (error) {
@@ -561,10 +606,16 @@ export async function resumeAgentRun(input: {
   const compiled = buildGraph({ runId, userId, usage }).compile({ checkpointer });
 
   try {
-    const finalState = await compiled.invoke(
+    const finalState = (await compiled.invoke(
       new Command({ resume: true }) as never,
-      { configurable: { thread_id: `agent-run-${runId}` } },
-    );
+      { configurable: { thread_id: `agent-run-${runId}` }, recursionLimit: 150 },
+    )) as AgentStateType;
+
+    if (hasInterrupts(finalState)) {
+      // A second sensitive call is now pending its own approval.
+      await updateRun(runId, { status: "awaiting_approval" });
+      return { status: "awaiting_approval" };
+    }
 
     return await finalizeRun(runId, finalState, usage.total());
   } catch (error) {
