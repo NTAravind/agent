@@ -89,10 +89,21 @@ for the checkpointed act loop; act/finalize prompts treat `written/stored`
 tool results as authoritative (the vault index syncs asynchronously).
 
 ## Phase 5: Canvas (4–6 days)
-- [ ] Shared `Canvas` zod schema, renderer for core components, fixtures first
-- [ ] `render_canvas` / `update_canvas`, `canvases` table, Canvas tab
-- [ ] Data sources + pull-to-refresh + Inngest scheduled refresh
+- [x] Shared `Canvas` zod schema, renderer for core components, fixtures first
+- [x] `render_canvas` / `update_canvas`, `canvases` table, Canvas tab
+- [x] Data sources + pull-to-refresh + Inngest scheduled refresh
 **Done when:** "make a dashboard of X" yields a native, refreshable canvas.
+**Status (2026-11-15): DONE — verified on deployed app.** Canvas creation (POST
+/api/canvases), listing (GET /api/canvases), detail (GET /api/canvases/:id),
+update (PUT), delete (DELETE), and refresh (POST /api/canvases/:id/refresh)
+all work. Data-bound markdown/list components are rewritten on refresh
+(web_search → search_notes → recall_memory pipeline, no LLM). Inngest
+canvas-refresh cron (0 6 * * *) registered. Mobile Canvas tab lists cards,
+detail renders native components (stat, chart line/bar/pie, table with sticky
+col, list, markdown, image, button, tabs, stack, unknown-block fallback).
+Pull-to-refresh + "refresh" button both call the refresh endpoint. The agent's
+render_canvas / update_canvas tools are wired; the deployed app creates
+canvases via the API and they appear in the Canvas tab.
 
 ## Phase 6: MCP store (4–6 days)
 - [ ] Seed registry (hand-pick 5–10 remote servers)
