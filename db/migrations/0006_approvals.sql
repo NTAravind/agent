@@ -7,7 +7,8 @@ create table if not exists approvals (
   user_id uuid not null,
   tool_name text, args jsonb, reason text,
   status text default 'pending' check (status in ('pending','approved','denied','expired')),
-  decided_at timestamptz, expires_at timestamptz
+  decided_at timestamptz, expires_at timestamptz,
+  created_at timestamptz default now()
 );
 
 create index if not exists approvals_user_status
