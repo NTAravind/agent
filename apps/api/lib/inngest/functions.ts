@@ -3,10 +3,11 @@ import { step } from "inngest";
 import { runAgent, resumeAgentRun } from "@/lib/agent/graph";
 import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
-import { agentRunRequested, approvalDecided, chatCompleted, vaultChanged } from "@/lib/inngest/events";
+import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
+import { refreshCanvas } from "@/lib/canvases";
 
 /**
  * Optional belt-and-braces keepalive. The primary Supabase keepalive is the
@@ -109,10 +110,49 @@ export const approvalResumeFunction = inngest.createFunction(
   },
 );
 
+/**
+ * Re-runs the data sources of every data-bound canvas (no LLM) so the
+ * dashboards stay current. Daily cron per API_SPEC.md section 7.
+ */
+export const canvasRefreshFunction = inngest.createFunction(
+  {
+    id: "canvas-refresh",
+    retries: 2,
+    triggers: { cron: "10 6 * * *" },
+  },
+  async () => {
+    const { data, error } = await supabaseAdmin()
+      .from("canvases")
+      .select("id, user_id, title, spec, data_sources, version, created_by_run, created_at, updated_at")
+      .not("data_sources", "eq", "[]")
+      .limit(200);
+
+    if (error || !data) {
+      return { refreshed: 0, failed: 0 };
+    }
+
+    let refreshed = 0;
+    let failed = 0;
+    for (const canvas of data) {
+      try {
+        await step.run(`refresh-canvas-${canvas.id}`, async () =>
+          refreshCanvas(canvas.user_id, canvas as Parameters<typeof refreshCanvas>[1]),
+        );
+        refreshed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    return { refreshed, failed };
+  },
+);
+
 export const functions = [
   keepalive,
   chatCompletedFunction,
   vaultChangedFunction,
   agentRunFunction,
   approvalResumeFunction,
+  canvasRefreshFunction,
 ];

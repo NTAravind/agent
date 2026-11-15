@@ -10,6 +10,8 @@ import {
   upsertMemories,
 } from "@/lib/knowledge/search";
 import { putVaultFile } from "@/lib/vault/github";
+import { createCanvas, updateCanvasSpec } from "@/lib/canvases";
+import { validateCanvasSpec } from "@agent/shared";
 
 /**
  * The agent's tool layer, split in two halves:
@@ -75,6 +77,22 @@ export const declarations = {
     inputSchema: z.object({
       path: z.string().min(3).describe("Vault path, e.g. 'Projects/Idea.md'."),
       content: z.string().min(3).describe("Full markdown content to write."),
+    }),
+  },
+  render_canvas: {
+    description:
+      "Render a native dashboard/report as a canvas and save it for the user. The spec follows the Canvas component catalog (stat, chart, table, list, markdown, image, button, tabs, stack). Nesting ≤ 4, ≤ 100 KB. Returns the canvas id.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(200).describe("Card title shown in the Canvas tab."),
+      spec: z.record(z.string(), z.unknown()).describe("Canvas spec: { title?, root, dataSources? }."),
+    }),
+  },
+  update_canvas: {
+    description:
+      "Replace the whole spec of an existing canvas (id from render_canvas). Validated like render_canvas.",
+    inputSchema: z.object({
+      id: z.string().min(3).describe("Canvas id from render_canvas."),
+      spec: z.record(z.string(), z.unknown()),
     }),
   },
 } as const;
@@ -171,6 +189,28 @@ export async function executeToolCall(
         .parse(args);
       const written = await putVaultFile(parsed.path, parsed.content);
       return { written: true, path: parsed.path, url: written.url };
+    }
+
+    case "render_canvas": {
+      const parsed = z.object({ title: z.string().min(1).max(200), spec: z.unknown() }).parse(args);
+      const validation = validateCanvasSpec(parsed.spec);
+      if (!validation.ok) return { failed: true, error: validation.error };
+      const canvas = await createCanvas({
+        userId: context.userId,
+        title: parsed.title,
+        spec: validation.spec,
+        createdByRun: context.runId,
+      });
+      return { canvasId: canvas.id, title: canvas.title, version: canvas.version };
+    }
+
+    case "update_canvas": {
+      const parsed = z.object({ id: z.string().min(3), spec: z.unknown() }).parse(args);
+      const validation = validateCanvasSpec(parsed.spec);
+      if (!validation.ok) return { failed: true, error: validation.error };
+      const canvas = await updateCanvasSpec(context.userId, parsed.id, validation.spec);
+      if (!canvas) return { failed: true, error: "No such canvas (wrong id)." };
+      return { canvasId: canvas.id, version: canvas.version };
     }
 
     default:

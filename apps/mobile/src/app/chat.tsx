@@ -44,14 +44,14 @@ const SUGGESTIONS = [
 
 export default function ChatScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ threadId?: string }>();
+  const params = useLocalSearchParams<{ threadId?: string; prompt?: string }>();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
 
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string>(params.threadId ?? newChatId());
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(params.prompt ?? '');
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(Boolean(params.threadId));
   const scrollRef = useRef<ScrollViewInstance>(null);

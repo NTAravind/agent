@@ -20,6 +20,7 @@ create table messages (
   thread_id uuid not null references threads(id) on delete cascade,
   user_id uuid not null,
   role text not null check (role in ('user','assistant','system','tool')),
+  agent_id uuid,                   -- agent that authored the message, when applicable
   model text,                      -- registry id that produced it
   parts jsonb not null,            -- AI SDK UI message parts
   created_at timestamptz default now()
@@ -83,6 +84,7 @@ create table agents (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   name text not null,
+  avatar jsonb not null default '{"type":"emoji","value":"🤖","color":"#7F9DFF"}'::jsonb, -- type: emoji|icon|image; image value is a Storage path
   role text,
   system_prompt text,
   model text default 'google:gemini-flash',   -- registry id "provider:modelId"

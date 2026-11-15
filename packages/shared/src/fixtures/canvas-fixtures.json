@@ -1,0 +1,103 @@
+[
+  {
+    "name": "dashboard",
+    "spec": {
+      "title": "Health dashboard",
+      "root": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          {
+            "type": "stack",
+            "direction": "row",
+            "children": [
+              { "type": "stat", "label": "Steps today", "value": "8,412", "delta": "+12%" },
+              { "type": "stat", "label": "Sleep", "value": "7h 20m", "delta": "-5%" }
+            ]
+          },
+          {
+            "type": "chart",
+            "kind": "bar",
+            "data": [
+              { "x": "Mon", "y": 6100 },
+              { "x": "Tue", "y": 8900 },
+              { "x": "Wed", "y": 7400 },
+              { "x": "Thu", "y": 10200 },
+              { "x": "Fri", "y": 8412 }
+            ]
+          },
+          { "type": "markdown", "text": "Steps from the Health app. Sleep quality dipped mid-week." },
+          { "type": "button", "label": "Refresh data", "action": "refresh" }
+        ]
+      }
+    }
+  },
+  {
+    "name": "comparison-table",
+    "spec": {
+      "title": "Search providers compared",
+      "root": {
+        "type": "table",
+        "columns": ["Provider", "Free credits", "Card needed"],
+        "rows": [
+          ["Tavily", "1,000/mo", "no"],
+          ["Brave", "2,000/mo", "yes"],
+          ["Exa", "1,000/mo", "no"]
+        ]
+      }
+    }
+  },
+  {
+    "name": "reading-list",
+    "spec": {
+      "title": "Reading list",
+      "root": {
+        "type": "list",
+        "items": [
+          { "title": "Octopus - Wikipedia", "subtitle": "Three hearts, blue blood", "link": "https://en.wikipedia.org/wiki/Octopus" },
+          { "title": "Everest wildlife", "subtitle": "Jumping spiders at 6,700 m" }
+        ]
+      }
+    }
+  },
+  {
+    "name": "tabs-with-line-chart",
+    "spec": {
+      "title": "Weekly overview",
+      "root": {
+        "type": "tabs",
+        "tabs": [
+          {
+            "label": "Trend",
+            "child": {
+              "type": "chart",
+              "kind": "line",
+              "data": [
+                { "x": "W1", "y": 3.1 },
+                { "x": "W2", "y": 2.7 },
+                { "x": "W3", "y": 4.2 },
+                { "x": "W4", "y": 3.9 }
+              ]
+            }
+          },
+          { "label": "Notes", "child": { "type": "markdown", "text": "Focus time recovered in week 3." } }
+        ]
+      }
+    }
+  },
+  {
+    "name": "data-bound",
+    "spec": {
+      "title": "Agent research brief",
+      "dataSources": [{ "id": "latest-news", "kind": "web_search", "query": "latest news about personal AI agents" }],
+      "root": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          { "type": "markdown", "text": "Loading the latest news…", "source": "latest-news" },
+          { "type": "button", "label": "Refresh", "action": "refresh" }
+        ]
+      }
+    }
+  }
+]

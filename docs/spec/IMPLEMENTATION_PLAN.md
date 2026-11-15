@@ -79,17 +79,14 @@ Notes: Groq's `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` were shut down 
 - [x] `interrupt()` + `approvals` + approval card + `approval/decided` resume
 - [x] `write_note` and other sensitive tools gated
 **Done when:** deny re-plans, approve proceeds, expiry works.
-**Status (2026-11-15):** code-complete, verified locally. Approve → `write_note`
-wrote `Phase4/approval-test.md` to the vault after resume; deny → agent
-re-planned and did not write; expiry → gate marks a TTL-passed approval
-`expired`, treated as denied, agent re-planned without writing. Fixes found
+**Status (2026-11-15): DONE — verified locally and on the deployed app,
+including the phone approval-card test.** Approve → Inngest `approval-resume`
+resumed the graph and the write landed in the vault; deny → agent re-planned
+without writing; expiry → TTL-passed approvals treated as denied. Fixes found
 during verification: LangGraph JS `invoke()` resolves on interrupt (detected
-via `__interrupt__` on the result, not a throw), and the default recursion
-limit (25) was too low for the checkpointed act loop (now 150; the graph's
-own step/round guards remain the stop conditions). **Deployed verification:
-approve → Inngest approval-resume resumed the graph and the write landed in
-the vault on the production path.** Deny + expiry verified locally; phone
-approval-card test pending (Gemini free-tier daily quota today).
+via `__interrupt__` on the result, not a throw); recursion limit raised to 150
+for the checkpointed act loop; act/finalize prompts treat `written/stored`
+tool results as authoritative (the vault index syncs asynchronously).
 
 ## Phase 5: Canvas (4–6 days)
 - [ ] Shared `Canvas` zod schema, renderer for core components, fixtures first
@@ -105,6 +102,9 @@ approval-card test pending (Gemini free-tier daily quota today).
 
 ## Phase 7: Multi-agent (5–7 days)
 - [ ] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
+- [ ] Agent avatar column and editor picker (Emoji, Icon and Upload) with color swatches
+- [ ] Optional image avatar upload through a signed Storage URL
+- [ ] Show agent avatars in chat, thread list, run timeline, Agents list and approvals
 - [ ] Cross-check pattern: verifier runs on a *different provider* than the worker
 - [ ] Parallel research fan-out, verifier node, nested timeline
 **Done when:** supervisor delegates to 2+ agents and merges cross-checked results.

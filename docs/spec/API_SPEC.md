@@ -6,7 +6,7 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | Method | Route | Description |
 |---|---|---|
 | POST | `/api/chat` | Body `{ threadId?, messages, agentId?, model?, mode: "chat"\|"agent" }` (`model` = registry id like `groq:...`; falls back to agent/default). Streams AI SDK UI message stream. `mode:"agent"` creates a run and streams its progress parts. |
-| GET | `/api/threads` | List threads (cursor paging) |
+| GET | `/api/threads` | List threads (cursor paging), including the selected agent's `avatar` object when set |
 | GET | `/api/threads/:id` | Thread + messages |
 | PATCH/DELETE | `/api/threads/:id` | Rename / delete |
 | GET | `/api/models` | Registry with capabilities, `available` (key configured), today's usage per provider |
@@ -30,11 +30,12 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 ## 4. Agents, runs, approvals
 | Method | Route | Description |
 |---|---|---|
-| GET/POST | `/api/agents` | List / create |
+| GET/POST | `/api/agents` | List / create; list responses include each agent's `avatar` object |
 | PATCH/DELETE | `/api/agents/:id` | Update / delete |
+| POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
 | POST | `/api/runs` | `{ agentId, goal, threadId? }` → `{ runId }` (queues Inngest) |
-| GET | `/api/runs/:id` | Status + result |
-| GET | `/api/runs/:id/events?after=` | Poll or SSE of `run_events` |
+| GET | `/api/runs/:id` | Status + result; includes the run agent's `avatar` object |
+| GET | `/api/runs/:id/events?after=` | Poll or SSE of `run_events`; event payloads include the relevant agent's `avatar` object |
 | POST | `/api/runs/:id/cancel` | Cancel |
 | GET | `/api/approvals?status=pending` | Pending approvals |
 | POST | `/api/approvals/:id` | `{ decision: "approve"\|"deny", edits? }` → emits `approval/decided` |

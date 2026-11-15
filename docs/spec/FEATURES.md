@@ -67,6 +67,7 @@ All **$ / P3**. X API is paid. Hide behind a tool/MCP interface so it can be add
 | Feature | Pri | Notes |
 |---|---|---|
 | Custom agents with roles | P1 | `agents` table |
+| Agent avatars and identity | P1 | Emoji, icon or uploaded image; identify the agent in chat, threads, runs and approvals |
 | Supervisor + delegation | P2 | LangGraph supervisor |
 | Parallel research | P2 | Inngest fan-out / parallel branches |
 | Cross-check, combine results | P2 | Verifier/merger nodes |
