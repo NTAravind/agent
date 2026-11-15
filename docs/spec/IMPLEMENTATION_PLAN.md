@@ -86,8 +86,10 @@ re-planned and did not write; expiry → gate marks a TTL-passed approval
 during verification: LangGraph JS `invoke()` resolves on interrupt (detected
 via `__interrupt__` on the result, not a throw), and the default recursion
 limit (25) was too low for the checkpointed act loop (now 150; the graph's
-own step/round guards remain the stop conditions). Pending: deployed app
-phone test (approval card) — blocked today by Gemini free-tier daily quota.
+own step/round guards remain the stop conditions). **Deployed verification:
+approve → Inngest approval-resume resumed the graph and the write landed in
+the vault on the production path.** Deny + expiry verified locally; phone
+approval-card test pending (Gemini free-tier daily quota today).
 
 ## Phase 5: Canvas (4–6 days)
 - [ ] Shared `Canvas` zod schema, renderer for core components, fixtures first
