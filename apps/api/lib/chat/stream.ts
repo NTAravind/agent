@@ -74,6 +74,7 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
         model: modelId,
         runId: options.runId ?? null,
         status: "skipped",
+        detail: error instanceof Error ? error.message : "capability_mismatch",
       });
       continue;
     }
@@ -94,6 +95,7 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
         model: modelId,
         runId: options.runId ?? null,
         status: "skipped",
+        detail: error instanceof Error ? error.message : "provider_not_configured",
       });
       continue;
     }
@@ -128,38 +130,42 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
       },
     });
 
-    // Wait for the first part: this is where a request-time failure (429, 5xx,
-    // auth) shows up, before any content exists.
+    // Wait for a *content* part: the UI protocol emits `start` /
+    // `message-metadata` before the provider request resolves, so a
+    // request-time failure (429, 5xx, auth) shows up as an error part right
+    // after those. Buffer the pre-content parts so they can be re-emitted.
     const reader = result.stream.getReader();
-    let first: ReadableStreamReadResult<TextStreamPart<ToolSet>>;
-    try {
-      first = await reader.read();
-    } catch (error) {
+    const buffered: TextStreamPart<ToolSet>[] = [];
+    let firstContent: TextStreamPart<ToolSet> | undefined;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        failureReason = failureReason ?? "provider returned an empty stream";
+        break;
+      }
+      if (!value) continue;
+      if (value.type === "error") {
+        failureReason = describeStreamError(value.error);
+        break;
+      }
+      buffered.push(value);
+      if (value.type === "start" || value.type === "start-step") {
+        continue;
+      }
+      firstContent = value;
+      break;
+    }
+
+    if (failureReason || !firstContent) {
+      const reason = failureReason ?? "provider stream ended before any content";
+      console.error(`[chat] ${modelId} failed before first token: ${reason}`);
       attempts.push({
         modelId,
         provider: entry.provider,
         outcome: "error",
-        reason: error instanceof Error ? error.message : String(error),
+        reason,
       });
-      await recordUsage({
-        userId: options.userId,
-        provider: entry.provider,
-        model: modelId,
-        runId: options.runId ?? null,
-        status: "error",
-      });
-      continue;
-    }
-
-    if (first.done || first.value.type === "error") {
-      const reason =
-        first.done
-          ? "provider returned an empty stream"
-          : first.value.type === "error"
-            ? describeStreamError(first.value.error)
-            : "provider error";
-
-      attempts.push({ modelId, provider: entry.provider, outcome: "error", reason });
       await reader.cancel().catch(() => {});
       await recordUsage({
         userId: options.userId,
@@ -167,16 +173,18 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
         model: modelId,
         runId: options.runId ?? null,
         status: failureStatus,
+        detail: reason,
       });
       continue;
     }
 
     attempts.push({ modelId, provider: entry.provider, outcome: "ok" });
 
-    // Re-emit the first part, then the rest of the stream.
+    // Re-emit the buffered pre-content parts, then the rest of the stream.
     const combined = new ReadableStream<TextStreamPart<ToolSet>>({
       start(controller) {
-        controller.enqueue(first.value);
+        for (const part of buffered) controller.enqueue(part);
+        controller.enqueue(firstContent);
       },
       async pull(controller) {
         const { done, value } = await reader.read();
@@ -184,7 +192,24 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
           controller.close();
           return;
         }
-        if (value) controller.enqueue(value);
+        if (!value) return;
+        if (value.type === "error") {
+          // Mid-stream failure: surface the real reason instead of the SDK's
+          // generic "An error occurred." (throws out of the merged stream,
+          // which the UI stream's onError turns into the error part).
+          const reason = describeStreamError(value.error);
+          console.error(`[chat] ${modelId} failed mid-stream: ${reason}`);
+          await recordUsage({
+            userId: options.userId,
+            provider: entry.provider,
+            model: modelId,
+            runId: options.runId ?? null,
+            status: failureStatus,
+            detail: reason,
+          });
+          throw new Error(reason);
+        }
+        controller.enqueue(value);
       },
       cancel(reason) {
         void reader.cancel(reason).catch(() => {});

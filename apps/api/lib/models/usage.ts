@@ -14,6 +14,8 @@ export type UsageRecord = {
   inputTokens?: number | null;
   outputTokens?: number | null;
   latencyMs?: number | null;
+  /** Why a failed/skipped attempt failed (debug trail, provider_usage.detail). */
+  detail?: string | null;
 };
 
 /**
@@ -32,6 +34,7 @@ export async function recordUsage(record: UsageRecord): Promise<void> {
       input_tokens: record.inputTokens ?? null,
       output_tokens: record.outputTokens ?? null,
       latency_ms: record.latencyMs ?? null,
+      detail: record.detail ?? null,
     });
     if (error) {
       console.warn("[models/usage] could not record usage:", error.message);

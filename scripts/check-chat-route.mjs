@@ -97,7 +97,11 @@ while (true) {
       try {
         const chunk = JSON.parse(data);
         const label =
-          chunk.type === "text-delta" ? `text-delta: ${chunk.delta ?? ""}` : chunk.type;
+          chunk.type === "text-delta"
+            ? `text-delta: ${chunk.delta ?? ""}`
+            : chunk.type === "error"
+              ? `error: ${chunk.errorText ?? ""}`
+              : chunk.type;
         console.log(`  ${label}`);
       } catch {
         console.log(`  ${data.slice(0, 80)}`);
