@@ -16,6 +16,11 @@ import {
   titleFromParts,
 } from "@/lib/chat/persist";
 import { createChatStream } from "@/lib/chat/stream";
+import { buildSystemPrompt } from "@/lib/chat/system-prompt";
+import { inngest } from "@/lib/inngest/client";
+import { chatCompleted } from "@/lib/inngest/events";
+import { buildKnowledgeTools } from "@/lib/tools/knowledge";
+import { buildWebTools } from "@/lib/tools/web-tools";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, findRegistryEntry } from "@/lib/models";
 
 export const maxDuration = 300;
@@ -102,11 +107,34 @@ export async function POST(request: Request) {
 
     const modelIds = [requestedModel, ...DEFAULT_FALLBACK_ORDER.filter((id) => id !== requestedModel)];
 
+    // Tools + system prompt. Notes/memories are only sent to models that are
+    // allowed to see private context.
+    const entry = findRegistryEntry(requestedModel);
+    const canSeePrivate = entry?.privateOk ?? false;
+
+    const tools = {
+      ...buildKnowledgeTools({ userId: user.id, threadId }),
+      ...buildWebTools(),
+    };
+
+    const system = await buildSystemPrompt(
+      user.id,
+      canSeePrivate
+        ? [...body.messages].reverse().find((message) => message.role === "user")?.parts
+            .filter((part) => part.type === "text")
+            .map((part) => String((part as { text?: unknown }).text ?? ""))
+            .join(" ")
+        : undefined,
+    );
+
     const chatStream = await createChatStream({
       messages: messagesWithFiles,
       modelIds,
       userId: user.id,
       required,
+      system,
+      tools,
+      maxSteps: 6,
     });
 
     const uiStream = createUIMessageStream({
@@ -129,6 +157,7 @@ export async function POST(request: Request) {
       onFinish: async ({ messages }) => {
         const assistant = [...messages].reverse().find((message) => message.role === "assistant");
         if (!assistant) return;
+
         await insertMessage(
           user.id,
           threadId!,
@@ -136,6 +165,19 @@ export async function POST(request: Request) {
           assistant.parts as unknown as Record<string, unknown>[],
           chatStream.modelId,
         );
+
+        // Memory extraction runs in the background (Inngest), never in the request.
+        try {
+          await inngest.send(
+            chatCompleted.create({
+              threadId: threadId!,
+              userId: user.id,
+              messageId: assistant.id,
+            }),
+          );
+        } catch (error) {
+          console.warn("[chat] could not queue memory extraction:", error);
+        }
       },
     });
 

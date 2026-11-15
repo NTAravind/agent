@@ -24,6 +24,9 @@ export default function RootLayout() {
               <Stack.Screen name="index" />
               <Stack.Screen name="chat" options={{ headerShown: false }} />
               <Stack.Screen name="threads" options={{ headerShown: false }} />
+              <Stack.Screen name="notes" options={{ headerShown: false }} />
+              <Stack.Screen name="note" options={{ headerShown: false }} />
+              <Stack.Screen name="memories" options={{ headerShown: false }} />
               <Stack.Screen name="sign-in" options={{ headerShown: true, title: 'Sign in' }} />
               <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
             </Stack>

@@ -1,12 +1,20 @@
 import { Image } from 'expo-image';
-import { Card, Typography } from 'heroui-native';
-import { View } from 'react-native';
+import { Card, Chip, Typography } from 'heroui-native';
+import { Linking, View } from 'react-native';
 
 type Props = {
   role: 'user' | 'assistant' | 'system' | 'tool';
   parts: { type: string; [key: string]: unknown }[];
   /** Model that produced this reply (assistant only). */
   modelLabel?: string | null;
+};
+
+type ToolPart = {
+  type: string;
+  state?: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
 };
 
 export function MessageBubble({ role, parts, modelLabel }: Props) {
@@ -58,6 +66,9 @@ export function MessageBubble({ role, parts, modelLabel }: Props) {
                 </Typography>
               );
             }
+            if (part.type.startsWith('tool-')) {
+              return <ToolPartView key={index} part={part as ToolPart} />;
+            }
             if (part.type === 'error') {
               return (
                 <Typography key={index} type="body-sm" className="text-danger">
@@ -77,4 +88,74 @@ export function MessageBubble({ role, parts, modelLabel }: Props) {
       </Card>
     </View>
   );
+}
+
+/** Renders a tool call as a compact chip (with citations for web search). */
+function ToolPartView({ part }: { part: ToolPart }) {
+  const name = part.type.replace(/^tool-/, '');
+  const state = part.state ?? 'input-available';
+  const label = TOOL_LABELS[name] ?? name;
+
+  const results = extractSearchResults(part.output);
+
+  return (
+    <View className="gap-1.5">
+      <View className="flex-row items-center gap-1.5">
+        <Chip variant="soft" size="sm" color={state === 'output-error' ? 'danger' : 'default'}>
+          <Chip.Label>{`${label} · ${TOOL_STATES[state] ?? state}`}</Chip.Label>
+        </Chip>
+      </View>
+
+      {results.length > 0 ? (
+        <View className="flex-row flex-wrap gap-1">
+          {results.map((result, index) => (
+            <Chip
+              key={`${result.url}-${index}`}
+              variant="secondary"
+              size="sm"
+              onPress={() => void Linking.openURL(result.url)}
+              accessibilityLabel={`Open ${result.title}`}
+            >
+              <Chip.Label>{`[${index + 1}] ${result.title}`}</Chip.Label>
+            </Chip>
+          ))}
+        </View>
+      ) : null}
+
+      {part.errorText ? (
+        <Typography type="body-xs" className="text-danger">
+          {part.errorText}
+        </Typography>
+      ) : null}
+    </View>
+  );
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  web_search: 'Web search',
+  fetch_page: 'Read page',
+  search_notes: 'Search notes',
+  read_note: 'Read note',
+  recall_memory: 'Recall memory',
+  save_memory: 'Save memory',
+  list_memories: 'List memories',
+};
+
+const TOOL_STATES: Record<string, string> = {
+  'input-streaming': 'running',
+  'input-available': 'running',
+  'output-available': 'done',
+  'output-error': 'failed',
+};
+
+function extractSearchResults(output: unknown): { title: string; url: string }[] {
+  if (!output || typeof output !== 'object') return [];
+  const results = (output as { results?: unknown }).results;
+  if (!Array.isArray(results)) return [];
+
+  return results
+    .filter((item): item is { title: string; url: string } =>
+      Boolean(item && typeof item === 'object' && typeof (item as { url?: string }).url === 'string'),
+    )
+    .map((item) => ({ title: item.title ?? item.url, url: item.url }));
 }

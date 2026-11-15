@@ -60,10 +60,11 @@ Notes: Groq's `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` were shut down 
 **Done when:** multi-turn chat with images streams reliably on a real phone.
 
 ## Phase 2: Search + notes + memory (5–7 days)
-- [ ] Web search + `fetch_page` tools with citations
-- [ ] GitHub vault sync → chunks → embeddings → hybrid search RPC
-- [ ] `search_notes`, `read_note`; notes screen with backlinks
-- [ ] Inngest `chat/completed` memory extraction; memory viewer
+- [x] Web search + `fetch_page` tools with citations (Tavily free tier — verified 2026-11: 1,000 credits/mo, no card; Brave requires a card)
+- [x] GitHub vault sync → chunks → embeddings → hybrid search RPC (`db/migrations/0003_notes.sql` — **needs to be applied in the Supabase SQL editor**)
+- [x] `search_notes`, `read_note`; notes screen with backlinks (plus `save_memory` / `recall_memory` / `list_memories` tools)
+- [x] Inngest `chat/completed` memory extraction; memory viewer (`/memories` screen, GitHub webhook `/api/webhooks/github`, manual `POST /api/notes/sync`)
+- Status: code complete and verified locally (tool calling, streaming, persistence). Blocked on user actions: apply migration 0003, set `TAVILY_API_KEY`, `GITHUB_VAULT_TOKEN`/`GITHUB_VAULT_REPO`, redeploy.
 **Done when:** agent cites an old note and recalls a stated preference in a new thread.
 
 ## Phase 3: Agent graph (5–7 days)

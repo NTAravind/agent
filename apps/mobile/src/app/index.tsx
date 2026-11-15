@@ -108,6 +108,23 @@ export default function HomeScreen() {
 
         <Card className="rounded-2xl">
           <Card.Body className="gap-3">
+            <Card.Title>Knowledge</Card.Title>
+            <Card.Description>
+              Browse the notes synced from your vault, and everything the agent remembers about you.
+            </Card.Description>
+            <View className="gap-2">
+              <Button size="md" variant="secondary" onPress={() => router.push('/notes')}>
+                <Button.Label>Notes</Button.Label>
+              </Button>
+              <Button size="md" variant="secondary" onPress={() => router.push('/memories')}>
+                <Button.Label>Memories</Button.Label>
+              </Button>
+            </View>
+          </Card.Body>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <Card.Body className="gap-3">
             <Card.Title>API status</Card.Title>
             <Card.Description numberOfLines={1}>
               {API_BASE_URL ? API_BASE_URL : 'EXPO_PUBLIC_API_BASE_URL is not set.'}

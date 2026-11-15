@@ -1,4 +1,4 @@
-import { streamText, type ModelMessage, type TextStreamPart, type ToolSet } from "ai";
+import { isStepCount, streamText, type ModelMessage, type TextStreamPart, type ToolSet } from "ai";
 import type { Provider, RequiredCapabilities } from "@agent/shared";
 
 import { assertCapabilities } from "@/lib/models/capability";
@@ -22,9 +22,14 @@ export type ChatStreamOptions = {
   runId?: string | null;
   /** Capabilities the request needs (e.g. vision when an image is attached). */
   required?: RequiredCapabilities;
-  system?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  /** Tool set exposed to the model (see lib/tools). */
+  tools?: ToolSet;
+  /** System prompt. */
+  system?: string;
+  /** How many tool round-trips are allowed in one turn. */
+  maxSteps?: number;
 };
 
 export type ChatStream = {
@@ -102,6 +107,8 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
       ...(options.system ? { system: options.system } : {}),
       ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
+      ...(options.tools ? { tools: options.tools } : {}),
+      ...(options.maxSteps ? { stopWhen: isStepCount(options.maxSteps) } : {}),
       maxRetries: 1,
       onError: ({ error }) => {
         failureReason = error instanceof Error ? error.message : String(error);

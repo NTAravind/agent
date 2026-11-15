@@ -60,7 +60,13 @@ const response = await fetch(`${base}/api/chat`, {
   body: JSON.stringify({
     threadId,
     model: process.env.CHAT_MODEL ?? "google:gemini-3.6-flash",
-    messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "Reply with exactly: ok" }] }],
+    messages: [
+      {
+        id: "m1",
+        role: "user",
+        parts: [{ type: "text", text: process.env.CHAT_PROMPT ?? "Reply with exactly: ok" }],
+      },
+    ],
   }),
 });
 
@@ -90,7 +96,8 @@ while (true) {
       if (!data || data === "[DONE]") continue;
       try {
         const chunk = JSON.parse(data);
-        const label = chunk.type === "text-delta" ? chunk.text : chunk.type;
+        const label =
+          chunk.type === "text-delta" ? `text-delta: ${chunk.delta ?? ""}` : chunk.type;
         console.log(`  ${label}`);
       } catch {
         console.log(`  ${data.slice(0, 80)}`);
