@@ -19,6 +19,7 @@
 - **Agent runtime:** LangGraph graph per agent; Postgres checkpointer; tools = built-in + MCP.
 - **Inngest functions:** run graphs in durable steps, cron monitors, memory extraction, vault sync, canvas refresh.
 - **Supabase:** system of record for chats, runs, canvases, MCP config; index for notes.
+- **Web provider dashboard:** Supabase-authenticated control surface; provider catalog fetches happen server-side and catalog availability is persisted in Supabase.
 - **Vault (GitHub):** source of truth for notes.
 
 ## 3. Key flows

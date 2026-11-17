@@ -10,12 +10,12 @@ async function accessToken(): Promise<string | null> {
 }
 
 /** Starts an agent run (executed durably by Inngest). */
-export async function startRun(goal: string): Promise<StartRunResponse> {
+export async function startRun(goal: string, model?: string | null): Promise<StartRunResponse> {
   const token = await accessToken();
   if (!token) throw new Error('Not signed in.');
   return await apiFetch<StartRunResponse>("/api/agents/run", {
     token,
-    init: { method: "POST", body: JSON.stringify({ goal }) },
+    init: { method: "POST", body: JSON.stringify({ goal, ...(model ? { model } : {}) }) },
   });
 }
 

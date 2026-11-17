@@ -184,6 +184,11 @@ export const FAST_MODEL_ID = "google:gemini-3.5-flash-lite";
 
 const BY_ID = new Map(MODEL_REGISTRY.map((entry) => [entry.id, entry]));
 
+/** Dynamic provider models are primed from the persisted catalog per request. */
+export function registerRuntimeModel(entry: ModelRegistryEntry): void {
+  BY_ID.set(entry.id, entry);
+}
+
 export function findRegistryEntry(id: string): ModelRegistryEntry | undefined {
   return BY_ID.get(id);
 }

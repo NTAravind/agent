@@ -11,6 +11,8 @@ Legend: **P0** MVP · **P1** next · **P2** later · **$** needs paid service ·
 | Document understanding (PDF, txt, md) | P0 | Small: inline file part. Large: chunk → embed |
 | Code generation/debug | P0 | Plain model output; sandbox execution P2 |
 | Real-time info | P0 | Search tool (provider TBD, verify free tier) |
+| Provider model dashboard | P1 | Fetch Google, Groq and OpenRouter catalogs; choose which models are exposed to mobile; show usage per provider/model |
+| Agent task model chooser | P1 | Choose a preferred model per task, preserving capability checks and fallback routing |
 | Audio/other media input | P2 | Where model supports it |
 
 ## 2. Autonomous agent

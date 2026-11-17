@@ -9,14 +9,14 @@ async function accessToken(): Promise<string | null> {
   return data.session.access_token;
 }
 
-/** Registry + provider availability, used by the model picker. */
-export async function fetchModels(): Promise<ModelsResponse | null> {
+/** Fetch only dashboard-enabled models, plus provider availability metadata. */
+export async function fetchEnabledModels(): Promise<ModelsResponse | null> {
   try {
     const token = await accessToken();
     if (!token) return null;
-    return await apiFetch<ModelsResponse>("/api/models", { token });
+    return await apiFetch<ModelsResponse>("/api/models", { token, init: { cache: "no-store" } });
   } catch (error) {
-    console.warn("[models] could not load the registry:", error);
+    console.warn("[models] could not load enabled models:", error);
     return null;
   }
 }

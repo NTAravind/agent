@@ -12,7 +12,7 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
@@ -25,7 +25,7 @@ import {
   type PendingAttachment,
 } from '@/lib/attachments';
 import { ResilientChatTransport } from '@/lib/chat-transport';
-import { fetchModels, fetchThread, type ModelOption } from '@/lib/models';
+import { fetchEnabledModels, fetchThread, type ModelOption } from '@/lib/models';
 import { supabase } from '@/lib/supabase';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
 
@@ -78,18 +78,25 @@ export default function ChatScreen() {
   const isStreaming = status === 'streaming' || status === 'submitted';
   const isEmpty = messages.length === 0;
 
-  // Registry + default model.
-  useEffect(() => {
+  // Refresh dashboard-enabled models whenever chat becomes active.
+  useFocusEffect(
+    useCallback(() => {
     let active = true;
-    void fetchModels().then((response) => {
+    void fetchEnabledModels().then((response) => {
       if (!active || !response) return;
       setModels(response.models);
-      setModelId((current) => current ?? response.defaultModel);
+      setModelId((current) => {
+        if (current && response.models.some((model) => model.id === current && model.available)) return current;
+        return response.models.find((model) => model.id === response.defaultModel && model.available)?.id
+          ?? response.models.find((model) => model.available)?.id
+          ?? null;
+      });
     });
     return () => {
       active = false;
     };
-  }, []);
+    }, []),
+  );
 
   // Existing thread history.
   useEffect(() => {

@@ -39,7 +39,7 @@ Limits below were checked Nov 2026 and change often. **Re-verify before relying 
 
 ## 4. Environment variables
 Server (Vercel env, never in the app bundle): `GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (pooled), `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `ENCRYPTION_KEY` (32-byte, for MCP credentials), `GITHUB_VAULT_TOKEN`, `GITHUB_VAULT_REPO`, `SEARCH_API_KEY`, `ALLOWED_USER_ID`.
-Client (public by design): `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`. Never put model or service keys in `EXPO_PUBLIC_*`.
+Client (public by design): `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The web dashboard receives the public Supabase URL and anon key from its server page; no extra public env vars are needed. Never put model or service keys in public variables.
 
 ## 5. Known constraints
 - Remote (streamable HTTP) MCP only. stdio needs a long-lived worker.

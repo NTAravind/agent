@@ -9,8 +9,11 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | GET | `/api/threads` | List threads (cursor paging), including the selected agent's `avatar` object when set |
 | GET | `/api/threads/:id` | Thread + messages |
 | PATCH/DELETE | `/api/threads/:id` | Rename / delete |
-| GET | `/api/models` | Registry with capabilities, `available` (key configured), today's usage per provider |
+| GET | `/api/models` | Only mobile-enabled catalog models, capabilities, `available` (key configured), today's usage per provider |
 | PUT | `/api/settings/models` | `{ defaultModel, fallbackOrder[] }` |
+| GET | `/api/admin/models` | Provider catalog, mobile availability, provider key status and recent provider/model usage |
+| POST | `/api/admin/models/refresh` | Fetch catalogs from configured providers and persist model metadata |
+| PATCH | `/api/admin/models` | `{ models:[{ id, enabled }] }` to control mobile availability |
 
 ## 2. Files
 | POST | `/api/upload` | Returns signed upload URL + `documents` row. |
@@ -33,7 +36,8 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | GET/POST | `/api/agents` | List / create; list responses include each agent's `avatar` object |
 | PATCH/DELETE | `/api/agents/:id` | Update / delete |
 | POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
-| POST | `/api/runs` | `{ agentId, goal, threadId? }` → `{ runId }` (queues Inngest) |
+| POST | `/api/agents/run` | `{ goal, threadId?, model? }` → `{ runId }` (queues Inngest; model is preferred for task nodes) |
+| GET | `/api/runs` | List recent runs |
 | GET | `/api/runs/:id` | Status + result; includes the run agent's `avatar` object |
 | GET | `/api/runs/:id/events?after=` | Poll or SSE of `run_events`; event payloads include the relevant agent's `avatar` object |
 | POST | `/api/runs/:id/cancel` | Cancel |

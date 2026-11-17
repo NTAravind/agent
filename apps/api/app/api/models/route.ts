@@ -5,33 +5,36 @@ import {
   DEFAULT_FALLBACK_ORDER,
   DEFAULT_MODEL_ID,
   isProviderConfigured,
-  listRegistry,
   providersWithKeys,
   usageToday,
 } from "@/lib/models";
+import { enabledModels } from "@/lib/models/catalog";
 
 /**
- * GET /api/models — registry, provider availability and today's usage.
- * The mobile composer uses this to build the model picker.
+ * GET /api/models — dashboard-enabled models, provider availability and today's usage.
+ * The mobile composer and agent task chooser use this as their model source.
  */
 export async function GET(request: Request) {
   try {
     const user = await requireUser(request);
 
-    const models = listRegistry().map((entry) => ({
+    const models = (await enabledModels()).map((entry) => ({
       ...entry,
       available: isProviderConfigured(entry.provider),
     }));
+    const defaultModel = models.some((entry) => entry.id === DEFAULT_MODEL_ID)
+      ? DEFAULT_MODEL_ID
+      : models[0]?.id ?? DEFAULT_MODEL_ID;
 
     const body = ModelsResponseSchema.parse({
       models,
       providersWithKeys: providersWithKeys(),
-      defaultModel: DEFAULT_MODEL_ID,
+      defaultModel,
       fallbackOrder: [...DEFAULT_FALLBACK_ORDER],
       usageToday: await usageToday(user.id),
     });
 
-    return Response.json(body);
+    return Response.json(body, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return toErrorResponse(error);
   }

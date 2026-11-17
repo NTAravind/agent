@@ -5,7 +5,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
+import { ModelPicker } from '@/components/model-picker';
 import { fetchRuns, startRun, type RunListItem } from '@/lib/agents';
+import { fetchEnabledModels, type ModelOption } from '@/lib/models';
 
 const STATUS_COLOR: Record<string, 'default' | 'success' | 'danger' | 'warning'> = {
   queued: 'default',
@@ -23,13 +25,21 @@ export default function AgentsScreen() {
   const [goal, setGoal] = useState('');
   const [starting, setStarting] = useState(false);
   const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [modelId, setModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setRuns(await fetchRuns());
+      const [nextRuns, modelResponse] = await Promise.all([fetchRuns(), fetchEnabledModels()]);
+      setRuns(nextRuns);
+      const available = modelResponse?.models.filter((model) => model.available && model.capabilities.tools && model.capabilities.structuredOutput) ?? [];
+      setModels(available);
+      setModelId((current) => current && available.some((model) => model.id === current)
+        ? current
+        : available.find((model) => model.id === modelResponse?.defaultModel)?.id ?? available[0]?.id ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -54,7 +64,7 @@ export default function AgentsScreen() {
 
     setStarting(true);
     try {
-      const { runId } = await startRun(trimmed);
+      const { runId } = await startRun(trimmed, modelId);
       setGoal('');
       await load();
       router.push({ pathname: '/run', params: { id: runId } });
@@ -63,7 +73,7 @@ export default function AgentsScreen() {
     } finally {
       setStarting(false);
     }
-  }, [goal, load, router]);
+  }, [goal, load, modelId, router]);
 
   const grouped = useMemo(() => runs, [runs]);
 
@@ -99,6 +109,10 @@ export default function AgentsScreen() {
           <Typography type="body-sm" color="muted">
             New task
           </Typography>
+          <View className="flex-row items-center justify-between rounded-xl border border-border px-3 py-1">
+            <Typography type="body-sm" color="muted">Preferred model</Typography>
+            <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />
+          </View>
           <Input
             value={goal}
             onChangeText={setGoal}

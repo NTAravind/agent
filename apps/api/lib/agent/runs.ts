@@ -15,6 +15,7 @@ export async function createRun(input: {
   goal: string;
   threadId?: string | null;
   agentId?: string | null;
+  model?: string | null;
 }): Promise<{ id: string; status: RunStatus }> {
   const { data, error } = await supabaseAdmin()
     .from("agent_runs")
@@ -24,6 +25,7 @@ export async function createRun(input: {
       thread_id: input.threadId ?? null,
       agent_id: input.agentId ?? null,
       status: "queued",
+      model: input.model ?? null,
     })
     .select("id, status")
     .single();

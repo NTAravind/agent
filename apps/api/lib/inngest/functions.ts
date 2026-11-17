@@ -81,9 +81,9 @@ export const agentRunFunction = inngest.createFunction(
     },
   },
   async ({ event }) => {
-    const { runId, userId, goal } = event.data;
+    const { runId, userId, goal, preferredModel } = event.data;
 
-    return await step.run("execute-agent-graph", () => runAgent({ runId, userId, goal }));
+    return await step.run("execute-agent-graph", () => runAgent({ runId, userId, goal, preferredModel }));
   },
 );
 

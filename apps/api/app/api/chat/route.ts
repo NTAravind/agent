@@ -22,6 +22,7 @@ import { chatCompleted } from "@/lib/inngest/events";
 import { buildKnowledgeTools } from "@/lib/tools/knowledge";
 import { buildWebTools } from "@/lib/tools/web-tools";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, findRegistryEntry } from "@/lib/models";
+import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
 
 export const maxDuration = 300;
 
@@ -45,10 +46,10 @@ export async function POST(request: Request) {
     const body = parsed.data;
 
     // Model selection: request -> default. Unknown ids are rejected loudly.
-    const requestedModel = body.model ?? DEFAULT_MODEL_ID;
-    if (!findRegistryEntry(requestedModel)) {
+    const requestedModel = body.model ?? await defaultMobileModel() ?? DEFAULT_MODEL_ID;
+    if (!(await primeMobileModel(requestedModel))) {
       return Response.json(
-        { error: { code: "bad_request", message: `Unknown model: ${requestedModel}` } },
+        { error: { code: "model_unavailable", message: `Model ${requestedModel} is not enabled for mobile. Enable a model in the provider dashboard.` } },
         { status: 400 },
       );
     }

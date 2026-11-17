@@ -25,8 +25,10 @@ Approvals badge appears on the tab bar and as a banner anywhere.
 **Canvas list/detail**: cards with title and last updated; detail renders spec full-screen, pull-to-refresh, "Ask about this" button that opens chat with the canvas as context.
 **Notes**: folder tree, search bar (hybrid), note view (markdown, `[[links]]` tappable, backlinks section), edit (writes need confirmation), "Ask agent about this note".
 **Agents**: list with avatar, role and MCP tool count; editor for name, role, instructions, primary model + fallback order, tools toggle list with per-tool "require approval". Avatar picker has Emoji, Icon and Upload tabs plus a color swatch row.
+The new-task form includes a model chooser populated from enabled provider catalog entries.
 **Store**: grid of servers with icon, description, auth type. Tap Add → permission sheet listing tools → connect (OAuth in system browser or key entry) → enable for agents. Connected servers show a Manage state.
-**Settings**: sign out, memory viewer (list, delete), vault repo status and last sync, usage meter per provider (requests/tokens vs free limits), default model and fallback order, API key status (configured or missing, never shown), theme.
+**Settings**: sign out, memory viewer (list, delete), vault repo status and last sync, default model and fallback order, theme.
+**Web provider dashboard**: provider key status (configured/missing, never shown), refreshable Google/Groq/OpenRouter model catalogs with per-model mobile availability toggles, plus request/token/error usage grouped by provider and model.
 
 ## 4. Canvas component catalog (v1)
 | Type | Props | Rendering notes |

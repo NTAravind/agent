@@ -165,6 +165,23 @@ create table canvases (
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
 
+-- Provider model catalog and user-controlled mobile availability
+create table provider_models (
+  provider text not null check (provider in ('google','groq','openrouter')),
+  model_id text not null,
+  app_id text not null unique,
+  label text not null,
+  capabilities jsonb not null default '{}'::jsonb,
+  context_window int,
+  tier text not null default 'paid' check (tier in ('free','paid')),
+  metadata jsonb not null default '{}'::jsonb,
+  mobile_enabled boolean not null default false,
+  fetched_at timestamptz not null default now(),
+  primary key (provider, model_id)
+);
+alter table provider_models enable row level security;
+-- Service role only; dashboard API authenticates and allow-lists the user.
+
 -- Provider usage (drives usage meter and fallback decisions)
 create table provider_usage (
   id bigint generated always as identity primary key,

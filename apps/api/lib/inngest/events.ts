@@ -11,6 +11,7 @@ export type AgentRunRequested = {
   agentId?: string;
   goal: string;
   threadId?: string;
+  preferredModel?: string;
 };
 
 export type ApprovalDecided = {

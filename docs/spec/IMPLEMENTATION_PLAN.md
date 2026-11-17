@@ -105,6 +105,14 @@ Pull-to-refresh + "refresh" button both call the refresh endpoint. The agent's
 render_canvas / update_canvas tools are wired; the deployed app creates
 canvases via the API and they appear in the Canvas tab.
 
+## Phase 5.1: Provider model dashboard + task model chooser
+- [ ] Apply `db/migrations/0006_provider_models.sql` to create an empty provider catalog, then `0007_remove_provider_model_seeds.sql` to clean up seed rows if the earlier draft was already applied.
+- [ ] Web dashboard (Supabase-authenticated) refreshes model catalogs from the configured Google, Groq and OpenRouter providers; API keys remain server-only.
+- [ ] Persist the provider catalog and per-model mobile availability; only enabled models appear in the mobile app.
+- [ ] Show provider key status and provider/model usage from `provider_usage` in the dashboard.
+- [ ] Add a model chooser to the mobile agent-task composer; selected model is used as the task's preferred model, with configured cross-provider fallbacks.
+**Done when:** the dashboard refreshes provider catalogs, toggling a model changes the models offered to mobile, the task chooser routes the run through that model, and provider usage is visible by provider/model.
+
 ## Phase 6: MCP store (4–6 days)
 - [ ] Seed registry (hand-pick 5–10 remote servers)
 - [ ] Connect flows (none / API key / OAuth), encrypted credentials
