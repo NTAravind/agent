@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabaseAdmin()
       .from("agents")
-      .select("id, name, model, avatar_emoji, created_at")
+      .select("id, name, model, avatar, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (error) throw new Error(`Could not list agents: ${error.message}`);
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
         id: row.id as string,
         name: row.name as string,
         model: (row.model as string | null) ?? null,
-        avatarEmoji: (row.avatar_emoji as string | null) ?? null,
+        avatarEmoji: ((row.avatar as { value?: string } | null)?.value ?? null) as string | null,
         createdAt: row.created_at as string,
       })),
     });
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin()
       .from("agents")
       .insert({ user_id: user.id, name })
-      .select("id, name, model, avatar_emoji, created_at")
+      .select("id, name, model, avatar, created_at")
       .single();
     if (error) throw new Error(`Could not create agent: ${error.message}`);
 
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
           id: data.id as string,
           name: data.name as string,
           model: (data.model as string | null) ?? null,
-          avatarEmoji: (data.avatar_emoji as string | null) ?? null,
+          avatarEmoji: ((data.avatar as { value?: string } | null)?.value ?? null) as string | null,
           createdAt: data.created_at as string,
         },
       },
