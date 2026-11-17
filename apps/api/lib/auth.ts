@@ -76,6 +76,19 @@ export function toErrorResponse(error: unknown): Response {
     return apiError(error.code, error.message, error.status);
   }
   const message = error instanceof Error ? error.message : "Unexpected server error.";
+  // Library errors may carry a deliberate HTTP status/code (e.g. MCP lib
+  // user-facing failures like "An API key is required" → 400/403).
+  const carried = error as { status?: unknown; code?: unknown } | null;
+  if (error instanceof Error && typeof carried?.status === "number") {
+    const status = carried.status;
+    if (status >= 400 && status < 500) {
+      return apiError(
+        typeof carried.code === "string" ? carried.code : "bad_request",
+        message,
+        status,
+      );
+    }
+  }
   console.error("[api]", error);
   return apiError("internal_error", message, 500);
 }

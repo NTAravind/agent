@@ -120,6 +120,18 @@ export default function HomeScreen() {
 
         <Card className="rounded-2xl">
           <Card.Body className="gap-3">
+            <Card.Title>Integrations</Card.Title>
+            <Card.Description>
+              Connect vendor-hosted MCP tools — web search, docs, payments, monitoring — and let your agent use them in its runs.
+            </Card.Description>
+            <Button size="md" variant="secondary" onPress={() => router.push('/mcp')}>
+              <Button.Label>Browse marketplace</Button.Label>
+            </Button>
+          </Card.Body>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <Card.Body className="gap-3">
             <Card.Title>Knowledge</Card.Title>
             <Card.Description>
               Browse the notes synced from your vault, and everything the agent remembers about you.

@@ -119,6 +119,13 @@ canvases via the API and they appear in the Canvas tab.
 - [ ] Per-agent tool enablement, approval flags, runtime tool loading
 **Done when:** add a server in ≤ 3 taps and use its tool in the next run.
 
+> **Status (2026-11-17):** Implementation complete (10 seeded endpoints, AES-256-GCM
+> credentials, SSRF-guarded adapters, OAuth callback, graph wiring, `mcp-sync` cron,
+> marketplace UI, 30 unit tests, typecheck/lint/build green). **Not yet verified:**
+> `0008_mcp_marketplace.sql` still needs applying in Supabase, `ENCRYPTION_KEY` set on
+> Vercel, then an end-to-end Context7 run (connect → attach → tool in next run) before
+> these boxes can be ticked.
+
 ## Phase 7: Multi-agent (5–7 days)
 - [ ] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
 - [ ] Agent avatar column and editor picker (Emoji, Icon and Upload) with color swatches

@@ -148,6 +148,75 @@ export const canvasRefreshFunction = inngest.createFunction(
   },
 );
 
+/**
+ * Daily MCP marketplace sync: health-checks every connected integration,
+ * re-runs the handshake (which also lazily refreshes expiring OAuth tokens
+ * via getFreshAccessToken → auth()), and re-discovers tools so schema drift
+ * is picked up. Batched at 25 connections per run (single-user product).
+ *
+ * Approval resume for MCP tools needs NO separate function: they reuse the
+ * shared `approvals` table + approval/decided → approval-resume path.
+ */
+export const mcpSyncFunction = inngest.createFunction(
+  {
+    id: "mcp-sync",
+    retries: 2,
+    triggers: { cron: "30 4 * * *" },
+    // Never overlap syncs (they write the same tool catalog rows).
+    concurrency: { limit: 1 },
+  },
+  async () => {
+    const { data: connections, error } = await supabaseAdmin()
+      .from("user_mcp_connections")
+      .select("id, user_id, mcp_server_id, status, metadata")
+      .eq("status", "connected")
+      .limit(25);
+
+    if (error || !connections?.length) {
+      return { checked: 0, ok: 0, failed: 0 };
+    }
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const connection of connections) {
+      try {
+        await step.run(`mcp-sync-${connection.id}`, async () => {
+          const { refreshProvider } = await import("@/lib/mcp/providers");
+          await refreshProvider({
+            userId: connection.user_id as string,
+            connectionId: connection.id as string,
+          });
+        });
+        ok += 1;
+      } catch (syncError) {
+        failed += 1;
+        const { redactSecrets } = await import("@/lib/mcp/security/redact-secrets");
+        const message = redactSecrets(
+          syncError instanceof Error ? syncError.message : String(syncError),
+        );
+        const needsReconnect = /\b(401|403|unauthorized|invalid_grant|expired|reconnect)\b/i.test(
+          message,
+        );
+        await supabaseAdmin()
+          .from("user_mcp_connections")
+          .update({
+            status: needsReconnect ? "expired" : "error",
+            last_checked_at: new Date().toISOString(),
+            metadata: {
+              ...((connection.metadata as Record<string, unknown>) ?? {}),
+              lastError: message.slice(0, 300),
+              lastErrorAt: new Date().toISOString(),
+            },
+          })
+          .eq("id", connection.id);
+      }
+    }
+
+    return { checked: connections.length, ok, failed };
+  },
+);
+
 export const functions = [
   keepalive,
   chatCompletedFunction,
@@ -155,4 +224,5 @@ export const functions = [
   agentRunFunction,
   approvalResumeFunction,
   canvasRefreshFunction,
+  mcpSyncFunction,
 ];

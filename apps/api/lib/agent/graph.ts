@@ -26,6 +26,7 @@ import {
   type ToolName,
 } from "@/lib/agent/tools";
 import { createApproval, findLatestApprovalForRunTool } from "@/lib/approvals";
+import { loadMcpToolsForRun, type McpToolRuntime } from "@/lib/mcp/tools-loader";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { generateTextWithFallback } from "@/lib/models/generate";
 import { withFallback } from "@/lib/models/fallback";
@@ -117,13 +118,19 @@ async function generateObjectWithFallback<SCHEMA extends ZodType>(options: {
 }
 
 /** Converts declarations into non-executing AI SDK tools (calls come back to us). */
-function declarationTools(): Record<string, Tool> {
+function declarationTools(mcp?: McpToolRuntime | null): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   for (const [name, declaration] of Object.entries(declarations)) {
     tools[name] = tool({
       description: declaration.description,
       inputSchema: declaration.inputSchema as ZodType,
     }) as Tool;
+  }
+  // MCP tools arrive as ready-made declarations (jsonSchema input, no execute).
+  if (mcp) {
+    for (const [name, mcpTool] of Object.entries(mcp.declarations)) {
+      tools[name] = mcpTool;
+    }
   }
   return tools;
 }
@@ -133,11 +140,13 @@ type GraphDeps = {
   userId: string;
   usage: UsageSink;
   preferredModel?: string;
+  /** Agent's attached remote MCP tools (loaded at run/resume start). */
+  mcp?: McpToolRuntime | null;
 };
 
 function buildGraph(deps: GraphDeps) {
-  const { runId, userId, usage } = deps;
-  const tools = declarationTools();
+  const { runId, userId, usage, mcp } = deps;
+  const tools = declarationTools(mcp);
 
   const nodeEvent = (
     node: string,
@@ -272,17 +281,25 @@ function buildGraph(deps: GraphDeps) {
     const toolLog: string[] = [];
     const approved: ToolCallInfo[] = [];
 
-    const sensitive = pending.find((call) => isSensitive(call.name));
+    // Built-in sensitive tools + MCP tools whose policy requires approval
+    // (per-agent permission rows; risk_level=high always lands here).
+    const needsApproval = (name: string): boolean =>
+      isSensitive(name) || (mcp?.requiresApproval(name) ?? false);
+
+    const sensitive = pending.find((call) => needsApproval(call.name));
     if (sensitive) {
       let row = await findLatestApprovalForRunTool(runId, sensitive.name);
 
       if (!row) {
+        const mcpTool = mcp?.tools.get(sensitive.name);
         row = await createApproval({
           userId,
           runId,
           toolName: sensitive.name,
           args: sensitive.args,
-          reason: "Sensitive tool requested by the agent",
+          reason: mcpTool
+            ? `MCP tool "${mcpTool.externalToolId}" from ${mcpTool.serverName} requested by the agent`
+            : "Sensitive tool requested by the agent",
         });
         await appendRunEvent(runId, "tool_call", {
           tool: sensitive.name,
@@ -325,7 +342,7 @@ function buildGraph(deps: GraphDeps) {
     }
 
     for (const call of pending) {
-      if (!isSensitive(call.name)) approved.push(call);
+      if (!needsApproval(call.name)) approved.push(call);
     }
 
     await nodeEvent("tool_gate", "node_end", {
@@ -347,9 +364,18 @@ function buildGraph(deps: GraphDeps) {
 
     for (const call of state.pendingCalls) {
       try {
-        const output = await executeToolCall(call, { userId, runId });
+        // MCP namespaced tools route through the runtime; built-ins stay here.
+        const output = mcp?.handles(call.name)
+          ? await mcp.execute(call.name, (call.args ?? {}) as Record<string, unknown>)
+          : await executeToolCall(call, { userId, runId });
         await appendRunEvent(runId, "tool_result", {
           tool: call.name,
+          ...(mcp?.handles(call.name)
+            ? {
+                provider: "mcp",
+                server: mcp.tools.get(call.name)?.serverSlug ?? null,
+              }
+            : {}),
           result: truncate(output, 600),
         });
         toolLog.push(`→ ${call.name}(${truncate(call.args, 200)}) = ${truncate(output, 900)}`);
@@ -557,7 +583,13 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
     return { status: "failed" };
   }
 
-  const compiled = buildGraph({ runId, userId, usage, preferredModel: input.preferredModel }).compile({ checkpointer });
+  // Agent's attached remote MCP tools (empty runtime when none).
+  const mcp = await loadMcpToolsForRun(runId, userId).catch((error: unknown) => {
+    console.error("[agent] MCP tool load failed (continuing without):", error);
+    return null;
+  });
+
+  const compiled = buildGraph({ runId, userId, usage, preferredModel: input.preferredModel, mcp }).compile({ checkpointer });
 
   try {
     const finalState = (await compiled.invoke(
@@ -614,7 +646,15 @@ export async function resumeAgentRun(input: {
   const { data: savedRun } = await supabaseAdmin().from("agent_runs").select("model").eq("id", runId).eq("user_id", userId).maybeSingle();
   const preferredModel = savedRun?.model ?? undefined;
   if (preferredModel) await primeMobileModel(preferredModel);
-  const compiled = buildGraph({ runId, userId, usage, preferredModel }).compile({ checkpointer });
+
+  // Reload the same MCP runtime the parked run was built with (the gate must
+  // re-evaluate approval flags against current policy).
+  const mcp = await loadMcpToolsForRun(runId, userId).catch((error: unknown) => {
+    console.error("[agent] MCP tool load failed (continuing without):", error);
+    return null;
+  });
+
+  const compiled = buildGraph({ runId, userId, usage, preferredModel, mcp }).compile({ checkpointer });
 
   try {
     const finalState = (await compiled.invoke(
