@@ -114,17 +114,31 @@ canvases via the API and they appear in the Canvas tab.
 **Done when:** the dashboard refreshes provider catalogs, toggling a model changes the models offered to mobile, the task chooser routes the run through that model, and provider usage is visible by provider/model.
 
 ## Phase 6: MCP store (4–6 days)
-- [ ] Seed registry (hand-pick 5–10 remote servers)
-- [ ] Connect flows (none / API key / OAuth), encrypted credentials
-- [ ] Per-agent tool enablement, approval flags, runtime tool loading
+- [x] Seed registry (hand-pick 5–10 remote servers)
+- [x] Connect flows (none / API key / OAuth), encrypted credentials
+- [x] Per-agent tool enablement, approval flags, runtime tool loading
 **Done when:** add a server in ≤ 3 taps and use its tool in the next run.
 
-> **Status (2026-11-17):** Implementation complete (10 seeded endpoints, AES-256-GCM
-> credentials, SSRF-guarded adapters, OAuth callback, graph wiring, `mcp-sync` cron,
-> marketplace UI, 30 unit tests, typecheck/lint/build green). **Not yet verified:**
-> `0008_mcp_marketplace.sql` still needs applying in Supabase, `ENCRYPTION_KEY` set on
-> Vercel, then an end-to-end Context7 run (connect → attach → tool in next run) before
-> these boxes can be ticked.
+> **DONE (2026-11-17), verified end-to-end on the deployed app:**
+> - Migration `0008` applied (6 tables + 10 verified seeds); `ENCRYPTION_KEY`
+>   active on Vercel (AES-256-GCM ciphertext proof, `key_version=v1`).
+> - Context7 connected in 3 taps (marketplace → detail → Connect), attached to
+>   the Personal agent; run used `mcp_context7_resolve_library_id` and
+>   `mcp_context7_query_docs` with real `/vercel/next.js@16.4.5` docs in the
+>   answer (model `openrouter:openrouter/free`).
+> - Approval gate paused/resumed twice (once per MCP tool) with
+>   `MCP tool "…" from Context7` reasons; Inngest resume worked both times.
+> - Multi-attach (context7+exa), per-tool enable/approval toggles, disconnect
+>   detaches tools, admin catalog CRUD, stranger-user 403 on every Phase 6
+>   route, OAuth start (PKCE + DCR URL) — all verified.
+> - 30 unit tests (encryption/tamper, SSRF, risk, namespacing, redaction);
+>   typecheck + lint + production build green.
+>
+> Deviations from the prompt: approvals reuse the shared `lib/approvals.ts`
+> (+ existing `approval-resume` function) instead of a new `lib/mcp/approvals.ts`;
+> `agents.avatar` is jsonb (not `avatar_emoji`); Context7 tools classify `medium`
+> (approval on) because their descriptions say "call this function" — the safe
+> default, user-overridable per tool in the UI.
 
 ## Phase 7: Multi-agent (5–7 days)
 - [ ] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
