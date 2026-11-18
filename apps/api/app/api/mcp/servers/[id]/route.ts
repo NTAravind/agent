@@ -1,12 +1,16 @@
+import { MCPServerPatchSchema, normalizeListingSlug } from "@agent/shared";
+
 import { requireUser, toErrorResponse } from "@/lib/auth";
-import { deleteServer, getServer, updateServer, assertAdmin } from "@/lib/mcp/registry";
+import { zodMessage } from "@/lib/zod-error";
+import { deleteServer, getServer, updateServer, assertAdmin, toPublicServer } from "@/lib/mcp/registry";
 import { listCachedTools } from "@/lib/mcp/discovery";
 import { getConnectionForServer } from "@/lib/mcp/connections";
 
 /**
  * GET    /api/mcp/servers/:id — listing detail (+ cached tools + connection flag).
  * PUT    /api/mcp/servers/:id — admin-only: patch the listing.
- * DELETE /api/mcp/servers/:id — admin-only: remove it (cascades).
+ * DELETE /api/mcp/servers/:id — admin-only: remove it (cascades to tools,
+ *                                connections and agent attachments).
  */
 export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -27,26 +31,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     ]);
 
     return Response.json({
-      server: {
-        id: server.id,
-        slug: server.slug,
-        name: server.name,
-        description: server.description,
-        provider: server.provider,
-        category: server.category,
-        endpoint: server.endpoint,
-        transport: server.transport,
-        authType: server.auth_type,
-        config: server.config,
-        capabilities: server.capabilities,
-        iconUrl: server.icon_url,
-        isVerified: server.is_verified,
-        isFreeTier: server.is_free_tier,
-        enabled: server.enabled,
-      },
+      server: toPublicServer(server),
       tools,
-      // `config` stays server-side (auth header scheme etc. — never needed
-      // by the client, and must not become a leak surface).
       connection: connection
         ? {
             id: connection.id,
@@ -66,28 +52,31 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     await requireUser(request);
     assertAdmin();
     const { id } = await ctx.params;
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
-    const patch: Parameters<typeof updateServer>[1] = {};
-    if (typeof body.name === "string") patch.name = body.name;
-    if (typeof body.description === "string") patch.description = body.description;
-    if (typeof body.category === "string") patch.category = body.category;
-    if (body.endpoint === null || typeof body.endpoint === "string") patch.endpoint = body.endpoint;
-    if (body.isVerified !== undefined) patch.isVerified = Boolean(body.isVerified);
-    if (body.isFreeTier !== undefined) patch.isFreeTier = Boolean(body.isFreeTier);
-    if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
-    if (body.config && typeof body.config === "object") {
-      patch.config = body.config as Record<string, unknown>;
+    const normalized = { ...raw };
+    if (typeof normalized.slug === "string") {
+      normalized.slug = normalizeListingSlug(normalized.slug);
+    }
+    if (normalized.endpoint === "") normalized.endpoint = null;
+    if (normalized.iconUrl === "") normalized.iconUrl = null;
+
+    const parsed = MCPServerPatchSchema.safeParse(normalized);
+    if (!parsed.success) {
+      return Response.json(
+        { error: { code: "bad_request", message: zodMessage(parsed.error) } },
+        { status: 400 },
+      );
     }
 
-    const server = await updateServer(id, patch);
+    const server = await updateServer(id, parsed.data);
     if (!server) {
       return Response.json(
         { error: { code: "not_found", message: "Unknown integration." } },
         { status: 404 },
       );
     }
-    return Response.json({ server });
+    return Response.json({ server: toPublicServer(server) });
   } catch (error) {
     return toErrorResponse(error);
   }

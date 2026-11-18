@@ -47,12 +47,18 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 ## 5. MCP store
 | Method | Route | Description |
 |---|---|---|
-| GET | `/api/mcp/servers` | Registry with `connected` flag |
+| GET | `/api/mcp/servers` | Registry with `connected` flag; camelCase rows incl. `instructions`. `?all=1` (admin) also returns disabled listings |
+| GET | `/api/mcp/servers/:id` | Single listing (admin) |
+| POST | `/api/mcp/servers` | Admin create listing (`MCPServerCreateSchema`); 409 on duplicate slug |
+| PUT | `/api/mcp/servers/:id` | Admin update (`MCPServerPatchSchema`); supports `slug`, `instructions`, `disabled`; 409 on duplicate slug |
+| DELETE | `/api/mcp/servers/:id` | Admin delete (cascades to tools/connections) |
 | POST | `/api/mcp/connections` | `{ serverId, apiKey? }` or returns `{ authUrl }` for OAuth |
 | GET | `/api/mcp/oauth/callback` | Completes OAuth, stores encrypted creds |
 | DELETE | `/api/mcp/connections/:id` | Disconnect |
 | GET | `/api/mcp/connections/:id/tools` | Live tool list |
 | PUT | `/api/agents/:id/mcp` | `{ connectionId, tools:[{name, requiresApproval}] }` |
+
+Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.ts` (`MCPServerCreateSchema`, `MCPServerPatchSchema`, `normalizeListingSlug`). `instructions` is plain setup guidance shown on the mobile integration detail screen and must never contain secrets.
 
 ## 6. Canvas & monitors
 | Method | Route | Description |

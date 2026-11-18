@@ -26,6 +26,8 @@ export type CatalogEntry = {
   slug: string;
   name: string;
   description: string;
+  /** Setup steps shown before connecting (from the admin dashboard). */
+  instructions: string;
   provider: string;
   category: string;
   endpoint: string | null;

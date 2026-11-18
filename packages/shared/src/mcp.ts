@@ -54,6 +54,8 @@ export const MCPServerSchema = z.object({
   slug: z.string(),
   name: z.string(),
   description: z.string(),
+  /** Setup steps shown to the user when connecting. Never secrets. */
+  instructions: z.string(),
   provider: MCPProviderSchema,
   category: z.string(),
   endpoint: z.string().nullable(),
@@ -61,6 +63,7 @@ export const MCPServerSchema = z.object({
   auth_type: MCPAuthTypeSchema,
   capabilities: MCPCapabilitiesSchema,
   config: MCPConfigSchema,
+  icon_url: z.string().nullable(),
   is_verified: z.boolean(),
   is_free_tier: z.boolean(),
   enabled: z.boolean(),
@@ -69,6 +72,50 @@ export const MCPServerSchema = z.object({
   updated_at: z.string(),
 });
 export type MCPServer = z.infer<typeof MCPServerSchema>;
+
+/** Slug as the API stores it: lowercase letters, digits and single dashes. */
+const listingSlugSchema = z
+  .string()
+  .min(2)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, "use lowercase letters, numbers and dashes");
+
+/**
+ * POST /api/mcp/servers body — admin creates a marketplace listing.
+ * `instructions` are setup steps shown to users; they must never contain
+ * secrets. The API normalizes the slug before validating.
+ */
+export const MCPServerCreateSchema = z.object({
+  slug: listingSlugSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  instructions: z.string().max(4000).optional(),
+  provider: MCPProviderSchema.optional(),
+  category: z.string().max(40).optional(),
+  endpoint: z.url().nullish(),
+  transport: MCPTransportSchema.optional(),
+  authType: MCPAuthTypeSchema,
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: MCPCapabilitiesSchema.optional(),
+  iconUrl: z.url().nullish(),
+  isVerified: z.boolean().optional(),
+  isFreeTier: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+});
+export type MCPServerCreate = z.infer<typeof MCPServerCreateSchema>;
+
+/** PUT /api/mcp/servers/:id body — every field optional, `null` clears. */
+export const MCPServerPatchSchema = MCPServerCreateSchema.partial();
+export type MCPServerPatch = z.infer<typeof MCPServerPatchSchema>;
+
+/** Slug as the API stores it: trimmed, lowercased, runs of junk → one dash. */
+export function normalizeListingSlug(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 export const MCPConnectionSchema = z.object({
   id: z.string().uuid(),

@@ -115,7 +115,7 @@ export async function connectComposio(input: {
     providerConnectionId: session?.id ?? null,
   });
 
-  const headers = (readComposioSession(row)?.sessionHeaders ?? {}) as Record<string, string>;
+  const headers = ((await readComposioSession(row))?.sessionHeaders ?? {}) as Record<string, string>;
   const tools = await listRemoteTools({ endpoint: validated.url.toString(), headers }).catch(
     (error: unknown) => {
       throw new Error(redactSecrets(error instanceof Error ? error.message : String(error)));
@@ -143,9 +143,11 @@ type ComposioCredentials = {
   };
 };
 
-function readComposioSession(row: ConnectionRow): ComposioCredentials["composio"] | undefined {
-  // Local import avoids a cycle: connections imports encryption only.
-  const { readCredentials } = require("@/lib/mcp/connections") as typeof import("@/lib/mcp/connections");
+async function readComposioSession(
+  row: ConnectionRow,
+): Promise<ComposioCredentials["composio"] | undefined> {
+  // Dynamic import avoids a cycle: connections imports encryption only.
+  const { readCredentials } = await import("@/lib/mcp/connections");
   return (readCredentials(row) as ComposioCredentials | null)?.composio;
 }
 
@@ -163,7 +165,7 @@ export async function refreshComposio(input: {
   const result = await connectComposio({
     userId: input.userId,
     server,
-    entityUserId: readComposioSession(row)?.entityUserId,
+    entityUserId: (await readComposioSession(row))?.entityUserId,
   });
   return { toolCount: result.toolCount };
 }
@@ -178,7 +180,7 @@ export async function executeComposioTool(input: {
   const { getConnection } = await import("@/lib/mcp/connections");
   const row = await getConnection(input.userId, input.connectionId);
   if (!row) throw new Error("Connection no longer exists.");
-  const session = readComposioSession(row);
+  const session = await readComposioSession(row);
   if (!session?.sessionHeaders) {
     throw new Error("Composio session is missing — reconnect the integration.");
   }

@@ -348,6 +348,17 @@ export default function IntegrationDetailScreen() {
             </Card.Body>
           </Card>
 
+          {server?.instructions ? (
+            <Card className="rounded-2xl">
+              <Card.Body className="gap-2">
+                <Card.Title>Setup instructions</Card.Title>
+                <Typography type="body-sm" color="muted">
+                  {server.instructions}
+                </Typography>
+              </Card.Body>
+            </Card>
+          ) : null}
+
           {!connected && server ? (
             <Card className="rounded-2xl">
               <Card.Body className="gap-3">

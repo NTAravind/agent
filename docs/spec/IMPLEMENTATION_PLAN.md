@@ -140,6 +140,20 @@ canvases via the API and they appear in the Canvas tab.
 > (approval on) because their descriptions say "call this function" — the safe
 > default, user-overridable per tool in the UI.
 
+> **Addendum (2026-11-18) — full listing CRUD + setup instructions:**
+> - Migration `0009_mcp_listing_instructions.sql` adds `instructions` to
+>   `mcp_servers` (applied). Listing create/update validated by shared zod
+>   (`MCPServerCreateSchema` / `MCPServerPatchSchema`); list/detail responses
+>   now camelCase via `toPublicServer` (fixes mobile auth-type/verified/free
+>   chips); `GET /api/mcp/servers?all=1` returns disabled listings for admins;
+>   duplicate slug → 409.
+> - Dashboard gained a 4th **Integrations** tab (shadcn/ui only): search,
+>   create/edit dialog with Instructions textarea, enable/disable switch,
+>   delete behind a cascade-confirm dialog. Mobile detail screen shows a
+>   "Setup instructions" card when the listing has `instructions`.
+> - Verified: lint 0 errors, typecheck green, `next build` green, 69 unit
+>   tests (9 new listing-schema tests).
+
 ## Phase 7: Multi-agent (5–7 days)
 - [ ] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
 - [ ] Agent avatar column and editor picker (Emoji, Icon and Upload) with color swatches

@@ -12,6 +12,7 @@ import {
   Database,
   Layers,
   LoaderCircle,
+  Puzzle,
   RefreshCw,
   Search,
   Server,
@@ -28,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import ListingsTab from "./listings-tab";
 
 type Provider = "google" | "groq" | "openrouter";
 type Model = {
@@ -577,6 +579,10 @@ export default function DashboardClient({
                   <Database className="size-3.5" />
                   <span>Providers</span>
                 </TabsTrigger>
+                <TabsTrigger value="integrations" className="gap-1.5">
+                  <Puzzle className="size-3.5" />
+                  <span>Integrations</span>
+                </TabsTrigger>
               </TabsList>
 
               <div className="text-xs text-muted-foreground">
@@ -996,6 +1002,11 @@ export default function DashboardClient({
                   );
                 })}
               </div>
+            </TabsContent>
+
+            {/* TAB 4: MARKETPLACE LISTINGS */}
+            <TabsContent value="integrations" className="space-y-4 pt-2">
+              <ListingsTab accessToken={session?.access_token ?? ""} />
             </TabsContent>
           </Tabs>
         </div>

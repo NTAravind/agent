@@ -16,6 +16,7 @@ export type ServerRow = {
   slug: string;
   name: string;
   description: string;
+  instructions: string;
   provider: string;
   category: string;
   endpoint: string | null;
@@ -33,7 +34,7 @@ export type ServerRow = {
 };
 
 const SERVER_COLUMNS =
-  "id, slug, name, description, provider, category, endpoint, transport, auth_type, config, capabilities, icon_url, is_verified, is_free_tier, enabled, created_by, created_at, updated_at";
+  "id, slug, name, description, instructions, provider, category, endpoint, transport, auth_type, config, capabilities, icon_url, is_verified, is_free_tier, enabled, created_by, created_at, updated_at";
 
 /** Catalog entry as the marketplace list sees it (with connection flag). */
 export type CatalogEntry = MCPServer & {
@@ -41,6 +42,56 @@ export type CatalogEntry = MCPServer & {
   connectionId: string | null;
   connectionStatus: string | null;
 };
+
+/**
+ * Client-facing listing: camelCase, no `created_by`. Returned by every
+ * catalog/detail response. `config` is non-secret provider config (header
+ * scheme, scopes) — credentials never leave the server.
+ */
+export type PublicServer = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  instructions: string;
+  provider: string;
+  category: string;
+  endpoint: string | null;
+  transport: MCPTransport;
+  authType: MCPAuthType;
+  config: Record<string, unknown>;
+  capabilities: Record<string, unknown>;
+  iconUrl: string | null;
+  isVerified: boolean;
+  isFreeTier: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Maps a stored row to the public listing shape. */
+export function toPublicServer(row: ServerRow): PublicServer {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    instructions: row.instructions ?? "",
+    provider: row.provider,
+    category: row.category,
+    endpoint: row.endpoint,
+    transport: row.transport,
+    authType: row.auth_type,
+    config: row.config,
+    capabilities: row.capabilities,
+    iconUrl: row.icon_url,
+    isVerified: row.is_verified,
+    isFreeTier: row.is_free_tier,
+    enabled: row.enabled,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 /** Throws unless the caller is the configured admin. */
 export function assertAdmin(): void {
@@ -58,16 +109,18 @@ export type CatalogFilter = {
   authType?: string;
   freeOnly?: boolean;
   connectedOnly?: boolean;
+  /** Admin management view: also return disabled listings. */
+  includeDisabled?: boolean;
 };
 
-/** Lists enabled catalog entries with the caller's connection state merged in. */
+/** Lists catalog entries with the caller's connection state merged in. */
 export async function listCatalog(filter: CatalogFilter): Promise<CatalogEntry[]> {
   let query = supabaseAdmin()
     .from("mcp_servers")
     .select(SERVER_COLUMNS)
-    .eq("enabled", true)
     .order("category")
     .order("name");
+  if (!filter.includeDisabled) query = query.eq("enabled", true);
 
   if (filter.q) {
     // ILIKE on name/description; escape LIKE wildcards in user input.
@@ -139,6 +192,7 @@ export async function createServer(input: {
   slug: string;
   name: string;
   description?: string;
+  instructions?: string;
   provider?: string;
   category?: string;
   endpoint?: string | null;
@@ -149,6 +203,7 @@ export async function createServer(input: {
   iconUrl?: string | null;
   isVerified?: boolean;
   isFreeTier?: boolean;
+  enabled?: boolean;
 }): Promise<ServerRow> {
   assertAdmin();
   const { data, error } = await supabaseAdmin()
@@ -157,6 +212,7 @@ export async function createServer(input: {
       slug: input.slug,
       name: input.name,
       description: input.description ?? "",
+      instructions: input.instructions ?? "",
       provider: input.provider ?? "direct",
       category: input.category ?? "other",
       endpoint: input.endpoint ?? null,
@@ -167,12 +223,20 @@ export async function createServer(input: {
       icon_url: input.iconUrl ?? null,
       is_verified: input.isVerified ?? false,
       is_free_tier: input.isFreeTier ?? false,
-      enabled: true,
+      enabled: input.enabled ?? true,
       created_by: allowedUserId() ?? null,
     })
     .select(SERVER_COLUMNS)
     .single();
-  if (error) throw new Error(`Could not create integration: ${error.message}`);
+  if (error) {
+    if (error.code === "23505") {
+      throw Object.assign(new Error("That slug is already in use."), {
+        status: 409,
+        code: "conflict",
+      });
+    }
+    throw new Error(`Could not create integration: ${error.message}`);
+  }
   return data as ServerRow;
 }
 
@@ -180,8 +244,11 @@ export async function createServer(input: {
 export async function updateServer(
   serverId: string,
   patch: Partial<{
+    slug: string;
     name: string;
     description: string;
+    instructions: string;
+    provider: string;
     category: string;
     endpoint: string | null;
     transport: MCPTransport;
@@ -196,8 +263,11 @@ export async function updateServer(
 ): Promise<ServerRow | null> {
   assertAdmin();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.slug !== undefined) update.slug = patch.slug;
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.description !== undefined) update.description = patch.description;
+  if (patch.instructions !== undefined) update.instructions = patch.instructions;
+  if (patch.provider !== undefined) update.provider = patch.provider;
   if (patch.category !== undefined) update.category = patch.category;
   if (patch.endpoint !== undefined) update.endpoint = patch.endpoint;
   if (patch.transport !== undefined) update.transport = patch.transport;
@@ -215,7 +285,15 @@ export async function updateServer(
     .eq("id", serverId)
     .select(SERVER_COLUMNS)
     .maybeSingle();
-  if (error) throw new Error(`Could not update integration: ${error.message}`);
+  if (error) {
+    if (error.code === "23505") {
+      throw Object.assign(new Error("That slug is already in use."), {
+        status: 409,
+        code: "conflict",
+      });
+    }
+    throw new Error(`Could not update integration: ${error.message}`);
+  }
   return (data as ServerRow | null) ?? null;
 }
 
