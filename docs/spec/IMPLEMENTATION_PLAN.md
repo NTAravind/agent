@@ -106,11 +106,11 @@ render_canvas / update_canvas tools are wired; the deployed app creates
 canvases via the API and they appear in the Canvas tab.
 
 ## Phase 5.1: Provider model dashboard + task model chooser
-- [ ] Apply `db/migrations/0006_provider_models.sql` to create an empty provider catalog, then `0007_remove_provider_model_seeds.sql` to clean up seed rows if the earlier draft was already applied.
-- [ ] Web dashboard (Supabase-authenticated) refreshes model catalogs from the configured Google, Groq and OpenRouter providers; API keys remain server-only.
-- [ ] Persist the provider catalog and per-model mobile availability; only enabled models appear in the mobile app.
-- [ ] Show provider key status and provider/model usage from `provider_usage` in the dashboard.
-- [ ] Add a model chooser to the mobile agent-task composer; selected model is used as the task's preferred model, with configured cross-provider fallbacks.
+- [x] Apply `db/migrations/0006_provider_models.sql` to create an empty provider catalog, then `0007_remove_provider_model_seeds.sql` to clean up seed rows if the earlier draft was already applied.
+- [x] Web dashboard (Supabase-authenticated) refreshes model catalogs from the configured Google, Groq and OpenRouter providers; API keys remain server-only.
+- [x] Persist the provider catalog and per-model mobile availability; only enabled models appear in the mobile app.
+- [x] Show provider key status and provider/model usage from `provider_usage` in the dashboard.
+- [x] Add a model chooser to the mobile agent-task composer; selected model is used as the task's preferred model, with configured cross-provider fallbacks.
 **Done when:** the dashboard refreshes provider catalogs, toggling a model changes the models offered to mobile, the task chooser routes the run through that model, and provider usage is visible by provider/model.
 
 ## Phase 6: MCP store (4–6 days)
@@ -155,13 +155,38 @@ canvases via the API and they appear in the Canvas tab.
 >   tests (9 new listing-schema tests).
 
 ## Phase 7: Multi-agent (5–7 days)
-- [ ] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
-- [ ] Agent avatar column and editor picker (Emoji, Icon and Upload) with color swatches
-- [ ] Optional image avatar upload through a signed Storage URL
-- [ ] Show agent avatars in chat, thread list, run timeline, Agents list and approvals
-- [ ] Cross-check pattern: verifier runs on a *different provider* than the worker
-- [ ] Parallel research fan-out, verifier node, nested timeline
+- [x] Agent CRUD (each agent has primary model + fallbacks); supervisor graph; specialist subgraphs
+- [x] Agent avatar column and editor picker (Emoji, Icon and Upload) with color swatches
+- [x] Optional image avatar upload through a signed Storage URL
+- [x] Show agent avatars in chat, thread list, run timeline, Agents list and approvals
+- [x] Cross-check pattern: verifier runs on a *different provider* than the worker
+- [x] Parallel research fan-out, verifier node, nested timeline
 **Done when:** supervisor delegates to 2+ agents and merges cross-checked results.
+
+> **DONE (2026-11-18), verified end-to-end (3 slices, local):**
+> - **Slice A `d8bf3a3`** — agent CRUD (`AgentCreateSchema`/`AgentPatchSchema`),
+>   migration `0010` (stale `agents.model` placeholder default dropped), list
+>   responses carry the full avatar object + `toolCount` (`check-agent-crud.mjs` 8/8).
+> - **Slice B `8761618`** — private `avatars` Storage bucket (migration `0011`,
+>   signed upload/read URLs, response-only `url` stripped on write), embedded
+>   `AgentSummary` in threads/runs/messages/run-detail, chat `agentId`,
+>   AgentPicker in chat + message-bubble avatars, run header/approval avatars,
+>   editor Emoji/Icon/Upload picker (`check-agent-avatars.mjs` 10/10).
+> - **Slice C `beeb4c7`** — supervisor graph `delegate → fan_out → verify → merge`
+>   in `lib/agent/supervisor.ts`, dispatched by `executeRun` (`lib/agent/execute.ts`)
+>   for `is_supervisor` agents; child runs (`parent_run_id`) run in parallel with
+>   `approvalMode: "deny"` (children auto-deny instead of parking — v1 decision);
+>   cross-provider verifier (`pickCrossProviderModel`); run detail `children`,
+>   top-level run list excludes children; mobile task picker (supervisor-first
+>   default), Specialists section, editor Supervisor switch; inline run
+>   (`?inline=true`) for E2E without Inngest. `check-supervisor.mjs` 11/11 +
+>   `supervisor.test.ts` (9 cases).
+> - Deviations from spec, resolved in code first (spec updated 2026-11-18):
+>   supervisor is a dedicated graph, not a `delegate(agent, task)` tool (API_SPEC §8
+>   row removed); the `GET /api/runs/:id/events` row was removed (events are
+>   embedded in `GET /api/runs/:id`); MCP per-tool permissions stay on the
+>   agent's tools list; sensitive tools in *child* runs auto-deny rather than
+>   pause (v1; the supervisor's own tool gate is unchanged).
 
 ## Phase 8: Extras (as wanted)
 Website monitors → image generation (verify free) → voice (device APIs) → code sandbox → X data (paid).

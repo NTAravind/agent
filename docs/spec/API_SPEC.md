@@ -33,16 +33,17 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 ## 4. Agents, runs, approvals
 | Method | Route | Description |
 |---|---|---|
-| GET/POST | `/api/agents` | List / create; list responses include each agent's `avatar` object |
-| PATCH/DELETE | `/api/agents/:id` | Update / delete |
+| GET/POST | `/api/agents` | List / create (`AgentCreateSchema`: name, role, instructions, model, fallbackModels, avatar, isSupervisor). Full agent responses: `avatar` object (image avatars carry a response-only signed `url`; `value` stays the raw Storage path), `toolCount`, `isSupervisor` |
+| PATCH/DELETE | `/api/agents/:id` | Update (`AgentPatchSchema`; `null` clears nullable fields) / delete |
 | POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
-| POST | `/api/agents/run` | `{ goal, threadId?, model? }` → `{ runId }` (queues Inngest; model is preferred for task nodes) |
-| GET | `/api/runs` | List recent runs |
-| GET | `/api/runs/:id` | Status + result; includes the run agent's `avatar` object |
-| GET | `/api/runs/:id/events?after=` | Poll or SSE of `run_events`; event payloads include the relevant agent's `avatar` object |
+| POST | `/api/agents/run` | `{ goal, threadId?, model?, agentId?, inline? }` → `{ runId }` (queues Inngest unless `inline: true`; `agentId` scopes the run to an agent, `model` is preferred for task nodes) |
+| GET | `/api/runs` | List recent top-level runs — supervisor child runs are excluded and live under their parent |
+| GET | `/api/runs/:id` | Status + result + the full `run_events` timeline (returned whole on each poll — there is no separate events/SSE route); includes the run agent's `avatar` object, `pendingApprovals`, and for supervisor runs `children` (child runs each embedded with their agent summary) |
 | POST | `/api/runs/:id/cancel` | Cancel |
 | GET | `/api/approvals?status=pending` | Pending approvals |
 | POST | `/api/approvals/:id` | `{ decision: "approve"\|"deny", edits? }` → emits `approval/decided` |
+
+**Supervisor runs:** runs whose agent has `is_supervisor = true` execute the dedicated supervisor graph `delegate → fan_out → verify → merge` (`apps/api/lib/agent/supervisor.ts`) instead of the single-agent graph. `delegate` emits ≥2 structured briefs on distinct specialist agents (capped at 4); `fan_out` creates full single-agent child runs (`agent_runs.parent_run_id`, idempotent on Inngest retry) and runs them in parallel with `approvalMode: "deny"` — children auto-deny sensitive tools instead of parking on approvals (v1 decision, not yet approval-gated); `verify` cross-checks their outputs with a model from a *different* provider than the workers (`pickCrossProviderModel`, keyed providers only); `merge` synthesizes the final answer with the run's model chain, applying the verifier's corrections. Fewer than 2 specialists falls back to the single-agent graph plus a `message` event. Dispatch is `executeRun` (`apps/api/lib/agent/execute.ts`), used by both POST `/api/agents/run` and the Inngest handler.
 
 ## 5. MCP store
 | Method | Route | Description |
@@ -93,8 +94,9 @@ Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.
 | `recall_memory(query)` / `save_memory(...)` | no | |
 | `render_canvas(spec)` / `update_canvas(id,patch)` | no | Validated by zod `Canvas` |
 | `create_monitor(url,...)` | yes | |
-| `delegate(agent,task)` | no | Supervisor only |
 | MCP tools | per-tool flag | Default **yes** |
+
+Supervisor delegation is not a tool: `is_supervisor` agents execute the dedicated `delegate → fan_out → verify → merge` graph described in §4 (the former `delegate(agent,task)` row was removed 2026-11-18).
 
 ## 9. Streaming
 AI SDK UI message stream. Custom data parts: `data-run-event` (node/tool progress), `data-approval` (pending approval card), `data-canvas` (canvas id).

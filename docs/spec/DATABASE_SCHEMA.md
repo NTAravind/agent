@@ -87,12 +87,16 @@ create table agents (
   avatar jsonb not null default '{"type":"emoji","value":"🤖","color":"#7F9DFF"}'::jsonb, -- type: emoji|icon|image; image value is a Storage path
   role text,
   system_prompt text,
-  model text default 'google:gemini-flash',   -- registry id "provider:modelId"
+  model text,                        -- registry id "provider:modelId"; NULL = app default (migration 0010)
   fallback_models text[] default '{}',        -- ordered registry ids
   config jsonb default '{}',
   is_supervisor boolean default false,
   created_at timestamptz default now()
 );
+-- Storage buckets: `attachments` (chat files) and `avatars` (agent identity
+-- images, private — migration 0011; signed upload via POST /api/agents/:id/avatar,
+-- signed read URLs minted by the API). Migration 0011 also backfills
+-- threads.agent_id with each user's oldest agent for pre-agent threads.
 create table mcp_servers (            -- registry (global, seeded)
   id uuid primary key default gen_random_uuid(),
   slug text unique not null,
