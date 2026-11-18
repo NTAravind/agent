@@ -1,4 +1,6 @@
 import type { AgentAvatar as AgentAvatarValue } from '@agent/shared';
+import { Image } from 'expo-image';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 type Props = {
@@ -8,17 +10,30 @@ type Props = {
 };
 
 /**
- * Agent identity badge. Emoji and icon avatars render as a glyph on the
- * avatar's color disc. Image avatars fall back to the default emoji until
- * their Storage path is resolved (see the editor's Upload flow).
+ * Agent identity badge.
+ *  - emoji / icon: the glyph on the avatar's color disc (icons render bold)
+ *  - image: the signed Storage URL from the API, falling back to the default
+ *    emoji when the image fails to load ("missing avatar → emoji").
  */
 export function AgentAvatar({ avatar, size = 32 }: Props) {
-  const isImage = avatar.type === 'image';
-  const glyph = isImage || !avatar.value ? '🤖' : avatar.value;
+  // The key of the image that failed to load; deriving `failed` during render
+  // keeps this reactive without a setState-in-effect.
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const uri =
+    avatar.type === 'image'
+      ? (avatar.url ?? (avatar.value.startsWith('http') ? avatar.value : null))
+      : null;
+  const uriKey = uri ?? avatar.value;
+
+  const showImage = uri !== null && failedKey !== uriKey;
+  const glyph = avatar.type === 'image' ? '🤖' : avatar.value;
+  const fontSize = Math.round(size * 0.55);
 
   return (
     <View
-      accessibilityLabel={isImage ? 'Agent avatar image' : `Agent avatar ${glyph}`}
+      accessibilityLabel={
+        showImage ? 'Agent avatar image' : `Agent avatar ${glyph}`
+      }
       style={{
         width: size,
         height: size,
@@ -29,9 +44,25 @@ export function AgentAvatar({ avatar, size = 32 }: Props) {
         overflow: 'hidden',
       }}
     >
-      <Text style={{ fontSize: Math.round(size * 0.55), lineHeight: Math.round(size * 0.66) }}>
-        {glyph}
-      </Text>
+      {showImage && uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size }}
+          contentFit="cover"
+          transition={150}
+          onError={() => setFailedKey(uriKey)}
+        />
+      ) : (
+        <Text
+          style={{
+            fontSize,
+            lineHeight: Math.round(size * 0.66),
+            fontWeight: avatar.type === 'icon' ? '700' : '400',
+          }}
+        >
+          {glyph}
+        </Text>
+      )}
     </View>
   );
 }

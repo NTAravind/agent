@@ -6,7 +6,9 @@ import { z } from "zod";
 
 /**
  * Avatar as stored in `agents.avatar` (jsonb). `image` value is a Storage
- * path; renderers fall back to the emoji when an image fails to load.
+ * path; API responses add a response-only signed read `url` for image
+ * avatars (never persisted — routes strip it on write). Renderers fall back
+ * to the default emoji when an image fails to load.
  */
 export const AgentAvatarSchema = z.object({
   type: z.enum(["emoji", "icon", "image"]),
@@ -15,6 +17,8 @@ export const AgentAvatarSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "use a #rrggbb color")
     .optional(),
+  /** Signed Storage read URL (image avatars, API responses only). */
+  url: z.string().max(2048).optional(),
 });
 export type AgentAvatar = z.infer<typeof AgentAvatarSchema>;
 
@@ -63,6 +67,13 @@ export const AgentSchema = z.object({
   createdAt: z.string(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
+
+/** Compact agent reference embedded in threads, runs and approvals. */
+export const AgentSummarySchema = z.object({
+  name: z.string(),
+  avatar: AgentAvatarSchema,
+});
+export type AgentSummary = z.infer<typeof AgentSummarySchema>;
 
 // --- Runs ------------------------------------------------------------------
 

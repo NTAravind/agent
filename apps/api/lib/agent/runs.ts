@@ -2,6 +2,7 @@ import type { RunEventType, RunStatus } from "@agent/shared";
 
 import type { AgentFinding } from "@/lib/agent/state";
 
+import { loadAgentSummaries } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -101,12 +102,17 @@ export async function getRunWithEvents(runId: string): Promise<{
 export async function listRuns(userId: string, limit = 30): Promise<Record<string, unknown>[]> {
   const { data } = await supabaseAdmin()
     .from("agent_runs")
-    .select("id, goal, status, model, tokens_used, created_at, finished_at")
+    .select("id, goal, status, model, tokens_used, created_at, finished_at, agent_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  return data ?? [];
+  const rows = (data ?? []) as { agent_id: string | null }[];
+  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
+  return rows.map((row) => ({
+    ...row,
+    agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,
+  }));
 }
 
 export async function cancelRun(userId: string, runId: string): Promise<void> {

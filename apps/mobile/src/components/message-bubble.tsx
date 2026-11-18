@@ -1,12 +1,17 @@
+import type { AgentSummary } from '@agent/shared';
 import { Image } from 'expo-image';
 import { Chip, Typography } from 'heroui-native';
 import { Linking, View } from 'react-native';
+
+import { AgentAvatar } from '@/components/agent-avatar';
 
 type Props = {
   role: 'user' | 'assistant' | 'system' | 'tool';
   parts: { type: string; [key: string]: unknown }[];
   /** Model that produced this reply (assistant only). */
   modelLabel?: string | null;
+  /** Authoring agent's identity (assistant only) — avatar shown alongside. */
+  agent?: AgentSummary | null;
 };
 
 type ToolPart = {
@@ -20,9 +25,10 @@ type ToolPart = {
 /**
  * Chat message layout:
  *  - user: right-aligned rounded bubble on a muted surface
- *  - assistant: plain full-width text, no bubble
+ *  - assistant: plain full-width text, no bubble, with the authoring
+ *    agent's avatar alongside when the thread knows its agent
  */
-export function MessageBubble({ role, parts, modelLabel }: Props) {
+export function MessageBubble({ role, parts, modelLabel, agent }: Props) {
   const isUser = role === 'user';
 
   const content = parts.map((part, index) => {
@@ -78,6 +84,20 @@ export function MessageBubble({ role, parts, modelLabel }: Props) {
     return (
       <View className="items-end">
         <View className="max-w-[85%] gap-2 rounded-3xl bg-surface px-4 py-3">{content}</View>
+      </View>
+    );
+  }
+
+  if (agent) {
+    return (
+      <View className="flex-row items-start gap-3">
+        <AgentAvatar avatar={agent.avatar} size={24} />
+        <View className="flex-1 gap-2">
+          {content}
+          <Typography type="body-xs" color="muted">
+            {[agent.name, modelLabel].filter(Boolean).join(' · ')}
+          </Typography>
+        </View>
       </View>
     );
   }

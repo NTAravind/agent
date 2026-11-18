@@ -5,7 +5,8 @@ import {
   AGENT_COLUMNS,
   assertKnownModels,
   listAgentsWithCounts,
-  rowToAgent,
+  storedAvatar,
+  toPublicAgent,
   type AgentRow,
 } from "@/lib/agents";
 import { defaultAgentId } from "@/lib/mcp/tools-loader";
@@ -67,14 +68,17 @@ export async function POST(request: Request) {
         system_prompt: input.instructions ?? null,
         model: input.model ?? null,
         fallback_models: input.fallbackModels ?? [],
-        ...(input.avatar ? { avatar: input.avatar } : {}),
+        ...(input.avatar ? { avatar: storedAvatar(input.avatar) } : {}),
         ...(input.isSupervisor !== undefined ? { is_supervisor: input.isSupervisor } : {}),
       })
       .select(AGENT_COLUMNS)
       .single();
     if (error) throw new Error(`Could not create agent: ${error.message}`);
 
-    return Response.json({ agent: rowToAgent(data as AgentRow) }, { status: 201 });
+    return Response.json(
+      { agent: await toPublicAgent(data as AgentRow) },
+      { status: 201 },
+    );
   } catch (error) {
     return toErrorResponse(error);
   }

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Thread } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { deleteThread, fetchThreads } from '@/lib/models';
 
 export default function ThreadsScreen() {
@@ -102,6 +103,11 @@ export default function ThreadsScreen() {
                   }
                   accessibilityLabel={thread.title ?? 'Untitled thread'}
                 >
+                  {thread.agent ? (
+                    <ListGroup.ItemPrefix>
+                      <AgentAvatar avatar={thread.agent.avatar} size={32} />
+                    </ListGroup.ItemPrefix>
+                  ) : null}
                   <ListGroup.ItemContent>
                     <ListGroup.ItemTitle>{thread.title ?? 'Untitled'}</ListGroup.ItemTitle>
                     <ListGroup.ItemDescription>

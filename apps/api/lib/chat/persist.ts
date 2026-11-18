@@ -1,12 +1,29 @@
 import type { Thread, StoredMessage } from "@agent/shared";
 
+import { loadAgentSummaries } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 type MessagePart = Record<string, unknown>;
 
+const THREAD_COLUMNS = "id, title, model, agent_id, created_at, updated_at";
+
+/** Attaches each thread's agent (name + resolved avatar) for list/detail responses. */
+async function withThreadAgents(rows: Thread[]): Promise<Thread[]> {
+  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
+  return rows.map((row) => ({
+    ...row,
+    agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,
+  }));
+}
+
 export async function createThread(
   userId: string,
-  options: { id?: string; title?: string | null; model?: string | null } = {},
+  options: {
+    id?: string;
+    title?: string | null;
+    model?: string | null;
+    agentId?: string | null;
+  } = {},
 ): Promise<Thread> {
   const { data, error } = await supabaseAdmin()
     .from("threads")
@@ -15,21 +32,23 @@ export async function createThread(
       user_id: userId,
       title: options.title ?? null,
       model: options.model ?? null,
+      ...(options.agentId ? { agent_id: options.agentId } : {}),
     })
-    .select("id, title, model, created_at, updated_at")
+    .select(THREAD_COLUMNS)
     .single();
 
   if (error || !data) {
     throw new Error(`Could not create thread: ${error?.message ?? "unknown error"}`);
   }
 
-  return data as Thread;
+  const [thread] = await withThreadAgents([data as Thread]);
+  return thread;
 }
 
 export async function getThread(userId: string, threadId: string): Promise<Thread | null> {
   const { data, error } = await supabaseAdmin()
     .from("threads")
-    .select("id, title, model, created_at, updated_at")
+    .select(THREAD_COLUMNS)
     .eq("id", threadId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -37,13 +56,15 @@ export async function getThread(userId: string, threadId: string): Promise<Threa
   if (error) {
     throw new Error(`Could not read thread: ${error.message}`);
   }
-  return (data as Thread | null) ?? null;
+  if (!data) return null;
+  const [thread] = await withThreadAgents([data as Thread]);
+  return thread;
 }
 
 export async function listThreads(userId: string, limit = 50): Promise<Thread[]> {
   const { data, error } = await supabaseAdmin()
     .from("threads")
-    .select("id, title, model, created_at, updated_at")
+    .select(THREAD_COLUMNS)
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(limit);
@@ -51,7 +72,7 @@ export async function listThreads(userId: string, limit = 50): Promise<Thread[]>
   if (error) {
     throw new Error(`Could not list threads: ${error.message}`);
   }
-  return (data as Thread[]) ?? [];
+  return withThreadAgents((data as Thread[]) ?? []);
 }
 
 export async function listMessages(userId: string, threadId: string): Promise<StoredMessage[]> {

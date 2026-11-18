@@ -4,7 +4,8 @@ import { requireUser, toErrorResponse } from "@/lib/auth";
 import {
   AGENT_COLUMNS,
   assertKnownModels,
-  rowToAgent,
+  storedAvatar,
+  toPublicAgent,
   type AgentRow,
 } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -70,10 +71,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (patch.instructions !== undefined) update.system_prompt = patch.instructions ?? null;
     if (patch.model !== undefined) update.model = patch.model ?? null;
     if (patch.fallbackModels !== undefined) update.fallback_models = patch.fallbackModels;
-    if (patch.avatar !== undefined) update.avatar = patch.avatar;
+    if (patch.avatar !== undefined) update.avatar = storedAvatar(patch.avatar);
     if (patch.isSupervisor !== undefined) update.is_supervisor = patch.isSupervisor;
     if (Object.keys(update).length === 0) {
-      return Response.json({ agent: rowToAgent(current) });
+      return Response.json({ agent: await toPublicAgent(current) });
     }
 
     const { data, error } = await admin
@@ -85,7 +86,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       .single();
     if (error) throw new Error(`Could not update agent: ${error.message}`);
 
-    return Response.json({ agent: rowToAgent(data as AgentRow) });
+    return Response.json({ agent: await toPublicAgent(data as AgentRow) });
   } catch (error) {
     return toErrorResponse(error);
   }

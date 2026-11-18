@@ -3,10 +3,12 @@ import type {
   AgentCreate,
   AgentPatch,
   AgentRun,
+  AgentSummary,
   Approval,
   RunEvent,
   StartRunResponse,
 } from "@agent/shared";
+import * as ImagePicker from "expo-image-picker";
 
 import { apiFetch } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -68,6 +70,61 @@ export async function deleteAgent(id: string): Promise<void> {
   });
 }
 
+/**
+ * Opens the photo library and uploads the chosen image straight to the
+ * private avatars bucket via a signed URL. Returns the Storage path to store
+ * on the agent, or null when the picker was canceled.
+ */
+export async function uploadAgentAvatar(agentId: string): Promise<string | null> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error('Photo library access is required to change the avatar.');
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 0.9,
+    allowsMultipleSelection: false,
+  });
+  if (result.canceled || !result.assets[0]) return null;
+  const asset = result.assets[0];
+  const mediaType = asset.mimeType ?? "image/jpeg";
+
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+
+  const signed = await apiFetch<{ storagePath: string; token: string }>(
+    `/api/agents/${agentId}/avatar`,
+    {
+      token,
+      init: {
+        method: "POST",
+        body: JSON.stringify({
+          mediaType,
+          ...(asset.fileSize ? { sizeBytes: asset.fileSize } : {}),
+        }),
+      },
+    },
+  );
+
+  const form = new FormData();
+  form.append("file", {
+    uri: asset.uri,
+    name: asset.fileName ?? "avatar.jpg",
+    type: mediaType,
+  } as unknown as Blob);
+
+  const { error } = await supabase.storage
+    .from("avatars")
+    .uploadToSignedUrl(signed.storagePath, signed.token, form, {
+      contentType: mediaType,
+      upsert: false,
+    });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+
+  return signed.storagePath;
+}
+
 export type RunListItem = {
   id: string;
   goal: string;
@@ -88,6 +145,8 @@ export async function fetchRuns(): Promise<RunListItem[]> {
 export type RunDetail = {
   run: AgentRun;
   events: RunEvent[];
+  /** The run's agent (name + resolved avatar), when it has one. */
+  agent?: AgentSummary | null;
   pendingApprovals?: Approval[];
 };
 

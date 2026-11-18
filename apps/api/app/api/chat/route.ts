@@ -7,6 +7,7 @@ import {
 } from "ai";
 import { ChatRequestSchema } from "@agent/shared";
 
+import { ownedAgentId } from "@/lib/agents";
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { loadAttachments, withAttachmentParts } from "@/lib/chat/attachments";
 import {
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
 
     // Thread: the client generates the id, so a new chat needs no round trip.
     // If the thread does not exist yet, create it with that id.
+    const agentId = body.agentId ? await ownedAgentId(user.id, body.agentId) : null;
     let threadId = body.threadId ?? null;
     if (threadId) {
       const thread = await getThread(user.id, threadId);
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
           id: threadId,
           title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
           model: requestedModel,
+          agentId,
         });
         threadId = created.id;
       }
@@ -91,6 +94,7 @@ export async function POST(request: Request) {
       const thread = await createThread(user.id, {
         title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
         model: requestedModel,
+        agentId,
       });
       threadId = thread.id;
     }

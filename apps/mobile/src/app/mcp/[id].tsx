@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { fetchAgents, type Agent } from '@/lib/agents';
 import {
   attachServer,
@@ -409,8 +410,10 @@ export default function IntegrationDetailScreen() {
                         key={agent.id}
                         variant={selectedAgentId === agent.id ? 'primary' : 'soft'}
                         size="sm"
+                        style={{ gap: 6 }}
                         onPress={() => setSelectedAgentId(agent.id)}
                       >
+                        <AgentAvatar avatar={agent.avatar} size={18} />
                         <Chip.Label>{agent.name}</Chip.Label>
                       </Chip>
                     ))}

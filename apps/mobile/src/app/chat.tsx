@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import type { AgentSummary } from '@agent/shared';
 import { Alert, Button, Spinner } from 'heroui-native';
 import type { UIMessage } from 'ai';
 import {
@@ -16,6 +17,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentPicker } from '@/components/agent-picker';
 import { Composer } from '@/components/composer';
 import { MessageBubble } from '@/components/message-bubble';
 import { ModelPicker } from '@/components/model-picker';
@@ -24,6 +26,7 @@ import {
   pickAndUploadImages,
   type PendingAttachment,
 } from '@/lib/attachments';
+import { fetchAgents, type Agent } from '@/lib/agents';
 import { ResilientChatTransport } from '@/lib/chat-transport';
 import { fetchEnabledModels, fetchThread, type ModelOption } from '@/lib/models';
 import { supabase } from '@/lib/supabase';
@@ -50,6 +53,10 @@ export default function ChatScreen() {
 
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  /** Author identity loaded with an existing thread; overrides the picker. */
+  const [threadAgent, setThreadAgent] = useState<AgentSummary | null>(null);
   const [threadId, setThreadId] = useState<string>(params.threadId ?? newChatId());
   const [input, setInput] = useState(params.prompt ?? '');
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -78,19 +85,24 @@ export default function ChatScreen() {
   const isStreaming = status === 'streaming' || status === 'submitted';
   const isEmpty = messages.length === 0;
 
-  // Refresh dashboard-enabled models whenever chat becomes active.
+  // Refresh dashboard-enabled models and the agent list whenever chat becomes active.
   useFocusEffect(
     useCallback(() => {
     let active = true;
-    void fetchEnabledModels().then((response) => {
-      if (!active || !response) return;
-      setModels(response.models);
-      setModelId((current) => {
-        if (current && response.models.some((model) => model.id === current && model.available)) return current;
-        return response.models.find((model) => model.id === response.defaultModel && model.available)?.id
-          ?? response.models.find((model) => model.available)?.id
-          ?? null;
-      });
+    void Promise.all([fetchEnabledModels(), fetchAgents()]).then(([response, list]) => {
+      if (!active) return;
+      if (response) {
+        setModels(response.models);
+        setModelId((current) => {
+          if (current && response.models.some((model) => model.id === current && model.available)) return current;
+          return response.models.find((model) => model.id === response.defaultModel && model.available)?.id
+            ?? response.models.find((model) => model.available)?.id
+            ?? null;
+        });
+      }
+      setAgents(list);
+      // Default to the oldest agent (the "Personal" default) until the user picks.
+      setAgentId((current) => current ?? list[0]?.id ?? null);
     });
     return () => {
       active = false;
@@ -106,6 +118,8 @@ export default function ChatScreen() {
       if (!active || !thread) return;
       setThreadId(thread.thread.id);
       setModelId((current) => current ?? thread.thread.model ?? null);
+      if (thread.thread.agent_id) setAgentId(thread.thread.agent_id);
+      setThreadAgent(thread.thread.agent ?? null);
       setMessages(
         thread.messages.map((message) => ({
           id: message.id,
@@ -142,6 +156,7 @@ export default function ChatScreen() {
       // state here, then cleared once the send has been handed off.
       const pending = sendMessage({ text }, {
         body: {
+          ...(agentId ? { agentId } : {}),
           attachments: attachments.map((attachment) => ({
             documentId: attachment.documentId,
             mediaType: attachment.mediaType,
@@ -152,13 +167,20 @@ export default function ChatScreen() {
       setAttachments([]);
       await pending;
     },
-    [attachments, input, sendMessage],
+    [agentId, attachments, input, sendMessage],
   );
 
   const modelLabel = useMemo(() => {
     if (!modelId) return null;
     return models.find((model) => model.id === modelId)?.label ?? modelId;
   }, [modelId, models]);
+
+  /** Author identity for assistant messages: the loaded thread's agent, else the picker's. */
+  const activeAgent = useMemo<AgentSummary | null>(() => {
+    if (threadAgent) return threadAgent;
+    const selected = agents.find((agent) => agent.id === agentId);
+    return selected ? { name: selected.name, avatar: selected.avatar } : null;
+  }, [agents, agentId, threadAgent]);
 
   const composerBottomPadding = keyboardHeight > 0 ? 8 : insets.bottom + 8;
 
@@ -192,6 +214,7 @@ export default function ChatScreen() {
               setMessages([]);
               setAttachments([]);
               setInput('');
+              setThreadAgent(null);
               setThreadId(newChatId());
             }}
             accessibilityLabel="New chat"
@@ -243,6 +266,7 @@ export default function ChatScreen() {
               role={message.role}
               parts={message.parts as { type: string; [key: string]: unknown }[]}
               modelLabel={message.role === 'assistant' ? modelLabel : null}
+              agent={message.role === 'assistant' ? activeAgent : null}
             />
           ))}
 
@@ -268,8 +292,9 @@ export default function ChatScreen() {
         </ScrollView>
       )}
 
-      {/* Composer: floating rounded card pinned to the bottom */}
+      {/* Composer: agent selector + floating rounded card pinned to the bottom */}
       <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: composerBottomPadding }}>
+        <AgentPicker agents={agents} selectedId={agentId} onSelect={setAgentId} />
         <Composer
           value={input}
           onChangeText={setInput}

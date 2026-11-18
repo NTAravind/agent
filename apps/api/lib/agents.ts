@@ -2,6 +2,8 @@ import {
   AgentAvatarSchema,
   DEFAULT_AGENT_AVATAR,
   type Agent,
+  type AgentAvatar,
+  type AgentSummary,
 } from "@agent/shared";
 
 import { findRegistryEntry } from "@/lib/models/registry";
@@ -42,6 +44,12 @@ export function rowToAgent(row: AgentRow, toolCount = 0): Agent {
   };
 }
 
+/** Row → API agent with the image-avatar signed `url` resolved. */
+export async function toPublicAgent(row: AgentRow, toolCount = 0): Promise<Agent> {
+  const agent = rowToAgent(row, toolCount);
+  return { ...agent, avatar: await resolveAvatar(agent.avatar) };
+}
+
 /**
  * The caller's agents with each agent's enabled MCP tool count (what the
  * Agents list shows). Personal scale (a handful of agents), so loading the
@@ -58,9 +66,77 @@ export async function listAgentsWithCounts(userId: string): Promise<Agent[]> {
   const agents: Agent[] = [];
   for (const row of (data ?? []) as AgentRow[]) {
     const runtime = await loadAgentMcpTools(userId, row.id).catch(() => null);
-    agents.push(rowToAgent(row, runtime ? runtime.tools.size : 0));
+    agents.push(await toPublicAgent(row, runtime ? runtime.tools.size : 0));
   }
   return agents;
+}
+
+const AVATAR_URL_TTL_SECONDS = 3600;
+
+/**
+ * Image avatars store a Storage path; API responses add a signed read `url`
+ * alongside it (private bucket). Anything unreadable falls back to the
+ * default emoji, per the UI rule "missing avatar → fall back to emoji".
+ */
+export async function resolveAvatar(avatar: AgentAvatar): Promise<AgentAvatar> {
+  if (avatar.type !== "image") return avatar;
+  try {
+    const { data, error } = await supabaseAdmin()
+      .storage.from("avatars")
+      .createSignedUrl(avatar.value, AVATAR_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) throw new Error(error?.message ?? "no url");
+    return { ...avatar, url: data.signedUrl };
+  } catch {
+    return DEFAULT_AGENT_AVATAR;
+  }
+}
+
+/** The persisted form of an avatar: response-only `url` is never stored. */
+export function storedAvatar(avatar: AgentAvatar): AgentAvatar {
+  return {
+    type: avatar.type,
+    value: avatar.value,
+    ...(avatar.color ? { color: avatar.color } : {}),
+  };
+}
+
+/**
+ * Batch-loads compact agent references (name + resolved avatar) for embedding
+ * into threads, runs and approvals. Accepts null/undefined ids (rows without
+ * an agent) and skips them.
+ */
+export async function loadAgentSummaries(
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, AgentSummary>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const summaries = new Map<string, AgentSummary>();
+  if (unique.length === 0) return summaries;
+
+  const { data, error } = await supabaseAdmin()
+    .from("agents")
+    .select("id, name, avatar")
+    .in("id", unique);
+  if (error) throw new Error(`Could not load agents: ${error.message}`);
+
+  for (const row of (data ?? []) as { id: string; name: string; avatar: unknown }[]) {
+    const parsed = AgentAvatarSchema.safeParse(row.avatar);
+    summaries.set(row.id, {
+      name: row.name,
+      avatar: await resolveAvatar(parsed.success ? parsed.data : DEFAULT_AGENT_AVATAR),
+    });
+  }
+  return summaries;
+}
+
+/** Returns the agent id when it exists and belongs to the user, else null. */
+export async function ownedAgentId(userId: string, agentId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin()
+    .from("agents")
+    .select("id")
+    .eq("id", agentId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
 }
 
 function badRequest(message: string): Error {

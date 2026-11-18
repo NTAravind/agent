@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Approval, RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { decideApproval, fetchRun, type RunDetail } from '@/lib/agents';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
@@ -127,9 +128,14 @@ export default function RunScreen() {
         }
       >
         {run ? (
-          <Typography type="body" weight="semibold">
-            {run.goal}
-          </Typography>
+          <View className="flex-row items-center gap-3">
+            {detail?.agent ? (
+              <AgentAvatar avatar={detail.agent.avatar} size={32} />
+            ) : null}
+            <Typography type="body" weight="semibold" className="flex-1">
+              {run.goal}
+            </Typography>
+          </View>
         ) : null}
 
         {error ? (
@@ -164,9 +170,14 @@ export default function RunScreen() {
         {pendingApprovals.map((approval) => (
           <Card key={approval.id} className="rounded-2xl border border-warning">
             <Card.Body className="gap-2">
-              <Card.Title>Approval needed</Card.Title>
+              <View className="flex-row items-center gap-2">
+                {detail?.agent ? (
+                  <AgentAvatar avatar={detail.agent.avatar} size={24} />
+                ) : null}
+                <Card.Title>Approval needed</Card.Title>
+              </View>
               <Typography type="body-sm">
-                {`The agent wants to use "${approval.tool_name ?? 'a sensitive tool'}".`}
+                {`${detail?.agent?.name ?? 'The agent'} wants to use "${approval.tool_name ?? 'a sensitive tool'}".`}
               </Typography>
               {typeof approval.args === 'object' && approval.args !== null ? (
                 <Typography type="body-xs" color="muted" numberOfLines={6}>

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { AgentSummarySchema } from "./agents";
+
 /**
  * Chat contracts shared by the API and the mobile app so they cannot drift.
  * The message shape mirrors the AI SDK's UIMessage, but stays dependency-free
@@ -32,6 +34,8 @@ export type AttachmentRef = z.infer<typeof AttachmentRefSchema>;
 export const ChatRequestSchema = z.object({
   /** Existing thread; omit to start a new one. */
   threadId: z.string().uuid().optional(),
+  /** Agent that owns this conversation; embedded as `thread.agent` when set. */
+  agentId: z.string().uuid().optional(),
   messages: z.array(ChatMessageSchema).min(1),
   /** Registry id, e.g. "google:gemini-3.6-flash". Defaults to the server default. */
   model: z.string().optional(),
@@ -44,6 +48,10 @@ export const ThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string().nullable(),
   model: z.string().nullable(),
+  /** Agent this conversation belongs to (null on threads created before it was tracked). */
+  agent_id: z.string().uuid().nullable(),
+  /** Embedded by list/detail responses: the thread's agent, name + resolved avatar. */
+  agent: AgentSummarySchema.nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
