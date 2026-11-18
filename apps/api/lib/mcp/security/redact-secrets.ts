@@ -19,6 +19,9 @@ const PATTERNS: Array<[RegExp, string]> = [
   [/\b(xox[baprs]-[A-Za-z0-9-]{8,})/g, "[redacted]"],
   [/\b(gh[pousr]_[A-Za-z0-9]{8,})/g, "[redacted]"],
   [/\b(tsk_[A-Za-z0-9]{8,})/g, "[redacted]"],
+  // Composio keys: platform API keys (ak_) and Connect consumer keys (ck_).
+  [/\b(ak_[A-Za-z0-9_-]{8,})/g, "[redacted]"],
+  [/\b(ck_[A-Za-z0-9_-]{8,})/g, "[redacted]"],
   // JWTs anywhere.
   [/\b(ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})/g, "[redacted-jwt]"],
   // query-string credentials.

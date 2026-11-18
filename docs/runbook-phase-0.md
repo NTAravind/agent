@@ -91,9 +91,11 @@ requests fail, because the chat route writes to `threads` and `messages`.
 
 ## 6c. Integration provider keys (Phase 6)
 
-- `COMPOSIO_API_KEY` — <https://composio.com> → dashboard → **API keys**. Enables the Composio
-  marketplace listing; without it `connect` fails fast with *"Composio is not configured on this
-  deployment."* Server-only: never an `EXPO_PUBLIC_*` name, and never inside a listing's `config`.
+- `COMPOSIO_API_KEY` — <https://composio.com> → **Settings → Project Settings → API Keys**. Must be a
+  **Platform API key (`ak_…`)**: a Connect consumer key (`ck_…`) is rejected with 401, and the adapter
+  now says so explicitly. Enables the Composio marketplace listing; without it `connect` fails fast with
+  *"Composio is not configured on this deployment."* Server-only: never an `EXPO_PUBLIC_*` name, and
+  never inside a listing's `config`.
 
 Add it to `apps/api/.env.local` **and** the Vercel environment (Preview + Production). Seed the
 listing with [`db/migrations/0012_seed_composio_listing.sql`](../db/migrations/0012_seed_composio_listing.sql),
