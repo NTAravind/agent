@@ -1,6 +1,7 @@
 import { step } from "inngest";
 
-import { runAgent, resumeAgentRun } from "@/lib/agent/graph";
+import { resumeAgentRun } from "@/lib/agent/graph";
+import { executeRun } from "@/lib/agent/execute";
 import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, vaultChanged } from "@/lib/inngest/events";
@@ -83,7 +84,7 @@ export const agentRunFunction = inngest.createFunction(
   async ({ event }) => {
     const { runId, userId, goal, preferredModel } = event.data;
 
-    return await step.run("execute-agent-graph", () => runAgent({ runId, userId, goal, preferredModel }));
+    return await step.run("execute-agent-graph", () => executeRun({ runId, userId, goal, preferredModel }));
   },
 );
 

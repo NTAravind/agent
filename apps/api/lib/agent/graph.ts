@@ -58,16 +58,16 @@ const PREPENDED_MODELS = (process.env.AGENT_MODELS_PREPEND ?? "")
   .map((id) => id.trim())
   .filter(Boolean);
 
-const FAST_MODELS = [...PREPENDED_MODELS, "google:gemini-3.5-flash-lite", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
-const ACT_MODELS = [...PREPENDED_MODELS, DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
-const FINAL_MODELS = [...PREPENDED_MODELS, "google:gemini-3.8-flash", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+export const FAST_MODELS = [...PREPENDED_MODELS, "google:gemini-3.5-flash-lite", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+export const ACT_MODELS = [...PREPENDED_MODELS, DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
+export const FINAL_MODELS = [...PREPENDED_MODELS, "google:gemini-3.8-flash", DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER];
 
-type UsageSink = {
+export type UsageSink = {
   add(input?: number | null, output?: number | null): void;
   total(): number;
 };
 
-function makeUsageSink(): UsageSink {
+export function makeUsageSink(): UsageSink {
   let tokens = 0;
   return {
     add(input, output) {
@@ -79,13 +79,13 @@ function makeUsageSink(): UsageSink {
   };
 }
 
-function truncate(value: unknown, max = 600): string {
+export function truncate(value: unknown, max = 600): string {
   if (value === undefined || value === null) return "";
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-async function generateObjectWithFallback<SCHEMA extends ZodType>(options: {
+export async function generateObjectWithFallback<SCHEMA extends ZodType>(options: {
   schema: SCHEMA;
   prompt: string;
   system?: string;
@@ -142,10 +142,16 @@ type GraphDeps = {
   preferredModel?: string;
   /** Agent's attached remote MCP tools (loaded at run/resume start). */
   mcp?: McpToolRuntime | null;
+  /**
+   * Sensitive-tool policy. "gate" (default) parks the run on an approval;
+   * "deny" auto-denies sensitive calls without parking — used for supervisor
+   * child runs, which must never block their parent on a human decision.
+   */
+  approvalMode?: "gate" | "deny";
 };
 
 function buildGraph(deps: GraphDeps) {
-  const { runId, userId, usage, mcp } = deps;
+  const { runId, userId, usage, mcp, approvalMode = "gate" } = deps;
   const tools = declarationTools(mcp);
 
   const nodeEvent = (
@@ -287,7 +293,20 @@ function buildGraph(deps: GraphDeps) {
       isSensitive(name) || (mcp?.requiresApproval(name) ?? false);
 
     const sensitive = pending.find((call) => needsApproval(call.name));
-    if (sensitive) {
+    if (approvalMode === "deny") {
+      // Supervisor child runs never park on a human: every sensitive call in
+      // this round is denied up front and the model works without it.
+      for (const call of pending.filter((candidate) => needsApproval(candidate.name))) {
+        toolLog.push(
+          `→ ${call.name} requires approval, but this run is a supervisor child: auto-denied. Do not retry it; achieve the task another way.`,
+        );
+        pending.splice(pending.indexOf(call), 1);
+        await appendRunEvent(runId, "error", {
+          tool: call.name,
+          message: "auto-denied (supervisor child run)",
+        });
+      }
+    } else if (sensitive) {
       let row = await findLatestApprovalForRunTool(runId, sensitive.name);
 
       if (!row) {
@@ -564,6 +583,8 @@ export type RunAgentInput = {
   goal: string;
   threadId?: string | null;
   preferredModel?: string;
+  /** Sensitive-tool policy; supervisor child runs pass "deny" (never park). */
+  approvalMode?: "gate" | "deny";
 };
 
 /**
@@ -589,7 +610,14 @@ export async function runAgent(input: RunAgentInput): Promise<{ status: string; 
     return null;
   });
 
-  const compiled = buildGraph({ runId, userId, usage, preferredModel: input.preferredModel, mcp }).compile({ checkpointer });
+  const compiled = buildGraph({
+    runId,
+    userId,
+    usage,
+    preferredModel: input.preferredModel,
+    mcp,
+    approvalMode: input.approvalMode,
+  }).compile({ checkpointer });
 
   try {
     const finalState = (await compiled.invoke(

@@ -20,12 +20,23 @@ async function accessToken(): Promise<string | null> {
 }
 
 /** Starts an agent run (executed durably by Inngest). */
-export async function startRun(goal: string, model?: string | null): Promise<StartRunResponse> {
+export async function startRun(
+  goal: string,
+  model?: string | null,
+  agentId?: string | null,
+): Promise<StartRunResponse> {
   const token = await accessToken();
   if (!token) throw new Error('Not signed in.');
   return await apiFetch<StartRunResponse>("/api/agents/run", {
     token,
-    init: { method: "POST", body: JSON.stringify({ goal, ...(model ? { model } : {}) }) },
+    init: {
+      method: "POST",
+      body: JSON.stringify({
+        goal,
+        ...(model ? { model } : {}),
+        ...(agentId ? { agentId } : {}),
+      }),
+    },
   });
 }
 
@@ -142,11 +153,26 @@ export async function fetchRuns(): Promise<RunListItem[]> {
   return response.runs;
 }
 
+/** A supervisor's specialist child run (nests under the parent timeline). */
+export type RunChild = {
+  id: string;
+  goal: string;
+  status: string;
+  model: string | null;
+  tokens_used: number;
+  created_at: string;
+  finished_at: string | null;
+  /** The specialist that ran it (name + resolved avatar). */
+  agent?: AgentSummary | null;
+};
+
 export type RunDetail = {
   run: AgentRun;
   events: RunEvent[];
   /** The run's agent (name + resolved avatar), when it has one. */
   agent?: AgentSummary | null;
+  /** Supervisor children, oldest first (nesting order). */
+  children?: RunChild[];
   pendingApprovals?: Approval[];
 };
 

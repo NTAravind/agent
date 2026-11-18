@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Card, Chip, Spinner, Typography } from 'heroui-native';
+import { Button, Card, Chip, ListGroup, Spinner, Typography } from 'heroui-native';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Approval, RunEvent } from '@agent/shared';
+import { DEFAULT_AGENT_AVATAR, type Approval, type RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -11,12 +11,26 @@ import { decideApproval, fetchRun, type RunDetail } from '@/lib/agents';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
 
+const STATUS_COLOR: Record<string, 'default' | 'success' | 'danger' | 'warning'> = {
+  queued: 'default',
+  running: 'warning',
+  awaiting_approval: 'warning',
+  succeeded: 'success',
+  failed: 'danger',
+  cancelled: 'default',
+};
+
 const NODE_LABEL: Record<string, string> = {
   plan: 'Making a plan',
   act: 'Researching',
   observe: 'Checking progress',
   self_correct: 'Adjusting approach',
   finalize: 'Writing the result',
+  // Supervisor graph
+  delegate: 'Delegating to specialists',
+  fan_out: 'Specialists researching',
+  verify: 'Cross-checking results',
+  merge: 'Merging the report',
 };
 
 export default function RunScreen() {
@@ -69,6 +83,7 @@ export default function RunScreen() {
 
   const run = detail?.run;
   const events = detail?.events ?? [];
+  const children = detail?.children ?? [];
   const pendingApprovals = detail?.pendingApprovals ?? [];
   const answer =
     run?.status === 'succeeded' && run.result && typeof run.result === 'object'
@@ -135,6 +150,41 @@ export default function RunScreen() {
             <Typography type="body" weight="semibold" className="flex-1">
               {run.goal}
             </Typography>
+          </View>
+        ) : null}
+
+        {/* Supervisor children nest under the run (Phase 7 nested timeline). */}
+        {children.length > 0 ? (
+          <View className="gap-2">
+            <Typography type="body-sm" color="muted">
+              Specialists
+            </Typography>
+            <ListGroup className="rounded-2xl">
+              {children.map((child) => (
+                <ListGroup.Item
+                  key={child.id}
+                  onPress={() => router.push({ pathname: '/run', params: { id: child.id } })}
+                  accessibilityLabel={child.goal}
+                >
+                  <ListGroup.ItemPrefix>
+                    <AgentAvatar avatar={child.agent?.avatar ?? DEFAULT_AGENT_AVATAR} size={24} />
+                  </ListGroup.ItemPrefix>
+                  <ListGroup.ItemContent>
+                    <ListGroup.ItemTitle numberOfLines={1}>
+                      {child.agent?.name ?? 'Specialist'}
+                    </ListGroup.ItemTitle>
+                    <ListGroup.ItemDescription numberOfLines={2}>
+                      {child.goal}
+                    </ListGroup.ItemDescription>
+                  </ListGroup.ItemContent>
+                  <ListGroup.ItemSuffix>
+                    <Chip variant="soft" size="sm" color={STATUS_COLOR[child.status] ?? 'default'}>
+                      <Chip.Label>{child.status.replace('_', ' ')}</Chip.Label>
+                    </Chip>
+                  </ListGroup.ItemSuffix>
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
           </View>
         ) : null}
 

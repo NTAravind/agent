@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { AgentPicker } from '@/components/agent-picker';
 import { ModelPicker } from '@/components/model-picker';
 import { fetchAgents, fetchRuns, startRun, type Agent, type RunListItem } from '@/lib/agents';
 import { fetchEnabledModels, type ModelOption } from '@/lib/models';
@@ -27,6 +28,7 @@ export default function AgentsScreen() {
   const [starting, setStarting] = useState(false);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,13 @@ export default function AgentsScreen() {
       ]);
       setRuns(nextRuns);
       setAgents(nextAgents);
+      // Default the task to the supervisor when one exists (that's the
+      // delegation path); otherwise the first agent.
+      setAgentId((current) =>
+        current && nextAgents.some((agent) => agent.id === current)
+          ? current
+          : nextAgents.find((agent) => agent.isSupervisor)?.id ?? nextAgents[0]?.id ?? null,
+      );
       const available = modelResponse?.models.filter((model) => model.available && model.capabilities.tools && model.capabilities.structuredOutput) ?? [];
       setModels(available);
       setModelId((current) => current && available.some((model) => model.id === current)
@@ -71,7 +80,7 @@ export default function AgentsScreen() {
 
     setStarting(true);
     try {
-      const { runId } = await startRun(trimmed, modelId);
+      const { runId } = await startRun(trimmed, modelId, agentId);
       setGoal('');
       await load();
       router.push({ pathname: '/run', params: { id: runId } });
@@ -80,9 +89,17 @@ export default function AgentsScreen() {
     } finally {
       setStarting(false);
     }
-  }, [goal, load, modelId, router]);
+  }, [agentId, goal, load, modelId, router]);
 
   const grouped = useMemo(() => runs, [runs]);
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === agentId) ?? null,
+    [agents, agentId],
+  );
+  const specialistCount = useMemo(
+    () => agents.filter((agent) => !agent.isSupervisor).length,
+    [agents],
+  );
 
   return (
     <KeyboardAvoidingView
@@ -161,6 +178,14 @@ export default function AgentsScreen() {
           <Typography type="body-sm" color="muted">
             New task
           </Typography>
+          <AgentPicker agents={agents} selectedId={agentId} onSelect={setAgentId} />
+          {selectedAgent?.isSupervisor ? (
+            <Typography type="body-xs" color="muted">
+              {specialistCount >= 2
+                ? `Supervisor · delegates to ${specialistCount} specialists in parallel, then cross-checks and merges their results.`
+                : 'Supervisor · needs at least 2 specialists — runs as a single agent until then.'}
+            </Typography>
+          ) : null}
           <View className="flex-row items-center justify-between rounded-xl border border-border px-3 py-1">
             <Typography type="body-sm" color="muted">Preferred model</Typography>
             <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />

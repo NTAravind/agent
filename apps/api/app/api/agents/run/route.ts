@@ -1,5 +1,5 @@
 import { requireUser, toErrorResponse } from "@/lib/auth";
-import { runAgent } from "@/lib/agent/graph";
+import { executeRun } from "@/lib/agent/execute";
 import { createRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested } from "@/lib/inngest/events";
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     });
 
     if (body.inline) {
-      const result = await runAgent({ runId: run.id, userId: user.id, goal, preferredModel });
+      const result = await executeRun({ runId: run.id, userId: user.id, goal, preferredModel });
       return Response.json({ runId: run.id, status: result.status, agentId });
     }
 

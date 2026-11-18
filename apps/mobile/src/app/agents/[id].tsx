@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Button, Chip, Input, Spinner, Typography } from 'heroui-native';
+import { Button, Chip, Input, Spinner, Switch, Typography } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -64,6 +64,7 @@ export default function AgentEditorScreen() {
   const [avatar, setAvatar] = useState<AgentAvatar>(DEFAULT_AGENT_AVATAR);
   const [avatarTab, setAvatarTab] = useState<AvatarTab>('emoji');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [isSupervisor, setIsSupervisor] = useState(false);
   const [toolCount, setToolCount] = useState(0);
   const [models, setModels] = useState<ModelOption[]>([]);
 
@@ -92,6 +93,7 @@ export default function AgentEditorScreen() {
         setRole(agent.role ?? '');
         setInstructions(agent.instructions ?? '');
         setAvatar(agent.avatar);
+        setIsSupervisor(agent.isSupervisor);
         setToolCount(agent.toolCount);
         setModelId(
           agent.model && available.some((model) => model.id === agent.model)
@@ -177,6 +179,7 @@ export default function AgentEditorScreen() {
         model: modelId,
         fallbackModels: fallbacks,
         avatar,
+        isSupervisor,
       };
       if (isNew) await createAgent(payload);
       else await updateAgent(id, payload);
@@ -186,7 +189,7 @@ export default function AgentEditorScreen() {
     } finally {
       setSaving(false);
     }
-  }, [avatar, fallbacks, instructions, isNew, id, modelId, name, role, router]);
+  }, [avatar, fallbacks, instructions, isSupervisor, isNew, id, modelId, name, role, router]);
 
   const handleDelete = useCallback(() => {
     RNAlert.alert(
@@ -379,6 +382,24 @@ export default function AgentEditorScreen() {
               onChangeText={setInstructions}
               placeholder="How this agent should work, what to avoid, how to answer…"
               multiline
+            />
+          </View>
+
+          {/* Supervisor toggle (Phase 7): delegation target for task runs. */}
+          <View className="flex-row items-center justify-between rounded-xl border border-border px-3 py-2">
+            <View className="flex-1 gap-1 pr-3">
+              <Typography type="body-sm" weight="semibold">
+                Supervisor
+              </Typography>
+              <Typography type="body-xs" color="muted">
+                Delegates tasks to your specialists in parallel, then cross-checks and merges
+                their results. Needs at least 2 non-supervisor agents.
+              </Typography>
+            </View>
+            <Switch
+              isSelected={isSupervisor}
+              onSelectedChange={setIsSupervisor}
+              accessibilityLabel="Make this agent a supervisor"
             />
           </View>
 

@@ -1,12 +1,12 @@
 import { requireUser, toErrorResponse } from "@/lib/auth";
-import { getRunWithEvents } from "@/lib/agent/runs";
+import { getRunWithEvents, listChildRuns } from "@/lib/agent/runs";
 import { loadAgentSummaries } from "@/lib/agents";
 import { listPendingByRun } from "@/lib/approvals";
 
 /**
  * GET /api/runs/:id — one run plus its timeline events, the run's agent
- * (name + resolved avatar) and any pending approvals (the timeline UI polls
- * this while the run is in flight).
+ * (name + resolved avatar), its supervisor children (nested timeline) and
+ * any pending approvals (the timeline UI polls this while in flight).
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -22,13 +22,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const agentId = (data.run as { agent_id?: string | null }).agent_id ?? null;
-    const [pendingApprovals, summaries] = await Promise.all([
+    const [pendingApprovals, summaries, children] = await Promise.all([
       listPendingByRun(id),
       loadAgentSummaries([agentId]),
+      listChildRuns(id),
     ]);
     const agent = agentId ? (summaries.get(agentId) ?? null) : null;
 
-    return Response.json({ ...data, agent, pendingApprovals });
+    return Response.json({ ...data, agent, children, pendingApprovals });
   } catch (error) {
     return toErrorResponse(error);
   }

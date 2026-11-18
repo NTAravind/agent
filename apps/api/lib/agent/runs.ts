@@ -17,6 +17,8 @@ export async function createRun(input: {
   threadId?: string | null;
   agentId?: string | null;
   model?: string | null;
+  /** Supervisor runs set this so children nest under the parent timeline. */
+  parentRunId?: string | null;
 }): Promise<{ id: string; status: RunStatus }> {
   const { data, error } = await supabaseAdmin()
     .from("agent_runs")
@@ -25,6 +27,7 @@ export async function createRun(input: {
       goal: input.goal,
       thread_id: input.threadId ?? null,
       agent_id: input.agentId ?? null,
+      parent_run_id: input.parentRunId ?? null,
       status: "queued",
       model: input.model ?? null,
     })
@@ -104,8 +107,31 @@ export async function listRuns(userId: string, limit = 30): Promise<Record<strin
     .from("agent_runs")
     .select("id, goal, status, model, tokens_used, created_at, finished_at, agent_id")
     .eq("user_id", userId)
+    // Child runs nest under their supervisor's detail, never the top list.
+    .is("parent_run_id", null)
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  const rows = (data ?? []) as { agent_id: string | null }[];
+  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
+  return rows.map((row) => ({
+    ...row,
+    agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,
+  }));
+}
+
+/**
+ * Supervisor children for the nested timeline: one row per child run with its
+ * agent summary, oldest first (creation order matches the delegation order).
+ */
+export async function listChildRuns(
+  parentRunId: string,
+): Promise<Record<string, unknown>[]> {
+  const { data } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("id, goal, status, model, tokens_used, created_at, finished_at, result, agent_id")
+    .eq("parent_run_id", parentRunId)
+    .order("created_at", { ascending: true });
 
   const rows = (data ?? []) as { agent_id: string | null }[];
   const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
