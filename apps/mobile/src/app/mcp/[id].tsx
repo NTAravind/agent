@@ -6,17 +6,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 
 import { AppHeader } from '@/components/app-header';
+import { fetchAgents, type Agent } from '@/lib/agents';
 import {
   attachServer,
   connectServer,
   detachServer,
   disconnectServer,
   fetchAgentAttachments,
-  fetchAgents,
   fetchServer,
   refreshConnection,
   updateToolPermissions,
-  type Agent,
   type AgentAttachment,
   type ServerDetail,
 } from '@/lib/mcp';

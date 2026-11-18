@@ -1,5 +1,71 @@
 import { z } from "zod";
 
+/** Agent entity + runs and their timeline events. */
+
+// --- Agent -----------------------------------------------------------------
+
+/**
+ * Avatar as stored in `agents.avatar` (jsonb). `image` value is a Storage
+ * path; renderers fall back to the emoji when an image fails to load.
+ */
+export const AgentAvatarSchema = z.object({
+  type: z.enum(["emoji", "icon", "image"]),
+  value: z.string().min(1).max(512),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "use a #rrggbb color")
+    .optional(),
+});
+export type AgentAvatar = z.infer<typeof AgentAvatarSchema>;
+
+/** Matches the `agents.avatar` column default. */
+export const DEFAULT_AGENT_AVATAR: AgentAvatar = {
+  type: "emoji",
+  value: "🤖",
+  color: "#7F9DFF",
+};
+
+const agentNameSchema = z.string().min(1).max(60);
+const registryModelIdSchema = z.string().min(3).max(120);
+
+/**
+ * POST /api/agents body. `instructions` maps to the `system_prompt` column,
+ * `fallbackModels` to `fallback_models`. `model: null` means "app default"
+ * (the dashboard-configured default model).
+ */
+export const AgentCreateSchema = z.object({
+  name: agentNameSchema,
+  role: z.string().max(120).nullish(),
+  instructions: z.string().max(4000).nullish(),
+  model: registryModelIdSchema.nullish(),
+  fallbackModels: z.array(registryModelIdSchema).max(5).optional(),
+  avatar: AgentAvatarSchema.optional(),
+  isSupervisor: z.boolean().optional(),
+});
+export type AgentCreate = z.infer<typeof AgentCreateSchema>;
+
+/** PATCH /api/agents/:id body — every field optional; `null` clears. */
+export const AgentPatchSchema = AgentCreateSchema.partial();
+export type AgentPatch = z.infer<typeof AgentPatchSchema>;
+
+/** Agent as API responses return it (camelCase, avatar as an object). */
+export const AgentSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  role: z.string().nullable(),
+  instructions: z.string().nullable(),
+  model: z.string().nullable(),
+  fallbackModels: z.array(z.string()),
+  avatar: AgentAvatarSchema,
+  isSupervisor: z.boolean(),
+  /** Enabled MCP tools the agent can currently call. */
+  toolCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+export type Agent = z.infer<typeof AgentSchema>;
+
+// --- Runs ------------------------------------------------------------------
+
 /** Agent runs and their timeline events — mirrors db/migrations/0005_agent_runs.sql. */
 
 export const RunStatusSchema = z.enum([

@@ -28,6 +28,7 @@ export default function RootLayout() {
               <Stack.Screen name="note" options={{ headerShown: false }} />
               <Stack.Screen name="memories" options={{ headerShown: false }} />
               <Stack.Screen name="agents" options={{ headerShown: false }} />
+              <Stack.Screen name="agents/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="run" options={{ headerShown: false }} />
               <Stack.Screen name="canvas" options={{ headerShown: false }} />
               <Stack.Screen name="canvas/[id]" options={{ headerShown: false }} />

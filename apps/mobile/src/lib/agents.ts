@@ -1,4 +1,12 @@
-import type { AgentRun, Approval, RunEvent, StartRunResponse } from "@agent/shared";
+import type {
+  Agent,
+  AgentCreate,
+  AgentPatch,
+  AgentRun,
+  Approval,
+  RunEvent,
+  StartRunResponse,
+} from "@agent/shared";
 
 import { apiFetch } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -16,6 +24,47 @@ export async function startRun(goal: string, model?: string | null): Promise<Sta
   return await apiFetch<StartRunResponse>("/api/agents/run", {
     token,
     init: { method: "POST", body: JSON.stringify({ goal, ...(model ? { model } : {}) }) },
+  });
+}
+
+// --- Agent CRUD ------------------------------------------------------------
+
+export type { Agent, AgentCreate, AgentPatch };
+
+export async function fetchAgents(): Promise<Agent[]> {
+  const token = await accessToken();
+  if (!token) return [];
+  const response = await apiFetch<{ agents: Agent[] }>("/api/agents", { token });
+  return response.agents;
+}
+
+export async function createAgent(input: AgentCreate): Promise<Agent> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  const response = await apiFetch<{ agent: Agent }>("/api/agents", {
+    token,
+    init: { method: "POST", body: JSON.stringify(input) },
+  });
+  return response.agent;
+}
+
+export async function updateAgent(id: string, patch: AgentPatch): Promise<Agent> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  const response = await apiFetch<{ agent: Agent }>(`/api/agents/${id}`, {
+    token,
+    init: { method: "PATCH", body: JSON.stringify(patch) },
+  });
+  return response.agent;
+}
+
+/** Removes the agent; MCP attachments cascade, run history is kept. */
+export async function deleteAgent(id: string): Promise<void> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  await apiFetch<{ deleted: boolean }>(`/api/agents/${id}`, {
+    token,
+    init: { method: "DELETE" },
   });
 }
 

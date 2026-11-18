@@ -128,20 +128,7 @@ export async function disconnectServer(id: string): Promise<void> {
   await call<{ disconnected: boolean }>(`/api/mcp/connections/${id}`, { method: 'DELETE' });
 }
 
-// --- Agents & attachments --------------------------------------------------
-
-export type Agent = {
-  id: string;
-  name: string;
-  model: string | null;
-  avatarEmoji: string | null;
-  createdAt: string;
-};
-
-export async function fetchAgents(): Promise<Agent[]> {
-  const response = await call<{ agents: Agent[] }>('/api/agents');
-  return response.agents;
-}
+// --- Attachments -----------------------------------------------------------
 
 export type AgentAttachment = {
   attachmentId: string;

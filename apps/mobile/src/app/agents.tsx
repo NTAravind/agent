@@ -5,8 +5,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentAvatar } from '@/components/agent-avatar';
 import { ModelPicker } from '@/components/model-picker';
-import { fetchRuns, startRun, type RunListItem } from '@/lib/agents';
+import { fetchAgents, fetchRuns, startRun, type Agent, type RunListItem } from '@/lib/agents';
 import { fetchEnabledModels, type ModelOption } from '@/lib/models';
 
 const STATUS_COLOR: Record<string, 'default' | 'success' | 'danger' | 'warning'> = {
@@ -25,6 +26,7 @@ export default function AgentsScreen() {
   const [goal, setGoal] = useState('');
   const [starting, setStarting] = useState(false);
   const [runs, setRuns] = useState<RunListItem[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +35,13 @@ export default function AgentsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [nextRuns, modelResponse] = await Promise.all([fetchRuns(), fetchEnabledModels()]);
+      const [nextRuns, modelResponse, nextAgents] = await Promise.all([
+        fetchRuns(),
+        fetchEnabledModels(),
+        fetchAgents(),
+      ]);
       setRuns(nextRuns);
+      setAgents(nextAgents);
       const available = modelResponse?.models.filter((model) => model.available && model.capabilities.tools && model.capabilities.structuredOutput) ?? [];
       setModels(available);
       setModelId((current) => current && available.some((model) => model.id === current)
@@ -89,6 +96,16 @@ export default function AgentsScreen() {
           </Button>
         }
         center={<Typography type="h4">Agents</Typography>}
+        right={
+          <Button
+            size="md"
+            variant="ghost"
+            onPress={() => router.push('/agents/new')}
+            accessibilityLabel="New agent"
+          >
+            <Button.Label>+</Button.Label>
+          </Button>
+        }
       />
 
       <ScrollView
@@ -105,6 +122,41 @@ export default function AgentsScreen() {
           />
         }
       >
+        {agents.length > 0 ? (
+          <View className="gap-2">
+            <Typography type="body-sm" color="muted">
+              Your agents
+            </Typography>
+            <ListGroup className="rounded-2xl">
+              {agents.map((agent) => (
+                <ListGroup.Item
+                  key={agent.id}
+                  onPress={() =>
+                    router.push({ pathname: '/agents/[id]', params: { id: agent.id } })
+                  }
+                  accessibilityLabel={`Edit ${agent.name}`}
+                >
+                  <ListGroup.ItemPrefix>
+                    <AgentAvatar avatar={agent.avatar} size={32} />
+                  </ListGroup.ItemPrefix>
+                  <ListGroup.ItemContent>
+                    <ListGroup.ItemTitle>{agent.name}</ListGroup.ItemTitle>
+                    <ListGroup.ItemDescription>
+                      {[
+                        agent.role ?? 'No role',
+                        agent.toolCount > 0 ? `${agent.toolCount} MCP tools` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </ListGroup.ItemDescription>
+                  </ListGroup.ItemContent>
+                  <ListGroup.ItemSuffix />
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
+          </View>
+        ) : null}
+
         <View className="gap-2">
           <Typography type="body-sm" color="muted">
             New task
