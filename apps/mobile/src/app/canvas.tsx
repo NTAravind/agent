@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Button, Card, Spinner, Typography, ListGroup } from 'heroui-native';
+import { Button, Card, Spinner, Typography } from 'heroui-native';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -56,7 +56,7 @@ export default function CanvasListScreen() {
             <Card.Body className="gap-2">
               <Card.Title>No canvases yet</Card.Title>
               <Card.Description>
-                Ask the agent for a dashboard — e.g. "Make a dashboard of my weekly reading" — and it will
+                Ask the agent for a dashboard — e.g. &quot;Make a dashboard of my weekly reading&quot; — and it will
                 appear here, refreshable.
               </Card.Description>
             </Card.Body>

@@ -89,6 +89,16 @@ the SQL Editor and press Run.
 Until the migrations are applied, LLM calls still work — usage rows are silently skipped — but chat
 requests fail, because the chat route writes to `threads` and `messages`.
 
+## 6c. Integration provider keys (Phase 6)
+
+- `COMPOSIO_API_KEY` — <https://composio.com> → dashboard → **API keys**. Enables the Composio
+  marketplace listing; without it `connect` fails fast with *"Composio is not configured on this
+  deployment."* Server-only: never an `EXPO_PUBLIC_*` name, and never inside a listing's `config`.
+
+Add it to `apps/api/.env.local` **and** the Vercel environment (Preview + Production). Seed the
+listing with [`db/migrations/0012_seed_composio_listing.sql`](../db/migrations/0012_seed_composio_listing.sql),
+which is idempotent (`on conflict (slug) do nothing`).
+
 ## 7. Mobile app
 
 ```bash

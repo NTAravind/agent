@@ -63,7 +63,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const effectiveModel = patch.model !== undefined ? patch.model : current.model;
     const effectiveFallbacks =
       patch.fallbackModels !== undefined ? patch.fallbackModels : (current.fallback_models ?? []);
-    assertKnownModels(effectiveModel, effectiveFallbacks);
+    await assertKnownModels(effectiveModel, effectiveFallbacks);
 
     const update: Record<string, unknown> = {};
     if (patch.name !== undefined) update.name = patch.name;

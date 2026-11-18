@@ -90,8 +90,9 @@ const stackNode = z.object({
   children: z.array(z.unknown()).max(20),
 });
 
-/** Base schema: container children are z.unknown() until the depth walk. */
-const componentSchema = z.union([
+// Keep forward compatibility for saved canvases. The native renderer shows a
+// muted fallback for component types it does not know yet.
+const knownComponentSchema = z.union([
   statNode,
   chartNode,
   tableNode,
@@ -102,8 +103,18 @@ const componentSchema = z.union([
   tabsNode,
   stackNode,
 ]);
+const knownNodeTypes = new Set([
+  "stat", "chart", "table", "list", "markdown", "image", "button", "tabs", "stack",
+]);
+const unknownNode = z
+  .object({ type: z.string().min(1) })
+  .passthrough()
+  .refine((node) => !knownNodeTypes.has(node.type));
 
-export type CanvasComponent = z.infer<typeof componentSchema>;
+/** Base schema: container children are z.unknown() until the depth walk. */
+const componentSchema = z.union([knownComponentSchema, unknownNode]);
+
+export type CanvasComponent = z.infer<typeof knownComponentSchema>;
 
 const canvasSpecBase = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -121,7 +132,7 @@ const canvasSpecBase = z.object({
     .optional(),
 });
 
-export type CanvasSpec = z.infer<typeof canvasSpecBase>;
+export type CanvasSpec = Omit<z.infer<typeof canvasSpecBase>, "root"> & { root: CanvasComponent };
 
 /** Recursion cap from UI_UX_SPEC.md: nesting depth ≤ 4. */
 const MAX_CANVAS_DEPTH = 4;
@@ -131,10 +142,13 @@ export const MAX_SPEC_BYTES = 100_000;
 function checkDepth(node: unknown, depth: number): string | null {
   if (depth > MAX_CANVAS_DEPTH) return `nesting deeper than ${MAX_CANVAS_DEPTH}`;
   if (typeof node !== "object" || node === null) return null;
+  const parsedNode = componentSchema.safeParse(node);
+  if (!parsedNode.success) return "contains an invalid component";
   const children =
     (node as { children?: unknown[] }).children ?? (node as { tabs?: { child?: unknown }[] }).tabs?.map((tab) => tab.child);
   if (!Array.isArray(children)) return null;
   for (const child of children) {
+    if (!componentSchema.safeParse(child).success) return "contains an invalid child component";
     const problem = checkDepth(child, depth + 1);
     if (problem) return problem;
   }
@@ -166,7 +180,7 @@ export function validateCanvasSpec(input: unknown): CanvasSpecValidation {
     return { ok: false, error: "The canvas spec is larger than 100 KB." };
   }
 
-  return { ok: true, spec: parsed.data };
+  return { ok: true, spec: parsed.data as CanvasSpec };
 }
 
 /** Supabase row shape for canvases (DATABASE_SCHEMA.md). */

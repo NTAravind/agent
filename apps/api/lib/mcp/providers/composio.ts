@@ -13,11 +13,16 @@ import { executeDirectTool } from "@/lib/mcp/providers/direct-remote";
  * from their session API and treat it as a direct remote endpoint for
  * discovery/execution. Requires `COMPOSIO_API_KEY` (server-only env).
  *
- * NOTE: unverifiable without a live Composio account (2026-11-17). The
- * adapter is intentionally gated: without the key every call fails fast with
- * a clear message instead of half-working. Re-verify against Composio's
- * current docs (session API shape, free-plan limits) before seeding any
- * composio listing as verified — the plan requires it.
+ * Re-verified against current docs (2026-11-18):
+ * - Session API: POST /api/v3.1/tool_router/session with `x-api-key`,
+ *   responding with `session.mcp.url` + `session.mcp.headers` to hand to any
+ *   MCP client — https://docs.composio.dev/reference/api-reference/tool-router/postToolRouterSession
+ * - Free plan (Hobby): 100,000 tool calls/month, 2,000 req/min, no card —
+ *   https://composio.dev/pricing
+ * Toolkit slugs are lowercase (`gmail`, `github`, …) and come from the
+ * catalog listing's config. Still not exercised end to end without a live
+ * account: the adapter is intentionally gated, so without COMPOSIO_API_KEY
+ * every call fails fast with a clear message instead of half-working.
  */
 
 const COMPOSIO_SESSION_URL = "https://backend.composio.dev/api/v3.1/tool_router/session";

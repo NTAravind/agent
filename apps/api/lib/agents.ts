@@ -6,6 +6,7 @@ import {
   type AgentSummary,
 } from "@agent/shared";
 
+import { primeMobileModel } from "@/lib/models/catalog";
 import { findRegistryEntry } from "@/lib/models/registry";
 import { loadAgentMcpTools } from "@/lib/mcp/tools-loader";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -144,18 +145,26 @@ function badRequest(message: string): Error {
 }
 
 /**
- * Rejects model ids the registry doesn't know (so the editor can't save an
- * id that `getModel()` would later throw on) and duplicate entries.
+ * Rejects model ids neither the static registry nor the persisted, mobile-enabled
+ * catalog knows (so the editor can't save an id that `getModel()` would later
+ * throw on) and duplicate entries.
+ *
+ * The mobile picker sources `/api/models`, which reads `provider_models` — those
+ * rows carry dynamic ids (`openrouter:cohere/north-mini-code-free`, …) that are
+ * not in `MODEL_REGISTRY`. `primeMobileModel` accepts those when enabled and
+ * registers them in the runtime registry, exactly like the chat/run routes do.
  */
-export function assertKnownModels(
+export async function assertKnownModels(
   model?: string | null,
   fallbackModels?: string[],
-): void {
+): Promise<void> {
   const fallbacks = fallbackModels ?? [];
   const seen = new Set<string>();
   for (const id of [model, ...fallbacks]) {
     if (!id) continue;
-    if (!findRegistryEntry(id)) throw badRequest(`Unknown model "${id}".`);
+    if (!findRegistryEntry(id) && !(await primeMobileModel(id))) {
+      throw badRequest(`Unknown model "${id}".`);
+    }
     if (seen.has(id)) {
       throw badRequest(`Model "${id}" appears more than once.`);
     }

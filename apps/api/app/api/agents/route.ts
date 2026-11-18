@@ -56,7 +56,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    assertKnownModels(parsed.data.model, parsed.data.fallbackModels);
+    await assertKnownModels(parsed.data.model, parsed.data.fallbackModels);
 
     const input = parsed.data;
     const { data, error } = await supabaseAdmin()

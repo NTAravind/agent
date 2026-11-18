@@ -271,41 +271,45 @@ function TabsBlock({ node, onAction }: { node: Extract<Node, { type: 'tabs' }>; 
   );
 }
 
-export function CanvasNode({ node, onAction }: { node: Node; onAction: CanvasActionHandler }) {
-  switch (node.type) {
+export function CanvasNode({ node, onAction }: { node: Node | unknown; onAction: CanvasActionHandler }) {
+  if (typeof node !== 'object' || node === null || !('type' in node) || typeof node.type !== 'string') {
+    return <UnknownBlock node={node} />;
+  }
+  const component = node as Node;
+  switch (component.type) {
     case 'stat':
-      return <StatBlock node={node} />;
+      return <StatBlock node={component} />;
     case 'chart':
-      return <ChartBlock node={node} />;
+      return <ChartBlock node={component} />;
     case 'table':
-      return <TableBlock node={node} />;
+      return <TableBlock node={component} />;
     case 'list':
-      return <ListBlock node={node} />;
+      return <ListBlock node={component} />;
     case 'markdown':
       return (
         <Typography type="body-sm" className="leading-6 text-foreground">
-          {node.text}
+          {component.text}
         </Typography>
       );
     case 'image':
       return (
         <Image
-          source={{ uri: node.uri }}
+          source={{ uri: component.uri }}
           style={{ width: '100%', height: 180, borderRadius: 12 }}
           contentFit="cover"
-          accessibilityLabel={node.alt}
+          accessibilityLabel={component.alt}
         />
       );
     case 'button':
-      return <ButtonBlock node={node} onAction={onAction} />;
+      return <ButtonBlock node={component} onAction={onAction} />;
     case 'tabs':
-      return <TabsBlock node={node} onAction={onAction} />;
+      return <TabsBlock node={component} onAction={onAction} />;
     case 'stack':
       return (
         <View
-          className={node.direction === 'row' ? 'flex-row flex-wrap gap-3' : 'gap-3'}
+          className={component.direction === 'row' ? 'flex-row flex-wrap gap-3' : 'gap-3'}
         >
-          {node.children.map((child, index) => (
+          {component.children.map((child, index) => (
             <CanvasNode key={index} node={child as Node} onAction={onAction} />
           ))}
         </View>

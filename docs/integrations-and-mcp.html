@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Integrations and MCP · Agent app guide</title>
+  <style>
+    :root {
+      --ink: #19231f; --muted: #5d6c65; --paper: #f4f6f1; --card: #fff;
+      --line: #dce4dc; --green: #176a4b; --green-soft: #e4f2e9;
+      --blue: #345d89; --blue-soft: #e9f0f8; --amber: #805600; --amber-soft: #fff2d1;
+      --shadow: 0 16px 44px rgba(28, 48, 37, .07); --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    a { color: var(--green); text-underline-offset: 3px; }
+    .hero { padding: 64px 24px 50px; color: white; background: radial-gradient(circle at 88% 5%, #548b6f 0, transparent 32%), linear-gradient(135deg, #173f30, #10251e 72%); }
+    .hero-inner, main { width: min(1040px, calc(100% - 40px)); margin: auto; }
+    .eyebrow { margin: 0 0 12px; color: #b7dbc6; font-size: .78rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 760px; margin: 0; font-size: clamp(2.5rem, 7vw, 4.5rem); line-height: 1.04; letter-spacing: -.055em; }
+    .hero p { max-width: 720px; margin: 20px 0 0; color: #d8e9de; font-size: 1.12rem; }
+    .badges { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+    .badge { border: 1px solid #ffffff42; border-radius: 999px; padding: 5px 11px; color: #eaf5ed; font-size: .82rem; }
+    main { padding: 32px 0 72px; }
+    .toc { display: flex; flex-wrap: wrap; gap: 9px; padding: 16px; margin: 0 0 28px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    .toc a { padding: 5px 10px; border-radius: 9px; background: #f2f6f1; color: #24543e; font-size: .9rem; text-decoration: none; }
+    section { margin: 25px 0; padding: clamp(22px, 4vw, 36px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+    h2 { margin: 0 0 12px; font-size: clamp(1.55rem, 3vw, 2.15rem); line-height: 1.2; letter-spacing: -.035em; }
+    h3 { margin: 22px 0 8px; font-size: 1.12rem; }
+    p { margin: 10px 0; }
+    .lead { color: var(--muted); font-size: 1.06rem; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .mini { padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: #fbfcfa; }
+    .mini h3 { margin: 0 0 6px; }
+    .mini p { margin: 0; color: var(--muted); }
+    .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; margin: 22px 0; counter-reset: steps; }
+    .step { position: relative; min-height: 142px; padding: 16px; border-radius: 15px; background: #f4f8f3; border: 1px solid var(--line); counter-increment: steps; }
+    .step::before { content: counter(steps, decimal-leading-zero); display: block; margin-bottom: 10px; color: var(--green); font-size: .78rem; font-weight: 900; letter-spacing: .1em; }
+    .step strong { display: block; margin-bottom: 4px; }
+    .step span { color: var(--muted); font-size: .92rem; }
+    .callout { padding: 16px 18px; margin: 18px 0; border-left: 4px solid var(--green); border-radius: 10px; background: var(--green-soft); }
+    .callout.warn { border-color: #cc930e; background: var(--amber-soft); color: #563d0a; }
+    .callout.info { border-color: #6486b1; background: var(--blue-soft); }
+    .callout p:first-child { margin-top: 0; }
+    .callout p:last-child { margin-bottom: 0; }
+    ul, ol { padding-left: 1.3rem; }
+    li { margin: 6px 0; }
+    code { overflow-wrap: anywhere; padding: .15em .4em; border-radius: 6px; background: #eef2ed; color: #244a38; font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .table-wrap { overflow-x: auto; margin: 16px 0; }
+    table { width: 100%; border-collapse: collapse; min-width: 580px; }
+    th, td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: #496055; font-size: .82rem; letter-spacing: .05em; text-transform: uppercase; }
+    .pill { display: inline-block; padding: 3px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: .78rem; font-weight: 750; }
+    .pill.preview { background: var(--amber-soft); color: var(--amber); }
+    .sources { font-size: .94rem; }
+    footer { width: min(1040px, calc(100% - 40px)); margin: 0 auto; padding: 0 0 38px; color: var(--muted); font-size: .88rem; }
+    @media (max-width: 740px) { .hero { padding-top: 46px; } .flow { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 440px) { .hero-inner, main, footer { width: min(100% - 28px, 1040px); } .flow { grid-template-columns: 1fr; } .step { min-height: auto; } section { padding: 20px; } }
+    @media print { body { background: white; } .hero { print-color-adjust: exact; } section, .toc { box-shadow: none; break-inside: avoid; } a { color: inherit; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">A guide to your app</p>
+      <h1>Integrations, explained.</h1>
+      <p>How the integrations already in your app connect to agents, what MCP does, and what it will take to add Gmail and Google Classroom.</p>
+      <div class="badges"><span class="badge">Current app: remote MCP marketplace</span><span class="badge">Credentials stay server-side</span><span class="badge">Updated November 18, 2026</span></div>
+    </div>
+  </header>
+  <main>
+    <nav class="toc" aria-label="On this page">
+      <a href="#mcp">MCP basics</a><a href="#current">Your current integrations</a><a href="#use">How to use one</a><a href="#under-hood">What happens behind the scenes</a><a href="#google">Gmail & Classroom</a><a href="#safety">Permissions and safety</a>
+    </nav>
+
+    <section id="mcp">
+      <h2>What MCP does</h2>
+      <p class="lead">MCP is a standard way for an AI app to discover and call tools offered by another service.</p>
+      <div class="grid">
+        <article class="mini"><h3>Your app is the host</h3><p>The API connects to MCP servers and gives the agent a selected set of tools for a run.</p></article>
+        <article class="mini"><h3>An MCP server offers tools</h3><p>A server might offer actions such as searching documentation, looking up email threads, or listing classes.</p></article>
+        <article class="mini"><h3>The agent chooses a tool</h3><p>The model can request an enabled tool when it helps answer the user. Your server sends the request and returns the result.</p></article>
+        <article class="mini"><h3>You control the connection</h3><p>You connect an integration, attach it to an agent, and set which discovered tools are enabled and need approval.</p></article>
+      </div>
+      <div class="callout info"><strong>Think of MCP like a common plug.</strong> Each service still decides what its server can do and what access its account grants. MCP standardizes how your app discovers and calls those capabilities.</div>
+    </section>
+
+    <section id="current">
+      <h2>Integrations already in your app</h2>
+      <p>Your app has a remote MCP marketplace. It supports vendor-hosted Streamable HTTP servers and has two connection styles: direct connections and Composio-managed connections. The seeded catalog includes Context7 and Exa; the available list is controlled by the app’s Integrations catalog.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Connection type</th><th>What it means</th><th>Credential handling</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Direct remote</strong></td><td>Your API connects to the vendor MCP endpoint. A listing can require no login, an API key, or OAuth.</td><td>OAuth tokens and API keys are encrypted and used on the server.</td></tr>
+          <tr><td><strong>Composio-managed</strong></td><td>Composio creates a per-user MCP session for a connected provider. Your API calls that session.</td><td>Session details and headers are stored encrypted server-side.</td></tr>
+          <tr><td><strong>Local stdio</strong></td><td>A process running on the same machine communicates over standard input/output.</td><td>Not the marketplace flow in your deployed app; it needs a long-lived host to run that process.</td></tr>
+        </tbody>
+      </table></div>
+      <p>The app discovers tools from the server and caches their names, descriptions, and input schemas. You can then choose tools per agent. A server being connected does not automatically mean every agent can use every tool.</p>
+    </section>
+
+    <section id="use">
+      <h2>How to connect and use an integration</h2>
+      <p>In the mobile app, open <strong>Integrations</strong> (the MCP marketplace), choose a listing, and follow its connection instructions.</p>
+      <div class="flow">
+        <div class="step"><strong>Choose a listing</strong><span>Browse the marketplace and open the integration details.</span></div>
+        <div class="step"><strong>Connect your account</strong><span>Use Connect, enter a key, or finish the OAuth login in the browser.</span></div>
+        <div class="step"><strong>Attach it to an agent</strong><span>Select the agent that should have access to the integration.</span></div>
+        <div class="step"><strong>Choose tools</strong><span>Enable only the tools you want. Set approval for actions that change or send things.</span></div>
+      </div>
+      <p>Once attached, use that agent in chat or a task. The agent can call its enabled integration tools during the run. On the integration detail screen you can refresh its tool list, change per-tool settings, or disconnect it. Disconnecting removes its tools from agents.</p>
+      <div class="callout"><p><strong>Example:</strong> connect Context7, attach it to your coding agent, and enable its documentation lookup tools. Ask the agent about a library; it can query the live docs instead of relying only on model memory.</p></div>
+    </section>
+
+    <section id="under-hood">
+      <h2>What happens behind the scenes</h2>
+      <ol>
+        <li>The mobile app calls your authenticated API to connect to the selected catalog listing.</li>
+        <li>The API validates the remote endpoint, completes the appropriate authentication flow, and stores credentials encrypted.</li>
+        <li>The API talks MCP to the remote server and discovers its tools. Tool definitions are cached in the database.</li>
+        <li>You attach selected tools to an agent. The server keeps a per-agent allow-list and approval settings.</li>
+        <li>At run time, the API loads only tools allowed for that agent, calls the remote MCP server when needed, and returns a bounded, redacted result to the agent.</li>
+      </ol>
+      <p>Provider/service secrets are kept in the API environment. The mobile app stores the Supabase session, not provider credentials. The API also checks remote URLs to reduce server-side request forgery risk and enforces the user identity on protected routes.</p>
+    </section>
+
+    <section id="google">
+      <h2>Adding Gmail and Google Classroom</h2>
+      <p>Google publishes remote MCP servers for both products. They can fit your app’s direct remote MCP pattern, but they are currently in the <strong>Google Workspace Developer Preview</strong>.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Service</th><th>Official MCP endpoint</th><th>Examples</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Gmail</td><td><code>https://gmailmcp.googleapis.com/mcp/v1</code></td><td>Search threads, read messages, create drafts, manage labels</td><td><span class="pill preview">Developer Preview</span></td></tr>
+          <tr><td>Classroom</td><td><code>https://classroommcp.googleapis.com/mcp/v1</code></td><td>List courses, view coursework, create announcements or coursework</td><td><span class="pill preview">Developer Preview</span></td></tr>
+        </tbody>
+      </table></div>
+      <h3>What you need to do</h3>
+      <ol>
+        <li>Join the Google Workspace Developer Preview and choose a Google Cloud project.</li>
+        <li>Enable the Gmail API and Gmail MCP service; enable the Classroom API and Classroom MCP service.</li>
+        <li>Configure Google Auth Platform and create a Web application OAuth client. Google requires Workspace MCP OAuth clients to have <em>Use this client for an AI-powered agent</em> selected.</li>
+        <li>Register your app’s callback URL with Google. Configure the scopes needed for your intended tools and request offline access so the connection can refresh tokens.</li>
+        <li>Update your app’s OAuth adapter to use Google’s client ID and secret and the chosen scopes. Then add Gmail and Classroom as OAuth marketplace listings and connect them through the app.</li>
+      </ol>
+      <div class="callout warn"><p><strong>Implementation note:</strong> the app already has OAuth, PKCE/state handling, encrypted credential storage, and a remote MCP client. Its current OAuth flow is based on dynamic client registration and a public client. Google’s Workspace MCP setup requires a configured OAuth client ID/secret, so the generic flow needs a Google-compatible option before these listings can be expected to connect. Don’t treat adding the two endpoint URLs alone as a complete integration.</p></div>
+      <h3>Start with narrow permissions</h3>
+      <p>For Gmail, decide whether the agent only needs to find and read messages or also create drafts and change labels. Google documents scopes including <code>gmail.readonly</code>, <code>gmail.compose</code>, and <code>gmail.modify</code>; the last grants broader access. Gmail’s current MCP tool list includes draft creation but not sending mail.</p>
+      <p>For Classroom, choose scopes based on whether you need course listing, coursework, announcements, or student submissions. The permissions available can depend on whether the signed-in user is a teacher or student and their access to each class.</p>
+      <p>After connection, use the same app flow: attach each integration to an agent, enable only selected tools, and keep tools that publish or modify coursework behind approval.</p>
+    </section>
+
+    <section id="safety">
+      <h2>Permissions and safety</h2>
+      <ul>
+        <li><strong>Use least privilege:</strong> request the smallest Google scopes and enable only the MCP tools an agent needs.</li>
+        <li><strong>Require approval for side effects:</strong> draft, publish, label, send, delete, or update actions should have deliberate approval settings. High-risk tools cannot have approval disabled by the API.</li>
+        <li><strong>Review before acting:</strong> keep a human review step before messages or classroom updates are published.</li>
+        <li><strong>Treat tool output as untrusted:</strong> email bodies, assignment text, tool descriptions, and documents can contain misleading instructions. They must not change an agent’s tool permissions.</li>
+        <li><strong>Disconnect when no longer needed:</strong> revoke access in Google as well if you want to invalidate the OAuth grant at the source.</li>
+      </ul>
+      <div class="callout info"><strong>In one sentence:</strong> MCP provides the connection standard; Google provides the Gmail/Classroom capabilities and OAuth permissions; your app decides which agent can use each tool and when you must approve an action.</div>
+    </section>
+
+    <section id="sources">
+      <h2>References</h2>
+      <ul class="sources">
+        <li><a href="https://developers.google.com/workspace/guides/configure-mcp-servers">Google Workspace MCP configuration</a> — service setup, endpoints, OAuth client requirements.</li>
+        <li><a href="https://developers.google.com/workspace/gmail/api/reference/mcp">Gmail MCP tool reference</a> — available Gmail tools.</li>
+        <li><a href="https://developers.google.cn/workspace/classroom/guides/mcp/configure-mcp-server?hl=en">Google Classroom MCP configuration</a> — Classroom setup and examples.</li>
+        <li><a href="https://developers.google.com/identity/protocols/oauth2/scopes">Google OAuth scopes</a> — permissions available for Gmail and Classroom APIs.</li>
+        <li>Project details: <code>docs/spec/ARCHITECTURE.md</code>, <code>docs/spec/API_SPEC.md</code>, and <code>docs/spec/IMPLEMENTATION_PLAN.md</code>.</li>
+      </ul>
+    </section>
+  </main>
+  <footer>Prepared from the current app specs and implementation, with Google setup details checked against Google’s developer documentation on November 18, 2026.</footer>
+</body>
+</html>

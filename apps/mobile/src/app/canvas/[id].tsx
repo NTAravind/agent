@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Button, Card, Spinner, Typography } from 'heroui-native';
-import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CanvasAction, CanvasRow } from '@agent/shared';

@@ -1,10 +1,15 @@
 import type { AgentAvatar as AgentAvatarValue } from '@agent/shared';
+import { DEFAULT_AGENT_AVATAR } from '@agent/shared';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 type Props = {
-  avatar: AgentAvatarValue;
+  /**
+   * Missing/invalid avatars fall back to the default emoji — an older API
+   * response or a row without an avatar must never crash the list.
+   */
+  avatar?: AgentAvatarValue | null;
   /** Diameter in points — 24 in timelines, 32 in lists/chat, 56 in the editor. */
   size?: number;
 };
@@ -19,14 +24,15 @@ export function AgentAvatar({ avatar, size = 32 }: Props) {
   // The key of the image that failed to load; deriving `failed` during render
   // keeps this reactive without a setState-in-effect.
   const [failedKey, setFailedKey] = useState<string | null>(null);
+  const value = avatar ?? DEFAULT_AGENT_AVATAR;
   const uri =
-    avatar.type === 'image'
-      ? (avatar.url ?? (avatar.value.startsWith('http') ? avatar.value : null))
+    value.type === 'image'
+      ? (value.url ?? (value.value.startsWith('http') ? value.value : null))
       : null;
-  const uriKey = uri ?? avatar.value;
+  const uriKey = uri ?? value.value;
 
   const showImage = uri !== null && failedKey !== uriKey;
-  const glyph = avatar.type === 'image' ? '🤖' : avatar.value;
+  const glyph = value.type === 'image' ? '🤖' : value.value;
   const fontSize = Math.round(size * 0.55);
 
   return (
@@ -38,7 +44,7 @@ export function AgentAvatar({ avatar, size = 32 }: Props) {
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: avatar.color ?? '#7F9DFF',
+        backgroundColor: value.color ?? '#7F9DFF',
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
@@ -57,7 +63,7 @@ export function AgentAvatar({ avatar, size = 32 }: Props) {
           style={{
             fontSize,
             lineHeight: Math.round(size * 0.66),
-            fontWeight: avatar.type === 'icon' ? '700' : '400',
+            fontWeight: value.type === 'icon' ? '700' : '400',
           }}
         >
           {glyph}
