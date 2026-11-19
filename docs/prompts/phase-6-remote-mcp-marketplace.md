@@ -565,6 +565,36 @@ guarantee.
 three taps or fewer (excluding external OAuth consent), attach it to an
 agent, and successfully use one of its tools in the next run.
 
+## Addendum: Composio as a marketplace source (2026-11-19)
+
+The marketplace has **two tabs**, both fed by `GET /api/mcp/servers`
+(`?provider=` selects the source):
+
+-   **Built-in** — `provider=direct`: the admin-seeded, vendor-hosted MCP
+    listings (unchanged from §6.8).
+-   **Composio** — `GET /api/mcp/composio/catalog`: Composio's live toolkit
+    catalog (1,700+ apps) proxied server-side from `GET /api/v3.1/toolkits`
+    (10-minute in-process cache, ≤100 rows returned, `?q=`/`?category=`
+    filters, top-12 category chips). Composio is a *source*, not a listing:
+    rows are **not** `mcp_servers` rows until the user connects.
+
+**Materialize on connect:** `POST /api/mcp/connections` accepts
+`{ toolkit }` instead of `{ serverId }`. The API upserts an idempotent
+`composio-<toolkit>` listing (provider `composio`, `config.toolkits =
+[<toolkit>]`, instructions, Composio logo/description) and connects it
+through the normal adapter — one Composio tool-router session per listing,
+exposing the 6 Composio meta-tools. After that, the existing detail /
+tool-cache / attach / approval flow (§6.6) applies unchanged.
+
+Connected-state mapping: a catalog row is *connected* when any connected
+`provider=composio` listing has that toolkit in `config.toolkits` (the
+original umbrella listing enables its whole toolkit set at once).
+
+Risk: `COMPOSIO_MULTI_EXECUTE_TOOL` reports `destructiveHint: true` in its
+MCP annotations → high risk + approval-required (verified against a live
+`tools/list`, 2026-11-19); the read-only meta-tools classify as documented
+in §5.5 / API_SPEC 5.
+
 ## Explicitly deferred
 
 -   Installing MCP servers from arbitrary GitHub repositories.

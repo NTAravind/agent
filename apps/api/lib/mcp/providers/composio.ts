@@ -31,7 +31,8 @@ import type { ServerRow } from "@/lib/mcp/registry";
 const COMPOSIO_SESSION_URL = "https://backend.composio.dev/api/v3.1/tool_router/session";
 const SESSION_TIMEOUT_MS = 20_000;
 
-function requireComposioKey(): string {
+/** Exported for the marketplace catalog proxy (same key, same guards). */
+export function requireComposioKey(): string {
   const key = optionalEnv("COMPOSIO_API_KEY");
   if (!key) {
     throw new Error(

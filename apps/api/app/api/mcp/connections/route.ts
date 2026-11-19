@@ -1,4 +1,5 @@
 import { requireUser, toErrorResponse } from "@/lib/auth";
+import { ensureComposioListing } from "@/lib/mcp/composio-catalog";
 import { listConnections, toPublicConnection } from "@/lib/mcp/connections";
 import { connectProvider } from "@/lib/mcp/providers";
 import { getServer } from "@/lib/mcp/registry";
@@ -7,9 +8,12 @@ import { startAuthorization } from "@/lib/mcp/oauth";
 /**
  * GET  /api/mcp/connections — the caller's connections (never credentials).
  * POST /api/mcp/connections — connect a server.
- *      Body: { serverId, apiKey?, credentials? }
- *      Returns { connection } when done, or { authorizationUrl } for OAuth
- *      (the app opens the URL in a browser; the callback finishes the flow).
+ *      Body: { serverId? | toolkit?, apiKey?, credentials? } — `serverId` for
+ *      an existing listing, or `toolkit` (a Composio toolkit slug) to
+ *      materialize its listing on first connect and then connect it.
+ *      Returns { connectionId, serverId, … } when done, or { authorizationUrl }
+ *      for OAuth (the app opens the URL in a browser; the callback finishes
+ *      the flow).
  */
 export async function GET(request: Request) {
   try {
@@ -26,18 +30,26 @@ export async function POST(request: Request) {
     const user = await requireUser(request);
     const body = (await request.json().catch(() => ({}))) as {
       serverId?: string;
+      toolkit?: string;
       apiKey?: string;
       credentials?: Record<string, unknown>;
     };
 
-    if (!body.serverId) {
+    // Composio tab: connect by toolkit slug; the marketplace listing is
+    // materialized on first connect (idempotent).
+    let serverId = typeof body.serverId === "string" ? body.serverId : undefined;
+    if (typeof body.toolkit === "string" && body.toolkit.trim()) {
+      serverId = (await ensureComposioListing(body.toolkit)).id;
+    }
+
+    if (!serverId) {
       return Response.json(
-        { error: { code: "bad_request", message: "serverId is required." } },
+        { error: { code: "bad_request", message: "serverId or toolkit is required." } },
         { status: 400 },
       );
     }
 
-    const server = await getServer(body.serverId);
+    const server = await getServer(serverId);
     if (!server || !server.enabled) {
       return Response.json(
         { error: { code: "not_found", message: "Unknown integration." } },
@@ -87,7 +99,12 @@ export async function POST(request: Request) {
           : undefined,
     });
     return Response.json(
-      { connectionId: result.connectionId, status: "connected", toolCount: result.toolCount ?? 0 },
+      {
+        connectionId: result.connectionId,
+        serverId: server.id,
+        status: "connected",
+        toolCount: result.toolCount ?? 0,
+      },
       { status: 201 },
     );
   } catch (error) {

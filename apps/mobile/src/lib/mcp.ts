@@ -72,6 +72,8 @@ export type CatalogFilter = {
   q?: string;
   category?: string;
   connected?: boolean;
+  /** `direct` = the built-in, vendor-hosted listings. */
+  provider?: string;
 };
 
 export async function fetchServers(filter: CatalogFilter = {}): Promise<CatalogEntry[]> {
@@ -79,6 +81,7 @@ export async function fetchServers(filter: CatalogFilter = {}): Promise<CatalogE
   if (filter.q) params.set('q', filter.q);
   if (filter.category) params.set('category', filter.category);
   if (filter.connected) params.set('connected', '1');
+  if (filter.provider) params.set('provider', filter.provider);
   const query = params.toString();
   const response = await call<{ servers: CatalogEntry[] }>(`/api/mcp/servers${query ? `?${query}` : ''}`);
   return response.servers;
@@ -86,6 +89,47 @@ export async function fetchServers(filter: CatalogFilter = {}): Promise<CatalogE
 
 export async function fetchServer(id: string): Promise<ServerDetail> {
   return call<ServerDetail>(`/api/mcp/servers/${id}`);
+}
+
+// --- Composio catalog (Composio-as-source tab) ----------------------------
+
+export type ComposioCatalogItem = {
+  /** Composio toolkit slug (`gmail`) — the connect key. */
+  toolkit: string;
+  name: string;
+  description: string;
+  logo: string | null;
+  category: string | null;
+  toolCount: number;
+  authSchemes: string[];
+  /** Set once a marketplace listing has been materialized by a connect. */
+  serverId: string | null;
+  connected: boolean;
+  connectionId: string | null;
+  connectionStatus: string | null;
+};
+
+export type ComposioCatalogResponse = {
+  configured: boolean;
+  items: ComposioCatalogItem[];
+  total: number;
+  categories: string[];
+};
+
+export async function fetchComposioCatalog(filter: { q?: string; category?: string } = {}): Promise<ComposioCatalogResponse> {
+  const params = new URLSearchParams();
+  if (filter.q) params.set('q', filter.q);
+  if (filter.category) params.set('category', filter.category);
+  const query = params.toString();
+  return call<ComposioCatalogResponse>(`/api/mcp/composio/catalog${query ? `?${query}` : ''}`);
+}
+
+/** Connects a Composio toolkit (materializes its listing server-side). */
+export async function connectComposioToolkit(toolkit: string): Promise<ConnectResult> {
+  return call<ConnectResult>('/api/mcp/connections', {
+    method: 'POST',
+    body: JSON.stringify({ toolkit }),
+  });
 }
 
 // --- Connections -----------------------------------------------------------
@@ -102,6 +146,8 @@ export type Connection = {
 
 export type ConnectResult = {
   connectionId: string;
+  /** The listing this connection belongs to (navigate to its detail page). */
+  serverId?: string;
   status?: string;
   toolCount?: number;
   /** OAuth only: open this in a browser to finish connecting. */

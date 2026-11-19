@@ -53,7 +53,8 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | POST | `/api/mcp/servers` | Admin create listing (`MCPServerCreateSchema`); 409 on duplicate slug |
 | PUT | `/api/mcp/servers/:id` | Admin update (`MCPServerPatchSchema`); supports `slug`, `instructions`, `disabled`; 409 on duplicate slug |
 | DELETE | `/api/mcp/servers/:id` | Admin delete (cascades to tools/connections) |
-| POST | `/api/mcp/connections` | `{ serverId, apiKey? }` or returns `{ authUrl }` for OAuth |
+| POST | `/api/mcp/connections` | `{ serverId | toolkit, apiKey? }` or returns `{ authUrl }` for OAuth. `toolkit` (a Composio toolkit slug) materializes its `composio-<toolkit>` listing on first connect, then connects it; returns `serverId` |
+| GET | `/api/mcp/composio/catalog` | Composio-as-source tab: browsable toolkit catalog (`?q=&category=`) with this user's connection state merged in; `{ configured:false }` (200) when `COMPOSIO_API_KEY` is unset |
 | GET | `/api/mcp/oauth/callback` | Completes OAuth, stores encrypted creds |
 | DELETE | `/api/mcp/connections/:id` | Disconnect |
 | GET | `/api/mcp/connections/:id/tools` | Live tool list |
