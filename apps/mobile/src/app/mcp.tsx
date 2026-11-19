@@ -3,13 +3,13 @@ import { Alert, Button, Chip, Input, ListGroup, Spinner, Typography } from 'hero
 import { Alert as RNAlert, RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as WebBrowser from 'expo-web-browser';
 
 import { AppHeader } from '@/components/app-header';
 import {
   connectComposioToolkit,
   fetchComposioCatalog,
   fetchServers,
+  openMarketplaceAuthorization,
   verifyConnection,
   type CatalogEntry,
   type ComposioCatalogItem,
@@ -177,7 +177,9 @@ export default function MarketplaceScreen() {
         : await connectComposioToolkit(item.toolkit);
 
       if (result.authorizationUrl) {
-        await WebBrowser.openBrowserAsync(result.authorizationUrl);
+        const serverId = item.serverId ?? ('serverId' in result ? result.serverId : undefined);
+        if (!serverId) throw new Error('The integration was connected but its app destination is missing.');
+        await openMarketplaceAuthorization(result.authorizationUrl, serverId);
         const connectionId = item.connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
         if (connectionId) void pollVerify(connectionId);
       } else {

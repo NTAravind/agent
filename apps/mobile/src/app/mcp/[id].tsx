@@ -3,7 +3,6 @@ import { Alert, Button, Card, Chip, Input, ListGroup, Spinner, Switch, Typograph
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as WebBrowser from 'expo-web-browser';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -15,6 +14,7 @@ import {
   disconnectServer,
   fetchAgentAttachments,
   fetchServer,
+  openMarketplaceAuthorization,
   refreshConnection,
   updateToolPermissions,
   verifyConnection,
@@ -36,7 +36,7 @@ import {
 
 type AttachmentTool = AgentAttachment['tools'][number];
 type CachedTool = ServerDetail['tools'][number];
-type Notice = { kind: 'success' | 'danger'; text: string };
+type Notice = { kind: 'success' | 'warning' | 'danger'; text: string };
 
 const RISK_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
   low: 'success',
@@ -103,19 +103,6 @@ export default function IntegrationDetailScreen() {
         ? 'Reconnect'
         : 'Connect';
 
-  // OAuth result deep-linked back from /api/mcp/oauth/callback — derived from
-  // the route params (no effect needed; manual notices set below take over as
-  // soon as the user acts).
-  const oauthNotice: Notice | null =
-    oauthParams.status === 'connected'
-      ? {
-          kind: 'success',
-          text: 'Signed in. Tools discovered — add this integration to an agent below.',
-        }
-      : oauthParams.status === 'error'
-        ? { kind: 'danger', text: oauthParams.message ?? 'Connection failed.' }
-        : null;
-
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const attachment =
     (connectionId ? attachments.find((row) => row.connection?.id === connectionId) : null) ?? null;
@@ -156,8 +143,10 @@ export default function IntegrationDetailScreen() {
         setAttachments(await fetchAgentAttachments(target));
       }
       setError(null);
+      return nextDetail;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return null;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -186,7 +175,7 @@ export default function IntegrationDetailScreen() {
     }, [load]),
   );
 
-  const shownNotice = notice ?? oauthNotice;
+  const shownNotice = notice;
 
   /** Re-check every 2s (max 60s) after a link is opened; stop on any answer. */
   const pollVerify = useCallback(
@@ -201,8 +190,11 @@ export default function IntegrationDetailScreen() {
             await load();
             if (result.status === 'connected') {
               setNotice({ kind: 'success', text: 'Signed in. Tools discovered below.' });
-            } else if (result.message) {
-              setNotice({ kind: 'danger', text: result.message });
+            } else {
+              setNotice({
+                kind: 'danger',
+                text: result.message || `The provider reports ${result.status}. Reconnect to try again.`,
+              });
             }
             return;
           }
@@ -210,10 +202,55 @@ export default function IntegrationDetailScreen() {
           // Transient failure → keep polling until the budget runs out.
         }
       }
-      if (aliveRef.current) await load();
+      if (aliveRef.current) {
+        await load();
+        setNotice({
+          kind: 'warning',
+          text: 'The provider is still confirming sign-in. Try “Finish connecting” again shortly.',
+        });
+      }
     },
     [load],
   );
+
+  // Callback URLs return here only after server-side callback handling. Reload
+  // the authoritative connection first; never show success from URL params
+  // alone. A provider may still be initializing, so keep using verify polling.
+  const handledCallbackRef = useRef<string | null>(null);
+  useEffect(() => {
+    const callbackStatus = oauthParams.status;
+    if (!callbackStatus) return;
+    const callbackKey = `${serverId}:${callbackStatus}:${oauthParams.message ?? ''}`;
+    if (handledCallbackRef.current === callbackKey) return;
+    handledCallbackRef.current = callbackKey;
+
+    let cancelled = false;
+    void (async () => {
+      const loaded = await load();
+      if (cancelled) return;
+      if (callbackStatus === 'error') {
+        setNotice({ kind: 'danger', text: oauthParams.message ?? 'Connection failed.' });
+        return;
+      }
+      const cid = loaded?.connection?.id;
+      if (loaded?.connection?.status === 'connected') {
+        setNotice({
+          kind: 'success',
+          text: 'Signed in. Tools discovered — add this integration to an agent below.',
+        });
+        return;
+      }
+      if (cid) {
+        setNotice({ kind: 'warning', text: 'Sign-in received. Verifying the connection…' });
+        await pollVerify(cid);
+      } else {
+        setNotice({ kind: 'danger', text: 'Sign-in returned, but no connection was found. Try again.' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load, oauthParams.message, oauthParams.status, pollVerify, serverId]);
 
   const handleConnect = async () => {
     setBusy('connect');
@@ -230,14 +267,11 @@ export default function IntegrationDetailScreen() {
       if (result.authorizationUrl) {
         setOauthPending(true);
         try {
-          await WebBrowser.openBrowserAsync(result.authorizationUrl);
+          const targetServerId = 'serverId' in result ? result.serverId : undefined;
+          await openMarketplaceAuthorization(result.authorizationUrl, targetServerId ?? serverId);
         } finally {
           setOauthPending(false);
         }
-        setNotice({
-          kind: 'success',
-          text: 'Finish signing in in your browser, then return to the app — it updates automatically.',
-        });
         await load();
         const cid = connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
         if (cid) void pollVerify(cid);
@@ -276,14 +310,10 @@ export default function IntegrationDetailScreen() {
         // Consent expired/revoked mid-flight → reopen the hosted link.
         setOauthPending(true);
         try {
-          await WebBrowser.openBrowserAsync(result.authorizationUrl);
+          await openMarketplaceAuthorization(result.authorizationUrl, serverId);
         } finally {
           setOauthPending(false);
         }
-        setNotice({
-          kind: 'success',
-          text: 'Sign-in is no longer valid — finish it in your browser to keep using this integration.',
-        });
         void pollVerify(connectionId);
         return;
       }
@@ -426,7 +456,11 @@ export default function IntegrationDetailScreen() {
             <Alert status={shownNotice.kind}>
               <Alert.Content>
                 <Alert.Title>
-                  {shownNotice.kind === 'success' ? 'Done' : 'Something went wrong'}
+                  {shownNotice.kind === 'success'
+                    ? 'Done'
+                    : shownNotice.kind === 'warning'
+                      ? 'Checking connection'
+                      : 'Something went wrong'}
                 </Alert.Title>
                 <Alert.Description>{shownNotice.text}</Alert.Description>
               </Alert.Content>

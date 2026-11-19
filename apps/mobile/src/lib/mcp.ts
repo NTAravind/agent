@@ -1,5 +1,7 @@
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 
 /**
  * Remote MCP marketplace client (Phase 6). Thin typed wrapper over the API —
@@ -154,6 +156,15 @@ export type ConnectResult = {
   /** OAuth / Composio hosted auth: open this in a browser to finish connecting. */
   authorizationUrl?: string;
 };
+
+/** Opens a provider sign-in session and resumes the app at its integration. */
+export async function openMarketplaceAuthorization(
+  authorizationUrl: string,
+  serverId: string,
+): Promise<WebBrowser.WebBrowserAuthSessionResult> {
+  const redirectUrl = Linking.createURL(`/mcp/${encodeURIComponent(serverId)}`);
+  return WebBrowser.openAuthSessionAsync(authorizationUrl, redirectUrl);
+}
 
 /** Re-checked status from POST /api/mcp/connections/:id/verify. */
 export type VerifyResult = {
