@@ -97,4 +97,4 @@ export type AgentStateType = typeof AgentState.State;
 /** Hard cap on completed act steps — the run must always finish. */
 export const MAX_AGENT_STEPS = 10;
 /** Hard cap on LLM/tool round-trips within one step. */
-export const MAX_TOOL_ROUNDS_PER_STEP = 6;
+export const MAX_TOOL_ROUNDS_PER_STEP = 4;

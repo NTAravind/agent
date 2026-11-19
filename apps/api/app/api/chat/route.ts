@@ -83,9 +83,13 @@ export async function POST(request: Request) {
       ...(needsPdf ? { pdf: true } : {}),
     };
 
-    // Model messages.
+    // Model messages — window to the last MAX_CHAT_MESSAGES to cap input tokens.
+    const MAX_CHAT_MESSAGES = 16;
+    const windowedMessages = body.messages.length > MAX_CHAT_MESSAGES
+      ? body.messages.slice(-MAX_CHAT_MESSAGES)
+      : body.messages;
     const modelMessages = await convertToModelMessages(
-      body.messages as unknown as Parameters<typeof convertToModelMessages>[0],
+      windowedMessages as unknown as Parameters<typeof convertToModelMessages>[0],
     );
     const messagesWithFiles = withAttachmentParts(modelMessages, attachments);
 

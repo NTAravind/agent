@@ -3,7 +3,7 @@ import type { FetchPageResult, WebSearchResponse, WebSearchResult } from "@agent
 import { optionalEnv } from "@/lib/env";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
-const MAX_PAGE_CHARS = 20_000;
+const MAX_PAGE_CHARS = 6_000;
 
 /**
  * Web search via Tavily (1,000 free credits/month, no card — verified

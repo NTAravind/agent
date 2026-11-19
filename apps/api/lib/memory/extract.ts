@@ -1,7 +1,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 
-import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID } from "@/lib/models";
+import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, FAST_MODEL_ID } from "@/lib/models";
 import { withFallback } from "@/lib/models/fallback";
 import { upsertMemories } from "@/lib/knowledge/search";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -64,7 +64,7 @@ export async function extractMemories(
   if (!transcript) return { inserted: 0, skipped: 0 };
 
   const { result } = await withFallback(
-    [DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER],
+    [FAST_MODEL_ID, DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER],
     (model) =>
       generateObject({
         model,

@@ -365,7 +365,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
         `Goal: ${goal}`,
         ``,
         `Specialist results:`,
-        ...succeeded.map((child) => `### ${child.name}\n${child.answer}`),
+        ...succeeded.map((child) => `### ${child.name}\n${child.answer.slice(0, 3000)}`),
         ``,
         `Cross-check these results against each other: contradictions, unsupported claims, missing or weak sources. Output a bullet list of corrections the final report must apply, or write "No material issues."`,
       ].join("\n"),
@@ -403,7 +403,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
       `Goal: ${goal}`,
       ``,
       `Specialist results (${succeeded.length}):`,
-      ...succeeded.map((child) => `### ${child.name}\n${child.answer}`),
+      ...succeeded.map((child) => `### ${child.name}\n${child.answer.slice(0, 4000)}`),
     ];
     if (failed.length > 0) {
       lines.push(
