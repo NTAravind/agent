@@ -57,8 +57,12 @@ with `403 forbidden`.
 - `GOOGLE_GENERATIVE_AI_API_KEY` — <https://aistudio.google.com/apikey>
 - `GROQ_API_KEY` — <https://console.groq.com/keys>
 - `OPENROUTER_API_KEY` — <https://openrouter.ai/settings/keys>
+- `MISTRAL_API_KEY` — <https://console.mistral.ai/api-keys>
+- `DEEPSEEK_API_KEY` — <https://platform.deepseek.com/api_keys>
+- `HUGGINGFACE_API_KEY` — <https://huggingface.co/settings/tokens> (user access token, `hf_…`)
+- `COHERE_API_KEY` — <https://dashboard.cohere.com/api-keys> (free trial keys are non-commercial only)
 
-Add all three to the Vercel environment **and** to `apps/api/.env.local`. They are server-only: never use an `EXPO_PUBLIC_*` name.
+Add all seven to the Vercel environment **and** to `apps/api/.env.local`. They are server-only: never use an `EXPO_PUBLIC_*` name. Each provider works independently — key any subset.
 
 Verify them with the live provider check (consumes a few free-tier tokens):
 

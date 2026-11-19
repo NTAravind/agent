@@ -3,9 +3,11 @@ import { getConnection } from "@/lib/mcp/connections";
 import { refreshProvider } from "@/lib/mcp/providers";
 
 /**
- * POST /api/mcp/connections/:id/refresh — health check + tool re-discovery.
- * Returns { toolCount, changed } or a redacted error (status stays connected
- * unless the failure was auth-related, which the adapter marks expired).
+ * POST /api/mcp/connections/:id/refresh — re-checks the connection with its
+ * provider and re-syncs tools. Returns { toolCount, changed, status } and,
+ * for Composio, { authorizationUrl } when consent expired/revoked (the app
+ * reopens it); failures are returned redacted instead of silently marking
+ * the row connected.
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {

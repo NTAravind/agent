@@ -1,14 +1,16 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Chip, Input, ListGroup, Spinner, Typography } from 'heroui-native';
 import { Alert as RNAlert, RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
 
 import { AppHeader } from '@/components/app-header';
 import {
   connectComposioToolkit,
   fetchComposioCatalog,
   fetchServers,
+  verifyConnection,
   type CatalogEntry,
   type ComposioCatalogItem,
 } from '@/lib/mcp';
@@ -19,6 +21,11 @@ import {
  *  - "Composio": Composio's live toolkit catalog (1,700+ apps). Rows are
  *    browsed from the Composio API and materialize into a real listing on
  *    first connect, after which the normal detail/attach flow applies.
+ *
+ * Connection states drive the row action: none → Connect, `pending` →
+ * Finish connecting (reopens the hosted consent link), `connected` → open
+ * the detail page, `expired`/`error` → Reconnect. After a link is opened we
+ * poll verify every 2s (max 60s) so the row flips to connected on its own.
  */
 
 const CATEGORIES = ['all', 'search', 'data', 'dev', 'productivity', 'payments', 'observability', 'other'] as const;
@@ -32,6 +39,23 @@ const AUTH_LABEL: Record<string, string> = {
   pat: 'Token',
   provider_managed: 'Managed',
 };
+
+/** Row action for a connection that isn't (or is no longer) connected. */
+const ACTION_LABEL: Record<string, string> = {
+  pending: 'Finish connecting ›',
+  expired: 'Reconnect ›',
+  error: 'Reconnect ›',
+};
+
+const STATUS_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
+  connected: 'success',
+  pending: 'warning',
+  expired: 'danger',
+  error: 'danger',
+};
+
+const POLL_INTERVAL_MS = 2_000;
+const POLL_ATTEMPTS = 30;
 
 export default function MarketplaceScreen() {
   const router = useRouter();
@@ -88,6 +112,41 @@ export default function MarketplaceScreen() {
     }, [load]),
   );
 
+  // Polling must not touch state after the screen goes away.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  /**
+   * After the hosted link is opened: re-check every 2s (up to 60s) with
+   * `issueLink: false` (side-effect free) until consent lands, then reload
+   * so the row shows as connected.
+   */
+  const pollVerify = useCallback(
+    async (connectionId: string) => {
+      for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        if (!aliveRef.current) return;
+        try {
+          const result = await verifyConnection(connectionId, { issueLink: false });
+          if (!aliveRef.current) return;
+          if (result.status !== 'pending') {
+            await load();
+            return;
+          }
+        } catch {
+          // Transient failure → keep polling until the budget runs out.
+        }
+      }
+      if (aliveRef.current) await load();
+    },
+    [load],
+  );
+
   const switchTab = (next: Tab) => {
     if (next === tab) return;
     setTab(next);
@@ -97,7 +156,14 @@ export default function MarketplaceScreen() {
     setLoading(true);
   };
 
-  /** Composio row tap: open the detail page if materialized, else connect. */
+  /**
+   * Composio row tap:
+   *  - connected → open the detail page;
+   *  - pending/expired/error → verify to get the hosted link back (a fresh
+   *    one when the old consent is dead) and open it;
+   *  - never connected → connect (materializes the listing) and open the
+   *    link when sign-in is needed.
+   */
   const onPressToolkit = async (item: ComposioCatalogItem) => {
     if (item.connected && item.serverId) {
       router.push(`/mcp/${item.serverId}`);
@@ -106,15 +172,30 @@ export default function MarketplaceScreen() {
     if (connecting) return;
     setConnecting(item.toolkit);
     try {
-      const result = await connectComposioToolkit(item.toolkit);
-      await load();
-      if (result.serverId) router.push(`/mcp/${result.serverId}`);
+      const result = item.connectionId
+        ? await verifyConnection(item.connectionId, { issueLink: true })
+        : await connectComposioToolkit(item.toolkit);
+
+      if (result.authorizationUrl) {
+        await WebBrowser.openBrowserAsync(result.authorizationUrl);
+        const connectionId = item.connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
+        if (connectionId) void pollVerify(connectionId);
+      } else {
+        // No link needed: either it connected (consent was already ACTIVE)
+        // or there is a message to surface after the reload.
+        await load();
+        if (result.status === 'connected') {
+          const serverId = item.serverId ?? ('serverId' in result ? result.serverId : undefined);
+          if (serverId) router.push(`/mcp/${serverId}`);
+        }
+      }
     } catch (err) {
       RNAlert.alert(
         'Could not connect',
         err instanceof Error ? err.message : String(err),
         [{ text: 'OK' }],
       );
+      await load();
     } finally {
       setConnecting(null);
     }
@@ -237,46 +318,62 @@ export default function MarketplaceScreen() {
 
           {tab === 'built-in' && servers.length > 0 ? (
             <ListGroup className="rounded-2xl">
-              {servers.map((server) => (
-                <ListGroup.Item
-                  key={server.id}
-                  onPress={() => router.push(`/mcp/${server.id}`)}
-                >
-                  <ListGroup.ItemContent>
-                    <View className="flex-row items-center gap-2">
-                      <ListGroup.ItemTitle>{server.name}</ListGroup.ItemTitle>
-                      {server.connected ? (
-                        <Chip variant="soft" size="sm" color="success">
-                          <Chip.Label>connected</Chip.Label>
-                        </Chip>
-                      ) : null}
-                      {server.isVerified ? (
-                        <Chip variant="soft" size="sm" color="accent">
-                          <Chip.Label>verified</Chip.Label>
-                        </Chip>
-                      ) : null}
-                    </View>
-                    <ListGroup.ItemDescription numberOfLines={2}>
-                      {server.description || 'Vendor-hosted remote MCP server.'}
-                    </ListGroup.ItemDescription>
-                    <View className="mt-1 flex-row gap-2">
-                      <Typography type="body-xs" color="muted">
-                        {AUTH_LABEL[server.authType] ?? server.authType}
-                      </Typography>
-                      {server.isFreeTier ? (
+              {servers.map((server) => {
+                const suffix = server.connected
+                  ? '›'
+                  : (ACTION_LABEL[server.connectionStatus ?? ''] ?? '›');
+                return (
+                  <ListGroup.Item
+                    key={server.id}
+                    onPress={() => router.push(`/mcp/${server.id}`)}
+                  >
+                    <ListGroup.ItemContent>
+                      <View className="flex-row items-center gap-2">
+                        <ListGroup.ItemTitle>{server.name}</ListGroup.ItemTitle>
+                        {server.connected ? (
+                          <Chip variant="soft" size="sm" color="success">
+                            <Chip.Label>connected</Chip.Label>
+                          </Chip>
+                        ) : server.connectionStatus ? (
+                          <Chip
+                            variant="soft"
+                            size="sm"
+                            color={STATUS_COLOR[server.connectionStatus] ?? 'default'}
+                          >
+                            <Chip.Label>{server.connectionStatus}</Chip.Label>
+                          </Chip>
+                        ) : null}
+                        {server.isVerified ? (
+                          <Chip variant="soft" size="sm" color="accent">
+                            <Chip.Label>verified</Chip.Label>
+                          </Chip>
+                        ) : null}
+                      </View>
+                      <ListGroup.ItemDescription numberOfLines={2}>
+                        {server.description || 'Vendor-hosted remote MCP server.'}
+                      </ListGroup.ItemDescription>
+                      <View className="mt-1 flex-row gap-2">
                         <Typography type="body-xs" color="muted">
-                          · free tier
+                          {AUTH_LABEL[server.authType] ?? server.authType}
                         </Typography>
-                      ) : null}
-                    </View>
-                  </ListGroup.ItemContent>
-                  <ListGroup.ItemSuffix>
-                    <Typography type="body-sm" color="muted">
-                      ›
-                    </Typography>
-                  </ListGroup.ItemSuffix>
-                </ListGroup.Item>
-              ))}
+                        {server.isFreeTier ? (
+                          <Typography type="body-xs" color="muted">
+                            · free tier
+                          </Typography>
+                        ) : null}
+                      </View>
+                    </ListGroup.ItemContent>
+                    <ListGroup.ItemSuffix>
+                      <Typography
+                        type="body-sm"
+                        color={server.connected ? 'muted' : 'default'}
+                      >
+                        {suffix}
+                      </Typography>
+                    </ListGroup.ItemSuffix>
+                  </ListGroup.Item>
+                );
+              })}
             </ListGroup>
           ) : null}
 
@@ -284,6 +381,9 @@ export default function MarketplaceScreen() {
             <ListGroup className="rounded-2xl">
               {toolkits.map((item) => {
                 const isConnecting = connecting === item.toolkit;
+                const suffix = item.connected
+                  ? '›'
+                  : (ACTION_LABEL[item.connectionStatus ?? ''] ?? 'Connect ›');
                 return (
                   <ListGroup.Item
                     key={item.toolkit}
@@ -296,6 +396,14 @@ export default function MarketplaceScreen() {
                         {item.connected ? (
                           <Chip variant="soft" size="sm" color="success">
                             <Chip.Label>connected</Chip.Label>
+                          </Chip>
+                        ) : item.connectionStatus ? (
+                          <Chip
+                            variant="soft"
+                            size="sm"
+                            color={STATUS_COLOR[item.connectionStatus] ?? 'default'}
+                          >
+                            <Chip.Label>{item.connectionStatus}</Chip.Label>
                           </Chip>
                         ) : null}
                         {item.toolCount > 0 ? (
@@ -316,7 +424,7 @@ export default function MarketplaceScreen() {
                         <Spinner size="sm" />
                       ) : (
                         <Typography type="body-sm" color={item.connected ? 'muted' : 'default'}>
-                          {item.connected ? '›' : 'Connect ›'}
+                          {suffix}
                         </Typography>
                       )}
                     </ListGroup.ItemSuffix>

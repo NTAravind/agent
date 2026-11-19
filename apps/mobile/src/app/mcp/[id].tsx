@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Card, Chip, Input, ListGroup, Spinner, Switch, Typography } from 'heroui-native';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,14 +17,21 @@ import {
   fetchServer,
   refreshConnection,
   updateToolPermissions,
+  verifyConnection,
   type AgentAttachment,
   type ServerDetail,
 } from '@/lib/mcp';
 
 /**
  * Integration detail (Phase 6): connect (1 tap for no-auth, API key form, or
- * OAuth browser flow), attach to an agent, and tune per-tool permissions.
- * Credentials are typed here but never stored on the device.
+ * a browser flow — OAuth dance / Composio hosted consent), attach to an
+ * agent, and tune per-tool permissions. Credentials are typed here but never
+ * stored on the device.
+ *
+ * Composio connections follow pending → authorize → verify: while consent
+ * is missing the card offers "Finish connecting"/"Reconnect" (reopening the
+ * hosted link), the screen re-verifies on focus, and after a link is opened
+ * it polls verify every 2s (max 60s) until the status lands on `connected`.
  */
 
 type AttachmentTool = AgentAttachment['tools'][number];
@@ -36,6 +43,18 @@ const RISK_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
   medium: 'warning',
   high: 'danger',
 };
+
+const STATUS_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
+  connected: 'success',
+  pending: 'warning',
+  expired: 'danger',
+  error: 'danger',
+};
+
+const POLL_INTERVAL_MS = 2_000;
+const POLL_ATTEMPTS = 30;
+/** Don't re-verify a pending row more than once per 15s of screen focus. */
+const AUTO_VERIFY_THROTTLE_MS = 15_000;
 
 function RiskChip({ level }: { level: string }) {
   return (
@@ -69,10 +88,20 @@ export default function IntegrationDetailScreen() {
   const serverId = typeof id === 'string' ? id : '';
   const server = detail?.server ?? null;
   const connectionId = detail?.connection?.id ?? null;
-  const connected = detail?.connection?.status === 'connected';
+  const status = detail?.connection?.status ?? null;
+  const connected = status === 'connected';
   const authType = server?.authType ?? 'none';
   const needsKey = authType === 'api_key' || authType === 'pat';
   const isOAuth = authType === 'oauth2';
+  /** Composio (provider-managed): pending/expired/error drive the action. */
+  const isManaged = authType === 'provider_managed';
+  const connectLabel = isOAuth
+    ? 'Sign in'
+    : status === 'pending'
+      ? 'Finish connecting'
+      : status === 'expired' || status === 'error'
+        ? 'Reconnect'
+        : 'Connect';
 
   // OAuth result deep-linked back from /api/mcp/oauth/callback — derived from
   // the route params (no effect needed; manual notices set below take over as
@@ -91,6 +120,24 @@ export default function IntegrationDetailScreen() {
   const attachment =
     (connectionId ? attachments.find((row) => row.connection?.id === connectionId) : null) ?? null;
   const attached = attachment !== null;
+
+  // Consent-state refs: the focus effect reads them without re-subscribing
+  // (load changes identity whenever its dependencies change).
+  const statusRef = useRef<string | null>(null);
+  const cidRef = useRef<string | null>(null);
+  const lastAutoVerifyRef = useRef(0);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    statusRef.current = status;
+    cidRef.current = connectionId;
+  }, [status, connectionId]);
+  // Polling must not touch state after the screen goes away.
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -120,16 +167,66 @@ export default function IntegrationDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       void load();
+      // One background re-check while waiting on consent (throttled): the
+      // hosted-link callback may have landed while the app was backgrounded
+      // without a deep link, or the user may have finished signing in.
+      if (
+        statusRef.current === 'pending' &&
+        cidRef.current &&
+        Date.now() - lastAutoVerifyRef.current > AUTO_VERIFY_THROTTLE_MS
+      ) {
+        lastAutoVerifyRef.current = Date.now();
+        const cid = cidRef.current;
+        void verifyConnection(cid, { issueLink: false })
+          .then((result) => {
+            if (result.status !== 'pending' && aliveRef.current) void load();
+          })
+          .catch(() => undefined);
+      }
     }, [load]),
   );
 
   const shownNotice = notice ?? oauthNotice;
 
+  /** Re-check every 2s (max 60s) after a link is opened; stop on any answer. */
+  const pollVerify = useCallback(
+    async (cid: string) => {
+      for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        if (!aliveRef.current) return;
+        try {
+          const result = await verifyConnection(cid, { issueLink: false });
+          if (!aliveRef.current) return;
+          if (result.status !== 'pending') {
+            await load();
+            if (result.status === 'connected') {
+              setNotice({ kind: 'success', text: 'Signed in. Tools discovered below.' });
+            } else if (result.message) {
+              setNotice({ kind: 'danger', text: result.message });
+            }
+            return;
+          }
+        } catch {
+          // Transient failure → keep polling until the budget runs out.
+        }
+      }
+      if (aliveRef.current) await load();
+    },
+    [load],
+  );
+
   const handleConnect = async () => {
     setBusy('connect');
     setError(null);
     try {
-      const result = await connectServer(serverId, needsKey ? { apiKey: apiKey.trim() } : {});
+      // A Composio row that already exists is resolved through verify: it
+      // returns the hosted link to reopen (or flips straight to `connected`
+      // when consent actually landed). Everything else starts fresh.
+      const result =
+        connectionId && status && status !== 'disconnected' && isManaged
+          ? await verifyConnection(connectionId, { issueLink: true })
+          : await connectServer(serverId, needsKey ? { apiKey: apiKey.trim() } : {});
+
       if (result.authorizationUrl) {
         setOauthPending(true);
         try {
@@ -142,14 +239,25 @@ export default function IntegrationDetailScreen() {
           text: 'Finish signing in in your browser, then return to the app — it updates automatically.',
         });
         await load();
+        const cid = connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
+        if (cid) void pollVerify(cid);
         return;
       }
       setApiKey('');
       await load();
-      setNotice({
-        kind: 'success',
-        text: `Connected — ${result.toolCount ?? 0} tools discovered.`,
-      });
+      if (result.status === 'connected') {
+        setNotice({
+          kind: 'success',
+          text: `Connected — ${result.toolCount ?? 0} tools discovered.`,
+        });
+      } else {
+        setNotice({
+          kind: 'danger',
+          text:
+            ('message' in result && result.message) ||
+            'Sign-in did not complete — try connecting again.',
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -164,6 +272,28 @@ export default function IntegrationDetailScreen() {
     try {
       const result = await refreshConnection(connectionId);
       await load();
+      if (result.authorizationUrl) {
+        // Consent expired/revoked mid-flight → reopen the hosted link.
+        setOauthPending(true);
+        try {
+          await WebBrowser.openBrowserAsync(result.authorizationUrl);
+        } finally {
+          setOauthPending(false);
+        }
+        setNotice({
+          kind: 'success',
+          text: 'Sign-in is no longer valid — finish it in your browser to keep using this integration.',
+        });
+        void pollVerify(connectionId);
+        return;
+      }
+      if (result.status === 'error' || result.status === 'expired') {
+        setNotice({
+          kind: 'danger',
+          text: result.message || 'This connection needs to be reconnected.',
+        });
+        return;
+      }
       setNotice({
         kind: 'success',
         text: `Refreshed — ${result.toolCount} tools (${result.changed} changed).`,
@@ -319,8 +449,8 @@ export default function IntegrationDetailScreen() {
                 <Chip variant="soft" size="sm">
                   <Chip.Label>{server?.category ?? 'other'}</Chip.Label>
                 </Chip>
-                <Chip variant="soft" size="sm" color={connected ? 'success' : 'default'}>
-                  <Chip.Label>{connected ? 'connected' : 'not connected'}</Chip.Label>
+                <Chip variant="soft" size="sm" color={STATUS_COLOR[status ?? ''] ?? 'default'}>
+                  <Chip.Label>{connected ? 'connected' : (status ?? 'not connected')}</Chip.Label>
                 </Chip>
                 {server?.isVerified ? (
                   <Chip variant="soft" size="sm" color="accent">
@@ -363,7 +493,15 @@ export default function IntegrationDetailScreen() {
             <Card className="rounded-2xl">
               <Card.Body className="gap-3">
                 <Card.Title>
-                  {isOAuth ? `Sign in with ${server.name}` : needsKey ? 'Add your API key' : 'Connect'}
+                  {isOAuth
+                    ? `Sign in with ${server.name}`
+                    : needsKey
+                      ? 'Add your API key'
+                      : status === 'pending'
+                        ? `Finish connecting ${server.name}`
+                        : status === 'expired' || status === 'error'
+                          ? `Reconnect ${server.name}`
+                          : 'Connect'}
                 </Card.Title>
                 {needsKey ? (
                   <Input
@@ -379,6 +517,12 @@ export default function IntegrationDetailScreen() {
                   <Typography type="body-sm" color="muted">
                     Waiting for the browser… return to the app when you are done.
                   </Typography>
+                ) : status === 'pending' ? (
+                  <Typography type="body-sm" color="muted">
+                    {isManaged
+                      ? 'Sign-in not finished yet — open the link to authorize this account.'
+                      : 'Authorization not finished yet.'}
+                  </Typography>
                 ) : null}
                 <Button
                   onPress={() => void handleConnect()}
@@ -389,7 +533,7 @@ export default function IntegrationDetailScreen() {
                   {busy === 'connect' ? (
                     <Spinner size="sm" />
                   ) : (
-                    <Button.Label>{isOAuth ? 'Sign in' : 'Connect'}</Button.Label>
+                    <Button.Label>{connectLabel}</Button.Label>
                   )}
                 </Button>
                 <Typography type="body-xs" color="muted" className="text-center">

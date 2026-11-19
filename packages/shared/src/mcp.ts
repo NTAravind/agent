@@ -203,8 +203,29 @@ export const MCPConnectionRequestSchema = z.object({
 });
 export type MCPConnectionRequest = z.infer<typeof MCPConnectionRequestSchema>;
 
+/**
+ * POST /api/mcp/connections response. `authorizationUrl` is set when the
+ * provider needs the user to authorize first (OAuth2 or Composio hosted
+ * auth) — `status` is then `pending` until the callback/verify completes.
+ */
 export const MCPConnectResponseSchema = z.object({
   connectionId: z.string(),
   authorizationUrl: z.string().optional(),
+  status: MCPConnectionStatusSchema.optional(),
+  serverId: z.string().optional(),
+  toolCount: z.number().optional(),
 });
 export type MCPConnectResponse = z.infer<typeof MCPConnectResponseSchema>;
+
+/**
+ * POST /api/mcp/connections/:id/verify response — the re-checked status.
+ * `authorizationUrl` is issued when the connection needs (re-)authorization
+ * and the caller asked for a link (`issueLink`, defaulted on).
+ */
+export const MCPVerifyResponseSchema = z.object({
+  status: MCPConnectionStatusSchema,
+  toolCount: z.number().optional(),
+  authorizationUrl: z.string().optional(),
+  message: z.string().optional(),
+});
+export type MCPVerifyResponse = z.infer<typeof MCPVerifyResponseSchema>;

@@ -171,7 +171,7 @@ create table canvases (
 
 -- Provider model catalog and user-controlled mobile availability
 create table provider_models (
-  provider text not null check (provider in ('google','groq','openrouter')),
+  provider text not null check (provider in ('google','groq','openrouter','mistral','deepseek','huggingface','cohere')),
   model_id text not null,
   app_id text not null unique,
   label text not null,
@@ -190,7 +190,7 @@ alter table provider_models enable row level security;
 create table provider_usage (
   id bigint generated always as identity primary key,
   user_id uuid not null,
-  provider text not null,              -- google|groq|openrouter
+  provider text not null,              -- google|groq|openrouter|mistral|deepseek|huggingface|cohere
   model text not null,
   run_id uuid,
   input_tokens int, output_tokens int,

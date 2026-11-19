@@ -4,6 +4,8 @@ import { Button, Typography } from 'heroui-native';
 import { FlatList, Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PROVIDER_LABELS } from '@agent/shared';
+
 import type { ModelOption } from '@/lib/models';
 
 type Props = {
@@ -30,6 +32,11 @@ const CAPABILITY_LABELS: Record<
   reasoning: 'Reasoning',
   pdf: 'PDF',
 };
+
+/** Display name for a provider id ("huggingface" → "Hugging Face"). */
+function providerLabel(provider: string): string {
+  return PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider;
+}
 
 function capabilitySummary(model: ModelOption): string {
   const enabled = CAPABILITIES.filter(
@@ -134,7 +141,7 @@ export function ModelPicker({
               <View className="flex-1 gap-1">
                 <Text className="text-base font-medium text-foreground">{model.label}</Text>
                 <Typography type="body-xs" color="muted">
-                  {`${model.provider} · ${capabilitySummary(model)}`}
+                  {`${providerLabel(model.provider)} · ${capabilitySummary(model)}`}
                 </Typography>
 
                 {tags.length > 0 && (
@@ -165,7 +172,7 @@ export function ModelBadges({
   return (
     <View className="flex-row flex-wrap gap-1">
       <Typography type="body-xs" color="muted">
-        {model.provider}
+        {providerLabel(model.provider)}
       </Typography>
 
       {CAPABILITIES.filter(

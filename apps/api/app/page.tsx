@@ -33,7 +33,7 @@ export default function Home() {
           <CardContent className="space-y-3 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <Cpu className="size-4 text-primary" />
-              <span>Multi-provider catalog sync (Google Gemini, Groq, OpenRouter)</span>
+              <span>Multi-provider catalog sync (Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face, Cohere)</span>
             </div>
             <div className="flex items-center gap-2">
               <Layers className="size-4 text-primary" />

@@ -31,7 +31,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ListingsTab from "./listings-tab";
 
-type Provider = "google" | "groq" | "openrouter";
+type Provider =
+  | "google"
+  | "groq"
+  | "openrouter"
+  | "mistral"
+  | "deepseek"
+  | "huggingface"
+  | "cohere";
 type Model = {
   id: string;
   provider: Provider;
@@ -57,11 +64,23 @@ type DashboardData = {
   usage: Usage[];
 };
 
-const providers: Provider[] = ["google", "groq", "openrouter"];
+const providers: Provider[] = [
+  "google",
+  "groq",
+  "openrouter",
+  "mistral",
+  "deepseek",
+  "huggingface",
+  "cohere",
+];
 const providerName: Record<Provider, string> = {
   google: "Google Gemini",
   groq: "Groq Cloud",
   openrouter: "OpenRouter",
+  mistral: "Mistral AI",
+  deepseek: "DeepSeek",
+  huggingface: "Hugging Face",
+  cohere: "Cohere",
 };
 
 const DASHBOARD_EMAIL = "ntaravindnarayanan01@gmail.com";

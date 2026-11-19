@@ -11,9 +11,10 @@ import { startAuthorization } from "@/lib/mcp/oauth";
  *      Body: { serverId? | toolkit?, apiKey?, credentials? } — `serverId` for
  *      an existing listing, or `toolkit` (a Composio toolkit slug) to
  *      materialize its listing on first connect and then connect it.
- *      Returns { connectionId, serverId, … } when done, or { authorizationUrl }
- *      for OAuth (the app opens the URL in a browser; the callback finishes
- *      the flow).
+ *      Returns { connectionId, serverId, status, toolCount } when connected,
+ *      or { status: "pending", authorizationUrl } when the user must
+ *      authorize first (OAuth2 dance, or Composio's hosted consent link) —
+ *      the app opens the URL and finishes via the callback / verify route.
  */
 export async function GET(request: Request) {
   try {
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
         return Response.json({
           connectionId: started.connectionId,
           authorizationUrl: auth.authorizationUrl,
+          status: "pending",
         });
       }
       // Stored tokens were still valid → already authorized.
@@ -98,12 +100,15 @@ export async function POST(request: Request) {
           ? body.credentials.entityUserId
           : undefined,
     });
+    // Composio returns `pending` + `authorizationUrl` when the user still has
+    // to sign in; direct listings connect immediately.
     return Response.json(
       {
         connectionId: result.connectionId,
         serverId: server.id,
-        status: "connected",
+        status: result.status ?? "connected",
         toolCount: result.toolCount ?? 0,
+        ...(result.authorizationUrl ? { authorizationUrl: result.authorizationUrl } : {}),
       },
       { status: 201 },
     );

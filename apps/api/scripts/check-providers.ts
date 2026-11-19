@@ -3,7 +3,7 @@
  *
  *   npm run check:providers --workspace api
  *
- * 1. Runs the same prompt on Google, Groq and OpenRouter.
+ * 1. Runs the same prompt on each provider with a configured key.
  * 2. Forces a 429 on the primary and checks the chain falls through.
  * 3. Prints the registry as the API exposes it.
  *
@@ -28,13 +28,17 @@ const CANDIDATES: Array<{ label: string; modelId: string }> = [
   { label: "Google", modelId: "google:gemini-3.8-flash" },
   { label: "Groq", modelId: "groq:gpt-oss-120b" },
   { label: "OpenRouter", modelId: "openrouter:gemini-3.8-flash" },
+  { label: "Mistral", modelId: "mistral:mistral-large-latest" },
+  { label: "DeepSeek", modelId: "deepseek:deepseek-chat" },
+  { label: "HuggingFace", modelId: "huggingface:meta-llama/Llama-3.3-70B-Instruct" },
+  { label: "Cohere", modelId: "cohere:command-a-03-2025" },
 ];
 
 async function main() {
   console.log("Providers with keys:", providersWithKeys().join(", ") || "(none)");
   console.log("Registry:", listRegistry().length, "models\n");
 
-  // 1. Same prompt, three providers.
+  // 1. Same prompt, every configured provider.
   for (const candidate of CANDIDATES) {
     const started = Date.now();
     try {

@@ -1,4 +1,8 @@
-import type { MCPProviderAdapter, MCPToolDefinition } from "@agent/shared";
+import type {
+  MCPConnectionStatus,
+  MCPProviderAdapter,
+  MCPToolDefinition,
+} from "@agent/shared";
 
 import { deleteConnection, getConnection, updateConnection, type ConnectionRow } from "@/lib/mcp/connections";
 import { listCachedTools } from "@/lib/mcp/discovery";
@@ -41,7 +45,13 @@ export async function connectProvider(input: {
   serverId: string;
   apiKey?: string;
   entityUserId?: string;
-}): Promise<{ connectionId: string; authorizationUrl?: string; toolCount?: number }> {
+}): Promise<{
+  connectionId: string;
+  authorizationUrl?: string;
+  toolCount?: number;
+  /** `pending` when the user must authorize first (OAuth / Composio). */
+  status?: MCPConnectionStatus;
+}> {
   const server = await getServer(input.serverId);
   if (!server) throw new Error("Unknown integration.");
   if (!server.enabled) throw new Error("This integration is disabled.");
@@ -58,13 +68,17 @@ export async function connectProvider(input: {
         status: "pending",
         metadata: {},
       }));
-      return { connectionId: row.id };
+      return { connectionId: row.id, status: "pending" };
     }
-    return connectDirect({ userId: input.userId, server, apiKey: input.apiKey });
+    const result = await connectDirect({ userId: input.userId, server, apiKey: input.apiKey });
+    return { ...result, status: "connected" };
   }
 
   if (server.provider === "composio") {
-    return connectComposio({ userId: input.userId, server, entityUserId: input.entityUserId });
+    // No entityUserId: the Composio entity is always the caller's own user
+    // id (see connectComposio) — a client-supplied id could otherwise point
+    // two users at one shared Composio entity.
+    return connectComposio({ userId: input.userId, server });
   }
 
   throw new Error(
@@ -76,15 +90,33 @@ export async function connectProvider(input: {
 export async function refreshProvider(input: {
   userId: string;
   connectionId: string;
-}): Promise<{ toolCount: number; changed: number }> {
+}): Promise<{
+  toolCount: number;
+  changed: number;
+  status?: MCPConnectionStatus;
+  authorizationUrl?: string;
+  message?: string;
+}> {
   const { row, server } = await serverFor(input.connectionId, input.userId);
   if (!server) throw new Error("This integration no longer exists.");
 
   if (server.provider === "composio") {
+    // Re-verifies the connected account — a fresh session alone never means
+    // connected, and expired/revoked consent comes back with a new link.
     const result = await refreshComposio({ userId: input.userId, connectionId: row.id });
-    return { toolCount: result.toolCount, changed: 0 };
+    return {
+      toolCount: result.toolCount,
+      changed: 0,
+      status: result.status,
+      ...(result.authorizationUrl ? { authorizationUrl: result.authorizationUrl } : {}),
+      ...(result.message ? { message: result.message } : {}),
+    };
   }
-  return refreshConnection({ userId: input.userId, connectionId: row.id });
+  const refreshed = await refreshConnection({ userId: input.userId, connectionId: row.id });
+  // The direct adapter marks auth failures `expired` internally → report the
+  // row's status as it stands now, not as it was before the refresh.
+  const after = await getConnection(input.userId, row.id);
+  return { ...refreshed, status: after?.status ?? row.status };
 }
 
 /** Live tool definitions for the marketplace detail view. */

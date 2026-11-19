@@ -8,13 +8,14 @@ Build vertical slices. Each phase ends in something you can use. Estimates assum
 - [x] use shadcn ui for ui in next js project 
 - [x] Vercel deploy, env vars, Inngest app connected
 - [x] GitHub Actions cron keepalive for Supabase
-- [ ] Install providers: `@ai-sdk/google`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`; add the 3 API keys to Vercel env — packages installed and Google + Groq keys verified live; the OpenRouter key must be re-copied (it must start with `sk-or-v1-`) and the 3 keys must also be added to the Vercel environment.
+- [ ] Install providers: `@ai-sdk/google`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider` (plus `@ai-sdk/mistral`, `@ai-sdk/deepseek`, `@ai-sdk/huggingface`, `@ai-sdk/cohere` from Phase 0.5); add the API keys to Vercel env — packages installed and Google + Groq keys verified live; the OpenRouter key must be re-copied (it must start with `sk-or-v1-`) and the keys must also be added to the Vercel environment.
 **Done when:** signed-in Expo app calls a protected `/api/health`. → done (verified 2026-11-13).
 
 ## Phase 0.5: LLM provider layer (1–2 days)
 All model access goes through one module, `apps/api/lib/models/`. No route, graph node or Inngest function may import a provider package directly. (Revised from `packages/shared/models.ts`: provider SDKs are server-only, so the runtime layer lives in the API app; `packages/shared/src/models.ts` keeps the registry *types* and zod schemas, which the mobile app imports.)
 - [x] **Model registry** (code, typed). One entry per model: `id` (`"google:gemini-flash"`), `provider`, `providerModelId`, `label`, capability flags `{ tools, vision, structuredOutput, reasoning, pdf }`, `contextWindow`, `private_ok` (safe for note-derived context), `tier` (`free`/`paid`). → `apps/api/lib/models/registry.ts`
-- [x] **Resolver** `getModel(id)` → AI SDK `LanguageModel` using the matching provider instance (`google`, `createGroq`, `createOpenRouter`). Unknown id or missing API key → typed error. → `apps/api/lib/models/resolver.ts`
+- [x] **Resolver** `getModel(id)` → AI SDK `LanguageModel` using the matching provider instance (`google`, `createGroq`, `createOpenRouter`, `createMistral`, `createDeepSeek`, `createHuggingFace`, `createCohere`). Unknown id or missing API key → typed error. → `apps/api/lib/models/resolver.ts`
+- [x] **Four more providers** (Mistral, DeepSeek, Hugging Face, Cohere): provider SDKs installed, resolver cases added, live catalog fetchers + mappers wired into `refreshProviderCatalog`, dashboard and mobile label them, `db/migrations/0013_widen_provider_check.sql` widens the `provider_models` check. Key any subset via `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `HUGGINGFACE_API_KEY`, `COHERE_API_KEY` (server-only).
 - [x] **Fallback chain** `withFallback([primary, ...fallbacks])`: on 429, 5xx, timeout or provider error, retry once with backoff, then move to the next model. Skip fallbacks lacking a capability the request needs (e.g. images → needs `vision`, tool-using agent → needs `tools`). → `apps/api/lib/models/fallback.ts`
 - [x] **Capability gate:** reject or reroute before calling if the request needs something the chosen model lacks. → `apps/api/lib/models/capability.ts`
 - [x] **Usage tracking:** write each call to `provider_usage` (provider, model, tokens, status); expose to the usage meter. → `apps/api/lib/models/usage.ts` + `db/migrations/0001_provider_usage.sql`
@@ -48,7 +49,11 @@ Model ids in the registry are placeholders: pick current ids from each provider'
 Registry ids as implemented (verified against provider docs on 2026-11-13, `apps/api/lib/models/registry.ts`):
 `google:gemini-3.8-flash`, `google:gemini-3.6-flash`, `google:gemini-3.5-flash-lite`, `google:gemini-4-argon` (paid),
 `groq:gpt-oss-120b`, `groq:gpt-oss-20b`, `groq:qwen3.8-27b`,
-`openrouter:gemini-3.8-flash`, `openrouter:qwen3.8-27b`.
+`openrouter:gemini-3.8-flash`, `openrouter:qwen3.8-27b`,
+`mistral:mistral-large-latest`, `mistral:mistral-small-latest`, `mistral:open-mistral-nemo`,
+`deepseek:deepseek-chat`, `deepseek:deepseek-reasoner`,
+`cohere:command-a-03-2025`, `cohere:command-r-plus`,
+`huggingface:meta-llama/Llama-3.3-70B-Instruct`, `huggingface:Qwen/Qwen3.8-27B`.
 Notes: Groq's `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` were shut down for free and developer tiers on 2026-08-16; `gemini-2.5-flash` / `gemini-2.5-pro` are deprecated on Google and route to newer models from 2026-12-01.
 
 ## Phase 1: Chat (3–5 days)

@@ -1,5 +1,9 @@
 import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
+import { createMistral } from "@ai-sdk/mistral";
+import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createHuggingFace } from "@ai-sdk/huggingface";
+import { createCohere } from "@ai-sdk/cohere";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import type { ModelRegistryEntry, Provider } from "@agent/shared";
@@ -13,6 +17,10 @@ export const PROVIDER_ENV_KEYS: Record<Provider, string> = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
   groq: "GROQ_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  huggingface: "HUGGINGFACE_API_KEY",
+  cohere: "COHERE_API_KEY",
 };
 
 export function isProviderConfigured(provider: Provider): boolean {
@@ -27,6 +35,10 @@ type ProviderInstance = {
   google?: ReturnType<typeof createGoogle>;
   groq?: ReturnType<typeof createGroq>;
   openrouter?: ReturnType<typeof createOpenRouter>;
+  mistral?: ReturnType<typeof createMistral>;
+  deepseek?: ReturnType<typeof createDeepSeek>;
+  huggingface?: ReturnType<typeof createHuggingFace>;
+  cohere?: ReturnType<typeof createCohere>;
 };
 
 let instances: ProviderInstance = {};
@@ -37,14 +49,37 @@ function providerInstances(): ProviderInstance {
   const googleKey = optionalEnv(PROVIDER_ENV_KEYS.google);
   const groqKey = optionalEnv(PROVIDER_ENV_KEYS.groq);
   const openRouterKey = optionalEnv(PROVIDER_ENV_KEYS.openrouter);
+  const mistralKey = optionalEnv(PROVIDER_ENV_KEYS.mistral);
+  const deepSeekKey = optionalEnv(PROVIDER_ENV_KEYS.deepseek);
+  const huggingFaceKey = optionalEnv(PROVIDER_ENV_KEYS.huggingface);
+  const cohereKey = optionalEnv(PROVIDER_ENV_KEYS.cohere);
 
   instances = {
     ...(googleKey ? { google: createGoogle({ apiKey: googleKey }) } : {}),
     ...(groqKey ? { groq: createGroq({ apiKey: groqKey }) } : {}),
     ...(openRouterKey ? { openrouter: createOpenRouter({ apiKey: openRouterKey }) } : {}),
+    ...(mistralKey ? { mistral: createMistral({ apiKey: mistralKey }) } : {}),
+    ...(deepSeekKey ? { deepseek: createDeepSeek({ apiKey: deepSeekKey }) } : {}),
+    ...(huggingFaceKey ? { huggingface: createHuggingFace({ apiKey: huggingFaceKey }) } : {}),
+    ...(cohereKey ? { cohere: createCohere({ apiKey: cohereKey }) } : {}),
   };
 
   return instances;
+}
+
+/** Returns the provider SDK instance, or raises the typed "no key" error. */
+function requireProvider<K extends keyof ProviderInstance>(
+  entry: ModelRegistryEntry,
+  instance: ProviderInstance[K],
+): NonNullable<ProviderInstance[K]> {
+  if (!instance) {
+    throw new ModelRegistryError(
+      "provider_not_configured",
+      `Missing ${PROVIDER_ENV_KEYS[entry.provider]}; model ${entry.id} is unavailable.`,
+      { modelId: entry.id, provider: entry.provider },
+    );
+  }
+  return instance;
 }
 
 /** Builds the provider SDK model for a registry entry. */
@@ -52,39 +87,20 @@ function buildModel(entry: ModelRegistryEntry): LanguageModel {
   const providers = providerInstances();
 
   switch (entry.provider) {
-    case "google": {
-      const provider = providers.google;
-      if (!provider) {
-        throw new ModelRegistryError(
-          "provider_not_configured",
-          `Missing ${PROVIDER_ENV_KEYS.google}; model ${entry.id} is unavailable.`,
-          { modelId: entry.id, provider: entry.provider },
-        );
-      }
-      return provider(entry.providerModelId);
-    }
-    case "groq": {
-      const provider = providers.groq;
-      if (!provider) {
-        throw new ModelRegistryError(
-          "provider_not_configured",
-          `Missing ${PROVIDER_ENV_KEYS.groq}; model ${entry.id} is unavailable.`,
-          { modelId: entry.id, provider: entry.provider },
-        );
-      }
-      return provider(entry.providerModelId);
-    }
-    case "openrouter": {
-      const provider = providers.openrouter;
-      if (!provider) {
-        throw new ModelRegistryError(
-          "provider_not_configured",
-          `Missing ${PROVIDER_ENV_KEYS.openrouter}; model ${entry.id} is unavailable.`,
-          { modelId: entry.id, provider: entry.provider },
-        );
-      }
-      return provider.chat(entry.providerModelId);
-    }
+    case "google":
+      return requireProvider<"google">(entry, providers.google)(entry.providerModelId);
+    case "groq":
+      return requireProvider<"groq">(entry, providers.groq)(entry.providerModelId);
+    case "openrouter":
+      return requireProvider<"openrouter">(entry, providers.openrouter).chat(entry.providerModelId);
+    case "mistral":
+      return requireProvider<"mistral">(entry, providers.mistral)(entry.providerModelId);
+    case "deepseek":
+      return requireProvider<"deepseek">(entry, providers.deepseek)(entry.providerModelId);
+    case "huggingface":
+      return requireProvider<"huggingface">(entry, providers.huggingface)(entry.providerModelId);
+    case "cohere":
+      return requireProvider<"cohere">(entry, providers.cohere)(entry.providerModelId);
   }
 }
 

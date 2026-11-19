@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 create table if not exists provider_usage (
   id bigint generated always as identity primary key,
   user_id uuid not null,
-  provider text not null,              -- google|groq|openrouter
+  provider text not null,              -- google|groq|openrouter|mistral|deepseek|huggingface|cohere
   model text not null,                 -- registry id that was attempted
   run_id uuid,
   input_tokens int,

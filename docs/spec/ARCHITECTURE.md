@@ -62,7 +62,7 @@
 Agent calls `render_canvas(spec)` → zod-validated → saved in `canvases` → returned in the message as a tool part → Expo renders from the component catalog. Data-bound components reference a saved data source so refresh needs no LLM call.
 
 ### 3.8 Model routing
-Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through `getModel(id)` / `withFallback(ids)`. Registry entries declare capabilities and `private_ok`. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to `provider_usage`. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Embeddings are pinned to one model.
+Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through `getModel(id)` / `withFallback(ids)`. Registry entries declare capabilities and `private_ok`. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to `provider_usage`. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Mistral, DeepSeek, Hugging Face and Cohere are selectable per chat/agent and join the fallback chain as soon as their keys are configured. Embeddings are pinned to one model.
 
 ## 4. Security model
 - Single allowed user; every API route verifies the Supabase JWT and `ALLOWED_USER_ID`. RLS on all tables as defense in depth.

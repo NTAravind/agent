@@ -127,18 +127,142 @@ function mapOpenRouter(data: unknown[]) {
   });
 }
 
+/** Mistral exposes its catalog through its own models endpoint. */
+async function listMistralModels(apiKey: string) {
+  const body = await getProviderJson("https://api.mistral.ai/v1/models", { authorization: `Bearer ${apiKey}` });
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+/** DeepSeek uses an OpenAI-compatible models list. */
+async function listDeepSeekModels(apiKey: string) {
+  const body = await getProviderJson("https://api.deepseek.com/models", { authorization: `Bearer ${apiKey}` });
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+/** Cohere v2 groups its catalog under `models`. */
+async function listCohereModels(apiKey: string) {
+  const body = await getProviderJson("https://api.cohere.com/v2/models", { authorization: `Bearer ${apiKey}` });
+  if (Array.isArray(body.models)) return body.models;
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+/** Hugging Face's router lists every routable model with per-upstream metadata. */
+async function listHuggingFaceModels(apiKey: string) {
+  const body = await getProviderJson("https://router.huggingface.co/v1/models", { authorization: `Bearer ${apiKey}` });
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+function mapMistral(data: unknown[]) {
+  return data.flatMap((model) => {
+    const item = asRecord(model);
+    const modelId = String(item.id ?? "");
+    if (!modelId) return [];
+    const known = listRegistry().find((entry) => entry.provider === "mistral" && entry.providerModelId === modelId);
+    const caps = asRecord(item.capabilities);
+    return [{ provider: "mistral" as const, modelId, id: known?.id ?? dynamicAppId("mistral", modelId), label: known?.label ?? String(item.name || modelId),
+      contextWindow: Number(item.context_window) || known?.contextWindow || 131_072,
+      capabilities: known?.capabilities ?? {
+        tools: caps.function_calling === true,
+        vision: caps.vision === true,
+        structuredOutput: caps.json_mode === true,
+        reasoning: caps.reasoning === true,
+        pdf: false,
+      },
+      tier: known?.tier ?? ("paid" as const),
+      metadata: { ownedBy: item.owned_by ?? null, capabilities: caps, maxOutputTokens: item.max_output_tokens ?? null } }];
+  });
+}
+
+function mapDeepSeek(data: unknown[]) {
+  return data.flatMap((model) => {
+    const item = asRecord(model);
+    const modelId = String(item.id ?? "");
+    if (!modelId) return [];
+    const known = listRegistry().find((entry) => entry.provider === "deepseek" && entry.providerModelId === modelId);
+    return [{ provider: "deepseek" as const, modelId, id: known?.id ?? dynamicAppId("deepseek", modelId), label: known?.label ?? modelId,
+      contextWindow: known?.contextWindow || 65_536,
+      capabilities: known?.capabilities ?? { ...emptyCapabilities, tools: true, structuredOutput: true },
+      tier: known?.tier ?? ("paid" as const),
+      metadata: { ownedBy: item.owned_by ?? null, created: item.created ?? null } }];
+  });
+}
+
+function mapCohere(data: unknown[]) {
+  return data.flatMap((model) => {
+    const item = asRecord(model);
+    const modelId = String(item.id ?? "");
+    if (!modelId) return [];
+    const known = listRegistry().find((entry) => entry.provider === "cohere" && entry.providerModelId === modelId);
+    const modalities = Array.isArray(item.input_modalities) ? item.input_modalities.map(String) : [];
+    return [{ provider: "cohere" as const, modelId, id: known?.id ?? dynamicAppId("cohere", modelId), label: known?.label ?? String(item.name || modelId),
+      contextWindow: Number(item.context_length) || known?.contextWindow || 131_072,
+      capabilities: known?.capabilities ?? {
+        tools: item.tool_call === true,
+        vision: modalities.includes("image"),
+        structuredOutput: item.tool_call === true,
+        reasoning: false,
+        pdf: false,
+      },
+      tier: known?.tier ?? ("free" as const),
+      metadata: { family: item.model_family ?? null, fineTunable: item.fine_tunable ?? null, inputModalities: modalities } }];
+  });
+}
+
+function mapHuggingFace(data: unknown[]) {
+  return data.flatMap((model) => {
+    const item = asRecord(model);
+    const modelId = String(item.id ?? "");
+    const architecture = asRecord(item.architecture);
+    const modalities = Array.isArray(architecture.input_modalities) ? architecture.input_modalities.map(String) : [];
+    const upstreams = Array.isArray(item.providers) ? item.providers.map(asRecord) : [];
+    const live = upstreams.find((entry) => entry.status === "live") ?? upstreams[0];
+    if (!modelId || !live) return [];
+    const known = listRegistry().find((entry) => entry.provider === "huggingface" && entry.providerModelId === modelId);
+    const free = upstreams.some((entry) => entry.is_free === true);
+    return [{ provider: "huggingface" as const, modelId, id: known?.id ?? dynamicAppId("huggingface", modelId), label: known?.label ?? modelId,
+      contextWindow: Number(live.context_length) || known?.contextWindow || 32_768,
+      capabilities: known?.capabilities ?? {
+        tools: live.supports_tools === true,
+        vision: modalities.includes("image"),
+        structuredOutput: live.supports_structured_output === true,
+        reasoning: false,
+        pdf: false,
+      },
+      tier: known?.tier ?? (free ? ("free" as const) : ("paid" as const)),
+      metadata: { ownedBy: item.owned_by ?? null, upstreams: upstreams.length, free } }];
+  });
+}
+
+type CatalogRow = {
+  provider: Provider;
+  modelId: string;
+  id: string;
+  label: string;
+  contextWindow: number;
+  capabilities: ModelCapabilities;
+  tier: "free" | "paid";
+  metadata: Record<string, unknown>;
+};
+
+/** How each provider's catalog is fetched and mapped. */
+const CATALOG_SOURCES: Record<Provider, { list: (apiKey: string) => Promise<unknown[]>; map: (data: unknown[]) => CatalogRow[] }> = {
+  google: { list: listGoogleModels, map: mapGoogle },
+  groq: { list: listGroqModels, map: mapGroq },
+  openrouter: { list: listOpenRouterModels, map: mapOpenRouter },
+  mistral: { list: listMistralModels, map: mapMistral },
+  deepseek: { list: listDeepSeekModels, map: mapDeepSeek },
+  huggingface: { list: listHuggingFaceModels, map: mapHuggingFace },
+  cohere: { list: listCohereModels, map: mapCohere },
+};
+
 export async function refreshProviderCatalog() {
-  const keys: Record<Provider, string | undefined> = {
-    google: optionalEnv(PROVIDER_ENV_KEYS.google), groq: optionalEnv(PROVIDER_ENV_KEYS.groq), openrouter: optionalEnv(PROVIDER_ENV_KEYS.openrouter),
-  };
-  const tasks = (Object.entries(keys) as [Provider, string | undefined][]).map(async ([provider, key]) => {
+  const keys = (Object.keys(PROVIDER_ENV_KEYS) as Provider[]).map(
+    (provider) => [provider, optionalEnv(PROVIDER_ENV_KEYS[provider])] as const,
+  );
+  const tasks = keys.map(async ([provider, key]) => {
     if (!key) return { provider, count: 0, skipped: true };
-    const providerModels = provider === "google" ? await listGoogleModels(key)
-      : provider === "groq" ? await listGroqModels(key)
-      : await listOpenRouterModels(key);
-    const data = provider === "google" ? mapGoogle(providerModels)
-      : provider === "groq" ? mapGroq(providerModels)
-      : mapOpenRouter(providerModels);
+    const source = CATALOG_SOURCES[provider];
+    const data = source.map(await source.list(key));
     const now = new Date().toISOString();
     const { error } = await supabaseAdmin().from("provider_models").upsert(data.map((m) => ({
       provider: m.provider, model_id: m.modelId, app_id: m.id, label: m.label, capabilities: m.capabilities,

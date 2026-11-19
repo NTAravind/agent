@@ -8,8 +8,9 @@ import type { ModelRegistryEntry } from "@agent/shared";
  * the single place to update when a model is renamed or retired.
  *
  * `privateOk` decides whether note- or memory-derived context may be sent to
- * the model. It is true for Google only: Groq's and OpenRouter's free tiers
- * permit logging/training of prompts (see ARCHITECTURE.md section 4).
+ * the model. It is true for Google only: the other providers' free tiers (or
+ * free grants) permit logging/training of prompts (see ARCHITECTURE.md
+ * section 4).
  */
 export const MODEL_REGISTRY: readonly ModelRegistryEntry[] = [
   {
@@ -155,6 +156,155 @@ export const MODEL_REGISTRY: readonly ModelRegistryEntry[] = [
     contextWindow: 131_042,
     privateOk: false,
     tier: "free",
+  },
+  {
+    id: "mistral:mistral-large-latest",
+    provider: "mistral",
+    providerModelId: "mistral-large-latest",
+    label: "Mistral Large",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    id: "mistral:mistral-small-latest",
+    provider: "mistral",
+    providerModelId: "mistral-small-latest",
+    label: "Mistral Small",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    id: "mistral:open-mistral-nemo",
+    provider: "mistral",
+    providerModelId: "open-mistral-nemo",
+    label: "Mistral Nemo",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    // Pay-as-you-go after the one-time free grant.
+    id: "deepseek:deepseek-chat",
+    provider: "deepseek",
+    providerModelId: "deepseek-chat",
+    label: "DeepSeek Chat",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    // No tool calling / JSON mode on the reasoner; thinking model.
+    id: "deepseek:deepseek-reasoner",
+    provider: "deepseek",
+    providerModelId: "deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    capabilities: {
+      tools: false,
+      vision: false,
+      structuredOutput: false,
+      reasoning: true,
+      pdf: false,
+    },
+    contextWindow: 65_536,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    // Free trial keys are for non-commercial use only (see TECH_STACK.md).
+    id: "cohere:command-a-03-2025",
+    provider: "cohere",
+    providerModelId: "command-a-03-2025",
+    label: "Command A",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 256_000,
+    privateOk: false,
+    tier: "free",
+  },
+  {
+    id: "cohere:command-r-plus",
+    provider: "cohere",
+    providerModelId: "command-r-plus",
+    label: "Command R+",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "free",
+  },
+  {
+    // Routed through router.huggingface.co; billing follows the chosen
+    // upstream provider (tiny monthly free allowance on new accounts).
+    id: "huggingface:meta-llama/Llama-3.3-70B-Instruct",
+    provider: "huggingface",
+    providerModelId: "meta-llama/Llama-3.3-70B-Instruct",
+    label: "Llama 3.3 70B (Hugging Face)",
+    capabilities: {
+      tools: true,
+      vision: false,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 131_072,
+    privateOk: false,
+    tier: "paid",
+  },
+  {
+    id: "huggingface:Qwen/Qwen3.8-27B",
+    provider: "huggingface",
+    providerModelId: "Qwen/Qwen3.8-27B",
+    label: "Qwen 3.8 27B (Hugging Face)",
+    capabilities: {
+      tools: true,
+      vision: true,
+      structuredOutput: true,
+      reasoning: false,
+      pdf: false,
+    },
+    contextWindow: 262_144,
+    privateOk: false,
+    tier: "paid",
   },
 ] as const;
 

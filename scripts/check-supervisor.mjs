@@ -33,6 +33,10 @@ const keyedProviders = [
   env.GOOGLE_GENERATIVE_AI_API_KEY,
   env.GROQ_API_KEY,
   env.OPENROUTER_API_KEY,
+  env.MISTRAL_API_KEY,
+  env.DEEPSEEK_API_KEY,
+  env.HUGGINGFACE_API_KEY,
+  env.COHERE_API_KEY,
 ].filter(Boolean).length;
 
 async function mintToken(email) {

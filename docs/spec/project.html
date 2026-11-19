@@ -41,7 +41,7 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 <li>G3. MCP store: add/remove tool servers per agent with one tap.</li>
 <li>G4. Canvas: agent renders dashboards/reports natively in the app from a JSON spec.</li>
 <li>G5. Runs anywhere (cloud), <strong>free</strong>, single user.</li>
-<li>G6. Provider-agnostic: Google, Groq and OpenRouter selectable per chat/agent via the AI SDK, with automatic fallback.</li>
+<li>G6. Provider-agnostic: Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face and Cohere selectable per chat/agent via the AI SDK, with automatic fallback.</li>
 </ul>
 <h2 id="3-non-goals-v1">3. Non-goals (v1)</h2>
 <ul>
@@ -428,7 +428,7 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 </thead>
 <tbody>
 <tr>
-<td>Multi-provider models (Google, Groq, OpenRouter)</td>
+<td>Multi-provider models (Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face, Cohere)</td>
 <td>P0</td>
 <td>Registry, picker, per-agent model, automatic fallback</td>
 </tr>
@@ -518,6 +518,26 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 <td>One key, many models. <em>Verify which models are free and their data policies.</em></td>
 </tr>
 <tr>
+<td>LLM: Mistral</td>
+<td><code>@ai-sdk/mistral</code></td>
+<td>Free tier exists but is heavily rate-limited; production usage is paid.</td>
+</tr>
+<tr>
+<td>LLM: DeepSeek</td>
+<td><code>@ai-sdk/deepseek</code></td>
+<td>One-time free grant, then pay-as-you-go (very cheap per token).</td>
+</tr>
+<tr>
+<td>LLM: Hugging Face</td>
+<td><code>@ai-sdk/huggingface</code></td>
+<td>Router (<code>router.huggingface.co</code>) over many upstreams; tiny monthly free allowance; pricing/limits vary per upstream.</td>
+</tr>
+<tr>
+<td>LLM: Cohere</td>
+<td><code>@ai-sdk/cohere</code></td>
+<td>Free trial keys are <strong>non-commercial use only</strong>.</td>
+</tr>
+<tr>
 <td>Model routing</td>
 <td>In-house <code>models.ts</code> registry + resolver + fallback</td>
 <td>See IMPLEMENTATION_PLAN Phase 0.5</td>
@@ -582,16 +602,16 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 </table>
 <p><strong>Rule:</strong> never run a long LangGraph loop inside a chat request. Chat route either streams a short graph directly, or emits an Inngest event and streams progress.</p>
 <h2 id="3-key-libraries">3. Key libraries</h2>
-<p><code>ai</code>, <code>@ai-sdk/react</code>, <code>@ai-sdk/google</code>, <code>@langchain/langgraph</code>, <code>@langchain/langgraph-checkpoint-postgres</code>, <code>@langchain/mcp-adapters</code> (or AI SDK MCP client), <code>inngest</code>, <code>@supabase/supabase-js</code>, <code>drizzle-orm</code> + <code>postgres</code>, <code>zod</code>, <code>react-native-webview</code>, <code>expo-secure-store</code>. Verify package names/versions at install time.</p>
+<p><code>ai</code>, <code>@ai-sdk/react</code>, <code>@ai-sdk/google</code>, <code>@ai-sdk/groq</code>, <code>@openrouter/ai-sdk-provider</code>, <code>@ai-sdk/mistral</code>, <code>@ai-sdk/deepseek</code>, <code>@ai-sdk/huggingface</code>, <code>@ai-sdk/cohere</code>, <code>@langchain/langgraph</code>, <code>@langchain/langgraph-checkpoint-postgres</code>, <code>@langchain/mcp-adapters</code> (or AI SDK MCP client), <code>inngest</code>, <code>@supabase/supabase-js</code>, <code>drizzle-orm</code> + <code>postgres</code>, <code>zod</code>, <code>react-native-webview</code>, <code>expo-secure-store</code>. Verify package names/versions at install time.</p>
 <h2 id="4-environment-variables">4. Environment variables</h2>
-<p>Server (Vercel env, never in the app bundle): <code>GOOGLE_GENERATIVE_AI_API_KEY</code>, <code>GROQ_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, <code>DATABASE_URL</code> (pooled), <code>INNGEST_EVENT_KEY</code>, <code>INNGEST_SIGNING_KEY</code>, <code>ENCRYPTION_KEY</code> (32-byte, for MCP credentials), <code>GITHUB_VAULT_TOKEN</code>, <code>GITHUB_VAULT_REPO</code>, <code>SEARCH_API_KEY</code>, <code>ALLOWED_USER_ID</code>.
+<p>Server (Vercel env, never in the app bundle): <code>GOOGLE_GENERATIVE_AI_API_KEY</code>, <code>GROQ_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>MISTRAL_API_KEY</code>, <code>DEEPSEEK_API_KEY</code>, <code>HUGGINGFACE_API_KEY</code>, <code>COHERE_API_KEY</code>, <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, <code>DATABASE_URL</code> (pooled), <code>INNGEST_EVENT_KEY</code>, <code>INNGEST_SIGNING_KEY</code>, <code>ENCRYPTION_KEY</code> (32-byte, for MCP credentials), <code>GITHUB_VAULT_TOKEN</code>, <code>GITHUB_VAULT_REPO</code>, <code>SEARCH_API_KEY</code>, <code>ALLOWED_USER_ID</code>.
 Client (public by design): <code>EXPO_PUBLIC_API_BASE_URL</code>, <code>EXPO_PUBLIC_SUPABASE_URL</code>, <code>EXPO_PUBLIC_SUPABASE_ANON_KEY</code>. Never put model or service keys in <code>EXPO_PUBLIC_*</code>.</p>
 <h2 id="5-known-constraints">5. Known constraints</h2>
 <ul>
 <li>Remote (streamable HTTP) MCP only. stdio needs a long-lived worker.</li>
 <li>Inngest quota is consumed per step: batch work, keep short chats off Inngest.</li>
 <li>Supabase pause: add a GitHub Actions cron ping (free, not counted against Inngest).</li>
-<li>Handle 429s with backoff, then fall back across Google → Groq → OpenRouter (order configurable). Skip fallbacks that lack a required capability.</li>
+<li>Handle 429s with backoff, then fall back across the keyed providers (default chain Google → Groq → OpenRouter, order configurable; Mistral, DeepSeek, Hugging Face and Cohere join once keyed). Skip fallbacks that lack a required capability.</li>
 <li>Embeddings use one fixed model; don't switch it with the chat model.</li>
 <li>Streaming on device can be flaky; keep an XHR-based transport as fallback.</li>
 </ul></section><section id="architecture"><div class="fn">ARCHITECTURE.md</div><h1 id="architecture">Architecture</h1>
@@ -660,7 +680,7 @@ Client (public by design): <code>EXPO_PUBLIC_API_BASE_URL</code>, <code>EXPO_PUB
 <h3 id="37-canvas">3.7 Canvas</h3>
 <p>Agent calls <code>render_canvas(spec)</code> → zod-validated → saved in <code>canvases</code> → returned in the message as a tool part → Expo renders from the component catalog. Data-bound components reference a saved data source so refresh needs no LLM call.</p>
 <h3 id="38-model-routing">3.8 Model routing</h3>
-<p>Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through <code>getModel(id)</code> / <code>withFallback(ids)</code>. Registry entries declare capabilities and <code>private_ok</code>. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to <code>provider_usage</code>. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Embeddings are pinned to one model.</p>
+<p>Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through <code>getModel(id)</code> / <code>withFallback(ids)</code>. Registry entries declare capabilities and <code>private_ok</code>. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to <code>provider_usage</code>. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Mistral, DeepSeek, Hugging Face and Cohere are selectable per chat/agent and join the fallback chain as soon as their keys are configured. Embeddings are pinned to one model.</p>
 <h2 id="4-security-model">4. Security model</h2>
 <ul>
 <li>Single allowed user; every API route verifies the Supabase JWT and <code>ALLOWED_USER_ID</code>. RLS on all tables as defense in depth.</li>
@@ -837,7 +857,7 @@ create table canvases (
 create table provider_usage (
   id bigint generated always as identity primary key,
   user_id uuid not null,
-  provider text not null,              -- google|groq|openrouter
+  provider text not null,              -- google|groq|openrouter|mistral|deepseek|huggingface|cohere
   model text not null,
   run_id uuid,
   input_tokens int, output_tokens int,
@@ -1223,7 +1243,7 @@ create table monitor_snapshots (
 </table>
 <p>Approvals badge appears on the tab bar and as a banner anywhere.</p>
 <h2 id="3-screens">3. Screens</h2>
-<p><strong>Chat</strong>: thread list drawer; composer with attach (image/PDF/file), mic (P2), agent picker, <strong>model picker</strong> (grouped by Google / Groq / OpenRouter, with capability badges and a warning if the model can't handle the attachment), mode toggle (Chat / Run as task). Messages render markdown, code with copy, citations as tappable chips, tool-call chips (collapsible), inline canvas cards, approval cards.
+<p><strong>Chat</strong>: thread list drawer; composer with attach (image/PDF/file), mic (P2), agent picker, <strong>model picker</strong> (a flat list labelled by provider — Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face, Cohere — with capability badges and a warning if the model can't handle the attachment), mode toggle (Chat / Run as task). Messages render markdown, code with copy, citations as tappable chips, tool-call chips (collapsible), inline canvas cards, approval cards.
 <strong>Run detail</strong>: header (goal, status, elapsed), vertical timeline of events (node, tool call, result, retry), cancel button, final result. Child runs nest under the supervisor.
 <strong>Approval card</strong>: tool name, plain-language summary, arguments (expandable), buttons Approve / Deny, optional edit of arguments. States: pending, approved, denied, expired.
 <strong>Canvas list/detail</strong>: cards with title and last updated; detail renders spec full-screen, pull-to-refresh, "Ask about this" button that opens chat with the canvas as context.
@@ -1314,13 +1334,13 @@ create table monitor_snapshots (
 <li>[ ] Supabase project, GitHub OAuth, allow-list your account</li>
 <li>[ ] Vercel deploy, env vars, Inngest app connected</li>
 <li>[ ] GitHub Actions cron keepalive for Supabase</li>
-<li>[ ] Install providers: <code>@ai-sdk/google</code>, <code>@ai-sdk/groq</code>, <code>@openrouter/ai-sdk-provider</code>; add the 3 API keys to Vercel env
+<li>[ ] Install providers: <code>@ai-sdk/google</code>, <code>@ai-sdk/groq</code>, <code>@openrouter/ai-sdk-provider</code> (plus <code>@ai-sdk/mistral</code>, <code>@ai-sdk/deepseek</code>, <code>@ai-sdk/huggingface</code>, <code>@ai-sdk/cohere</code> from Phase 0.5); add the API keys to Vercel env
 <strong>Done when:</strong> signed-in Expo app calls a protected <code>/api/health</code>.</li>
 </ul>
 <h2 id="phase-05-llm-provider-layer-12-days">Phase 0.5: LLM provider layer (1–2 days)</h2>
 <p>All model access goes through one module, <code>packages/shared/models.ts</code>. No route, graph node or Inngest function may import a provider package directly.
 - [ ] <strong>Model registry</strong> (code, typed). One entry per model: <code>id</code> (<code>"google:gemini-flash"</code>), <code>provider</code>, <code>providerModelId</code>, <code>label</code>, capability flags <code>{ tools, vision, structuredOutput, reasoning, pdf }</code>, <code>contextWindow</code>, <code>private_ok</code> (safe for note-derived context), <code>tier</code> (<code>free</code>/<code>paid</code>).
-- [ ] <strong>Resolver</strong> <code>getModel(id)</code> → AI SDK <code>LanguageModel</code> using the matching provider instance (<code>google</code>, <code>createGroq</code>, <code>createOpenRouter</code>). Unknown id or missing API key → typed error.
+- [ ] <strong>Resolver</strong> <code>getModel(id)</code> → AI SDK <code>LanguageModel</code> using the matching provider instance (<code>google</code>, <code>createGroq</code>, <code>createOpenRouter</code>, <code>createMistral</code>, <code>createDeepSeek</code>, <code>createHuggingFace</code>, <code>createCohere</code>). Unknown id or missing API key → typed error.
 - [ ] <strong>Fallback chain</strong> <code>withFallback([primary, ...fallbacks])</code>: on 429, 5xx, timeout or provider error, retry once with backoff, then move to the next model. Skip fallbacks lacking a capability the request needs (e.g. images → needs <code>vision</code>, tool-using agent → needs <code>tools</code>).
 - [ ] <strong>Capability gate:</strong> reject or reroute before calling if the request needs something the chosen model lacks.
 - [ ] <strong>Usage tracking:</strong> write each call to <code>provider_usage</code> (provider, model, tokens, status); expose to the usage meter.
@@ -1460,7 +1480,7 @@ export function getModel(id: string) {
 </tbody>
 </table>
 <h2 id="definition-of-done-v1">Definition of done (v1)</h2>
-<p>Phases 0–6 (including 0.5) complete, with Google, Groq and OpenRouter selectable and falling back automatically, running on Vercel + Supabase + Inngest free tiers, installed on your phone, with usage meter and backups of the vault in GitHub.</p></section></main>
+<p>Phases 0–6 (including 0.5) complete, with Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face and Cohere selectable and falling back automatically, running on Vercel + Supabase + Inngest free tiers, installed on your phone, with usage meter and backups of the vault in GitHub.</p></section></main>
 <script>
 document.querySelectorAll("table").forEach(function(t){var w=document.createElement("div");w.className="tw";t.parentNode.insertBefore(w,t);w.appendChild(t)});
 document.getElementById("t").onclick=function(){var r=document.documentElement,d=r.getAttribute("data-theme")==="dark"||(!r.getAttribute("data-theme")&&matchMedia("(prefers-color-scheme: dark)").matches);r.setAttribute("data-theme",d?"light":"dark")};

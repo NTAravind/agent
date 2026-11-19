@@ -20,6 +20,10 @@ const serverVars = [
   ["GOOGLE_GENERATIVE_AI_API_KEY", "apps/api"],
   ["GROQ_API_KEY", "apps/api"],
   ["OPENROUTER_API_KEY", "apps/api"],
+  ["MISTRAL_API_KEY", "apps/api"],
+  ["DEEPSEEK_API_KEY", "apps/api"],
+  ["HUGGINGFACE_API_KEY", "apps/api"],
+  ["COHERE_API_KEY", "apps/api"],
 ];
 
 /** Public client values — apps/mobile/.env. */

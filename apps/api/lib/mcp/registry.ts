@@ -113,6 +113,34 @@ export type CatalogFilter = {
   includeDisabled?: boolean;
 };
 
+export type ConnectionState = { id: string; status: string };
+
+/**
+ * The caller's connections keyed by server id — the ONLY source of
+ * `connected` anywhere in the catalog. It is scoped by `user_id`, so two
+ * users never share connection state: `connected` is strictly
+ * `status === "connected"` (pending/expired/error surface separately as
+ * `connectionStatus`, which the UI turns into Finish connecting/Reconnect).
+ */
+export async function connectionStateByServer(
+  userId: string,
+): Promise<Map<string, ConnectionState>> {
+  const { data, error } = await supabaseAdmin()
+    .from("user_mcp_connections")
+    .select("id, mcp_server_id, status")
+    .eq("user_id", userId)
+    .in("status", ["pending", "connected", "expired", "error"]);
+  if (error) {
+    throw new Error(`Could not load connections: ${error.message}`);
+  }
+  return new Map(
+    (data ?? []).map((row) => [
+      row.mcp_server_id as string,
+      { id: row.id as string, status: row.status as string },
+    ]),
+  );
+}
+
 /** Lists catalog entries with the caller's connection state merged in. */
 export async function listCatalog(filter: CatalogFilter): Promise<CatalogEntry[]> {
   let query = supabaseAdmin()
@@ -135,21 +163,7 @@ export async function listCatalog(filter: CatalogFilter): Promise<CatalogEntry[]
   const { data: servers, error } = await query;
   if (error) throw new Error(`Could not list integrations: ${error.message}`);
 
-  const { data: connections, error: connError } = await supabaseAdmin()
-    .from("user_mcp_connections")
-    .select("id, mcp_server_id, status")
-    .eq("user_id", filter.userId)
-    .in("status", ["pending", "connected", "expired", "error"]);
-  if (connError) {
-    throw new Error(`Could not load connections: ${connError.message}`);
-  }
-
-  const byServer = new Map(
-    (connections ?? []).map((row) => [
-      row.mcp_server_id as string,
-      { id: row.id as string, status: row.status as string },
-    ]),
-  );
+  const byServer = await connectionStateByServer(filter.userId);
 
   let entries: CatalogEntry[] = (servers ?? []).map((row) => {
     const connection = byServer.get(row.id as string);

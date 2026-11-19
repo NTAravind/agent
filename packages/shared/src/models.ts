@@ -1,8 +1,27 @@
 import { z } from "zod";
 
 /** Providers that may appear in a registry model id ("provider:modelId"). */
-export const PROVIDERS = ["google", "groq", "openrouter"] as const;
+export const PROVIDERS = [
+  "google",
+  "groq",
+  "openrouter",
+  "mistral",
+  "deepseek",
+  "huggingface",
+  "cohere",
+] as const;
 export type Provider = (typeof PROVIDERS)[number];
+
+/** Display names for providers, shared by the dashboard and the mobile app. */
+export const PROVIDER_LABELS: Record<Provider, string> = {
+  google: "Google Gemini",
+  groq: "Groq Cloud",
+  openrouter: "OpenRouter",
+  mistral: "Mistral AI",
+  deepseek: "DeepSeek",
+  huggingface: "Hugging Face",
+  cohere: "Cohere",
+};
 
 /**
  * Registry ids look like "google:gemini-3.8-flash". The provider part is the

@@ -14,21 +14,33 @@ import {
 
 const fakeModel = { modelId: "fake", specificationVersion: "v4" } as never;
 
+const ENV_KEYS = [
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GROQ_API_KEY",
+  "OPENROUTER_API_KEY",
+  "MISTRAL_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "HUGGINGFACE_API_KEY",
+  "COHERE_API_KEY",
+] as const;
+
 describe("resolver", () => {
-  const originalKeys = {
-    google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    groq: process.env.GROQ_API_KEY,
-    openrouter: process.env.OPENROUTER_API_KEY,
-  };
+  const originalKeys: Record<(typeof ENV_KEYS)[number], string | undefined> = Object.fromEntries(
+    ENV_KEYS.map((name) => [name, process.env[name]]),
+  ) as Record<(typeof ENV_KEYS)[number], string | undefined>;
 
   beforeEach(() => {
     __resetProviderInstancesForTests();
   });
 
   afterEach(() => {
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalKeys.google;
-    process.env.GROQ_API_KEY = originalKeys.groq;
-    process.env.OPENROUTER_API_KEY = originalKeys.openrouter;
+    // Assigning undefined to process.env coerces to the string "undefined",
+    // which would read as a configured key — delete instead.
+    for (const name of ENV_KEYS) {
+      const original = originalKeys[name];
+      if (original === undefined) delete process.env[name];
+      else process.env[name] = original;
+    }
     __resetProviderInstancesForTests();
     __setModelFactoryForTests(null);
   });
@@ -77,17 +89,21 @@ describe("resolver", () => {
   });
 
   it("reports which providers have keys configured", () => {
+    for (const name of ENV_KEYS) delete process.env[name];
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
-    delete process.env.GROQ_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
     __resetProviderInstancesForTests();
 
     assert.equal(isProviderConfigured("google"), true);
     assert.equal(isProviderConfigured("groq"), false);
+    assert.equal(isProviderConfigured("mistral"), false);
     assert.deepEqual(providersWithKeys(), ["google"]);
   });
 
   it("can be swapped for a fake model factory (test hook)", () => {
+    // The restored factory builds a real provider model, so the key must be set.
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+    __resetProviderInstancesForTests();
+
     const restore = __setModelFactoryForTests(() => fakeModel);
     assert.equal(getModel("google:gemini-3.8-flash"), fakeModel);
     restore();
@@ -95,7 +111,15 @@ describe("resolver", () => {
   });
 
   it("keeps registry entries and resolvers in sync", () => {
-    for (const id of ["google:gemini-3.8-flash", "groq:gpt-oss-120b", "openrouter:gemini-3.8-flash"]) {
+    for (const id of [
+      "google:gemini-3.8-flash",
+      "groq:gpt-oss-120b",
+      "openrouter:gemini-3.8-flash",
+      "mistral:mistral-large-latest",
+      "deepseek:deepseek-chat",
+      "huggingface:meta-llama/Llama-3.3-70B-Instruct",
+      "cohere:command-a-03-2025",
+    ]) {
       assert.ok(findRegistryEntry(id), `${id} is missing from the registry`);
     }
   });

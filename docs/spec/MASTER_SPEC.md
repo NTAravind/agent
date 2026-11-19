@@ -11,7 +11,7 @@ A personal, always-available AI assistant you can use from your phone (Expo) and
 - G3. MCP store: add/remove tool servers per agent with one tap.
 - G4. Canvas: agent renders dashboards/reports natively in the app from a JSON spec.
 - G5. Runs anywhere (cloud), **free**, single user.
-- G6. Provider-agnostic: Google, Groq and OpenRouter selectable per chat/agent via the AI SDK, with automatic fallback.
+- G6. Provider-agnostic: Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face and Cohere selectable per chat/agent via the AI SDK, with automatic fallback.
 
 ## 3. Non-goals (v1)
 - Multi-user, teams, billing, public sharing.

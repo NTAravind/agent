@@ -93,6 +93,10 @@ describe("cross-provider verifier", () => {
       "GOOGLE_GENERATIVE_AI_API_KEY",
       "GROQ_API_KEY",
       "OPENROUTER_API_KEY",
+      "MISTRAL_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "HUGGINGFACE_API_KEY",
+      "COHERE_API_KEY",
     ]) {
       saved[name] = process.env[name];
       process.env[name] = "test-key";

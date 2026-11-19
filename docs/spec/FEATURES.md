@@ -11,7 +11,7 @@ Legend: **P0** MVP · **P1** next · **P2** later · **$** needs paid service ·
 | Document understanding (PDF, txt, md) | P0 | Small: inline file part. Large: chunk → embed |
 | Code generation/debug | P0 | Plain model output; sandbox execution P2 |
 | Real-time info | P0 | Search tool (provider TBD, verify free tier) |
-| Provider model dashboard | P1 | Fetch Google, Groq and OpenRouter catalogs; choose which models are exposed to mobile; show usage per provider/model |
+| Provider model dashboard | P1 | Fetch Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face and Cohere catalogs; choose which models are exposed to mobile; show usage per provider/model |
 | Agent task model chooser | P1 | Choose a preferred model per task, preserving capability checks and fallback routing |
 | Audio/other media input | P2 | Where model supports it |
 
@@ -78,7 +78,7 @@ All **$ / P3**. X API is paid. Hide behind a tool/MCP interface so it can be add
 ## 9. Platform features (added)
 | Feature | Pri | Notes |
 |---|---|---|
-| Multi-provider models (Google, Groq, OpenRouter) | P0 | Registry, picker, per-agent model, automatic fallback |
+| Multi-provider models (Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face, Cohere) | P0 | Registry, picker, per-agent model, automatic fallback |
 | MCP store (one-tap add) | P1 | Remote servers only |
 | Canvas / dynamic dashboards | P1 | JSON spec → native render |
 | Notes editor + graph/backlinks | P1 | Read/write vault |

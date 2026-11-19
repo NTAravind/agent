@@ -1,6 +1,5 @@
 import { allowedUserId } from "@/lib/auth";
 import { requireComposioKey } from "@/lib/mcp/providers/composio";
-import { listCatalog, type CatalogEntry } from "@/lib/mcp/registry";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isConfigured } from "@/lib/env";
 
@@ -151,17 +150,62 @@ export type ComposioCatalogResult = {
   categories: string[];
 };
 
-/** A connected Composio listing enables a *set* of toolkits (config.toolkits). */
-function connectedToolkitMap(entries: CatalogEntry[]): Map<string, CatalogEntry> {
-  const map = new Map<string, CatalogEntry>();
-  for (const entry of entries) {
-    if (!entry.connected) continue;
+type ToolkitConnection = { serverId: string; connectionId: string; status: string };
+
+/**
+ * When one toolkit has several connections (e.g. an umbrella listing plus a
+ * per-toolkit row), the UI shows the most actionable one.
+ */
+const CONNECTION_RANK: Record<string, number> = {
+  connected: 4,
+  pending: 3,
+  expired: 2,
+  error: 1,
+};
+
+/**
+ * This user's Composio connections mapped to the toolkits they enable.
+ *
+ * Built from `user_mcp_connections` (join to `mcp_servers`, provider
+ * composio) filtered by the CURRENT `user_id` — never from the global
+ * `mcp_servers` table — so connection state is strictly per-user. `connected`
+ * is only ever `status === "connected"`; pending/expired/error surface as
+ * `connectionStatus` so the tab can offer Finish connecting / Reconnect.
+ */
+async function connectedToolkitMap(userId: string): Promise<Map<string, ToolkitConnection>> {
+  const { data, error } = await supabaseAdmin()
+    .from("user_mcp_connections")
+    .select("id, status, mcp_servers!inner(id, provider, config)")
+    .eq("user_id", userId)
+    .eq("mcp_servers.provider", "composio")
+    .in("status", ["pending", "connected", "expired", "error"]);
+  if (error) throw new Error(`Could not load connections: ${error.message}`);
+
+  type Embedded = { id: string; config: Record<string, unknown> | null };
+  type Row = {
+    id: string;
+    status: string;
+    // To-one embed → object at runtime; accept an array too (types can't tell).
+    mcp_servers: Embedded | Embedded[];
+  };
+  const map = new Map<string, ToolkitConnection>();
+  for (const row of (data ?? []) as unknown as Row[]) {
+    const server = Array.isArray(row.mcp_servers) ? row.mcp_servers[0] : row.mcp_servers;
+    if (!server) continue;
     // The shared `config` type describes the write schema; live rows carry
-    // `toolkits` at the top level (same place sessionToolkits() reads it).
-    const config = entry.config as unknown as Record<string, unknown> | null;
+    // `toolkits` at the top level (same place configuredToolkits() reads it).
+    const config = server.config;
     const toolkits = config && Array.isArray(config.toolkits) ? config.toolkits : [];
     for (const toolkit of toolkits) {
-      if (typeof toolkit === "string" && !map.has(toolkit)) map.set(toolkit, entry);
+      if (typeof toolkit !== "string") continue;
+      const current = map.get(toolkit);
+      if (!current || (CONNECTION_RANK[row.status] ?? 0) > (CONNECTION_RANK[current.status] ?? 0)) {
+        map.set(toolkit, {
+          serverId: server.id,
+          connectionId: row.id,
+          status: row.status,
+        });
+      }
     }
   }
   return map;
@@ -192,9 +236,7 @@ export async function listComposioCatalog(input: {
   // Popularity first: the biggest toolkits are the ones people look for.
   matches.sort((a, b) => (b.meta?.tools_count ?? 0) - (a.meta?.tools_count ?? 0));
 
-  const connections = connectedToolkitMap(
-    await listCatalog({ userId: input.userId, provider: "composio" }),
-  );
+  const connections = await connectedToolkitMap(input.userId);
 
   const items: ComposioCatalogItem[] = matches.slice(0, RESULT_CAP).map((toolkit) => {
     const slug = toolkit.slug ?? "";
@@ -209,10 +251,10 @@ export async function listComposioCatalog(input: {
       authSchemes: toolkit.composio_managed_auth_schemes?.length
         ? toolkit.composio_managed_auth_schemes
         : toolkit.auth_schemes ?? [],
-      serverId: existing?.id ?? null,
-      connected: Boolean(existing),
+      serverId: existing?.serverId ?? null,
+      connected: existing?.status === "connected",
       connectionId: existing?.connectionId ?? null,
-      connectionStatus: existing?.connectionStatus ?? null,
+      connectionStatus: existing?.status ?? null,
     };
   });
 
@@ -270,7 +312,12 @@ export async function ensureComposioListing(toolkit: string): Promise<{ id: stri
         endpoint: null,
         transport: "streamable_http",
         auth_type: "provider_managed",
-        config: { toolkits: [normalized] },
+        // `no_auth` toolkits need no consent: `connectComposio` skips the
+        // account gate for them instead of waiting forever for one.
+        config: {
+          toolkits: [normalized],
+          ...(info?.no_auth === true ? { noAuth: true } : {}),
+        },
         capabilities: { tools: true },
         icon_url: info?.meta?.logo ?? null,
         is_verified: true,

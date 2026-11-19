@@ -148,10 +148,20 @@ export type ConnectResult = {
   connectionId: string;
   /** The listing this connection belongs to (navigate to its detail page). */
   serverId?: string;
+  /** `pending` when the user must authorize first (see authorizationUrl). */
   status?: string;
   toolCount?: number;
-  /** OAuth only: open this in a browser to finish connecting. */
+  /** OAuth / Composio hosted auth: open this in a browser to finish connecting. */
   authorizationUrl?: string;
+};
+
+/** Re-checked status from POST /api/mcp/connections/:id/verify. */
+export type VerifyResult = {
+  status: 'pending' | 'connected' | 'expired' | 'error' | 'disconnected';
+  toolCount?: number;
+  /** Returned when consent is (still) needed and issueLink wasn't disabled. */
+  authorizationUrl?: string;
+  message?: string;
 };
 
 export async function connectServer(
@@ -164,8 +174,31 @@ export async function connectServer(
   });
 }
 
-export async function refreshConnection(id: string): Promise<{ toolCount: number; changed: number }> {
-  return call<{ toolCount: number; changed: number }>(`/api/mcp/connections/${id}/refresh`, {
+/**
+ * Asks the API to re-check a connection with its provider. While waiting on
+ * Composio consent this is polled with `{ issueLink: false }` (side-effect
+ * free); the "Finish connecting" / "Reconnect" buttons pass the default so
+ * the response carries a fresh `authorizationUrl` to reopen.
+ */
+export async function verifyConnection(
+  id: string,
+  options: { issueLink?: boolean } = {},
+): Promise<VerifyResult> {
+  return call<VerifyResult>(`/api/mcp/connections/${id}/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ issueLink: options.issueLink ?? true }),
+  });
+}
+
+export async function refreshConnection(id: string): Promise<{
+  toolCount: number;
+  changed: number;
+  status?: string;
+  /** Composio only: consent expired/revoked → reopen this to sign in again. */
+  authorizationUrl?: string;
+  message?: string;
+}> {
+  return call(`/api/mcp/connections/${id}/refresh`, {
     method: 'POST',
   });
 }
