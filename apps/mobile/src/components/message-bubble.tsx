@@ -3,8 +3,10 @@ import type { AgentSummary } from '@agent/shared';
 import { Image } from 'expo-image';
 import { Button, Typography } from 'heroui-native';
 import { Linking, Pressable, Share, View } from 'react-native';
+import { CalendarClock } from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { RoutineProposalCard, type RoutineProposal } from '@/components/routine-proposal-card';
 import { MESSAGE_ICONS } from '@/constants/icons';
 
 type Props = {
@@ -18,6 +20,8 @@ type Props = {
   runId?: string | null;
   /** Callback when "View task" is pressed. */
   onViewTask?: (runId: string) => void;
+  /** Called when the user taps "Edit" on a routine proposal. */
+  onEditRoutine?: (routineId: string) => void;
 };
 
 type ToolPart = {
@@ -35,7 +39,15 @@ type ToolPart = {
  *    with 24pt avatar, Grok-style collapsible "Thinking" accordion drawer,
  *    modern numbered citation capsules, and action toolbar.
  */
-export function MessageBubble({ role, parts, modelLabel, agent, runId, onViewTask }: Props) {
+export function MessageBubble({
+  role,
+  parts,
+  modelLabel,
+  agent,
+  runId,
+  onViewTask,
+  onEditRoutine,
+}: Props) {
   const isUser = role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -88,6 +100,31 @@ export function MessageBubble({ role, parts, modelLabel, agent, runId, onViewTas
         </View>
       );
     }
+    if (part.type === 'data-routine-proposal') {
+      const proposal = part.data as RoutineProposal | undefined;
+      if (!proposal?.routineId) return null;
+      return (
+        <RoutineProposalCard
+          key={index}
+          proposal={proposal}
+          {...(onEditRoutine ? { onEdit: onEditRoutine } : {})}
+        />
+      );
+    }
+    if (part.type === 'routine-trigger') {
+      // A routine fired — the message is a chip, not something the user typed.
+      return (
+        <View
+          key={index}
+          className="flex-row items-center gap-1.5 self-start rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1"
+        >
+          <CalendarClock size={11} color="#c084fc" />
+          <Typography type="body-xs" className="text-violet-300">
+            {`Routine · ${String(part.routine_name ?? 'scheduled run')}`}
+          </Typography>
+        </View>
+      );
+    }
     if (part.type.startsWith('tool-')) {
       return <ToolPartView key={index} part={part as ToolPart} />;
     }
@@ -103,6 +140,11 @@ export function MessageBubble({ role, parts, modelLabel, agent, runId, onViewTas
 
   // User Message
   if (isUser) {
+    // A routine-triggered message is rendered as a chip, not a bubble.
+    const isRoutine = parts.some((part) => part.type === 'routine-trigger');
+    if (isRoutine) {
+      return <View className="items-start my-1 gap-1.5">{content}</View>;
+    }
     return (
       <View className="items-end my-1">
         <View className="max-w-[85%] gap-2 rounded-[22px] rounded-br-sm border border-white/10 bg-[#1c1c22] px-4 py-3 shadow-sm">

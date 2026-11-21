@@ -19,6 +19,12 @@ export async function createRun(input: {
   model?: string | null;
   /** Supervisor runs set this so children nest under the parent timeline. */
   parentRunId?: string | null;
+  /** The user's timezone — relative dates in the goal resolve against it. */
+  tz?: string | null;
+  /** Set when the run was fired by a routine (Phase 10). */
+  routineId?: string | null;
+  /** The occurrence instant a routine run fired for. */
+  scheduledFor?: string | null;
 }): Promise<{ id: string; status: RunStatus }> {
   const { data, error } = await supabaseAdmin()
     .from("agent_runs")
@@ -30,6 +36,9 @@ export async function createRun(input: {
       parent_run_id: input.parentRunId ?? null,
       status: "queued",
       model: input.model ?? null,
+      tz: input.tz ?? "Asia/Kolkata",
+      ...(input.routineId ? { routine_id: input.routineId } : {}),
+      ...(input.scheduledFor ? { scheduled_for: input.scheduledFor } : {}),
     })
     .select("id, status")
     .single();

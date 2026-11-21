@@ -10,14 +10,8 @@ import type {
 } from "@agent/shared";
 import * as ImagePicker from "expo-image-picker";
 
-import { apiFetch } from "@/lib/api";
+import { authedFetch } from "@/lib/api-session";
 import { supabase } from "@/lib/supabase";
-
-async function accessToken(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) return null;
-  return data.session.access_token;
-}
 
 /** Starts an agent run (executed durably by Inngest). */
 export async function startRun(
@@ -25,18 +19,13 @@ export async function startRun(
   model?: string | null,
   agentId?: string | null,
 ): Promise<StartRunResponse> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return await apiFetch<StartRunResponse>("/api/agents/run", {
-    token,
-    init: {
-      method: "POST",
-      body: JSON.stringify({
-        goal,
-        ...(model ? { model } : {}),
-        ...(agentId ? { agentId } : {}),
-      }),
-    },
+  return await authedFetch<StartRunResponse>("/api/agents/run", {
+    method: "POST",
+    body: JSON.stringify({
+      goal,
+      ...(model ? { model } : {}),
+      ...(agentId ? { agentId } : {}),
+    }),
   });
 }
 
@@ -45,40 +34,23 @@ export async function startRun(
 export type { Agent, AgentCreate, AgentPatch };
 
 export async function fetchAgents(): Promise<Agent[]> {
-  const token = await accessToken();
-  if (!token) return [];
-  const response = await apiFetch<{ agents: Agent[] }>("/api/agents", { token });
+  const response = await authedFetch<{ agents: Agent[] }>("/api/agents");
   return response.agents;
 }
 
 export async function createAgent(input: AgentCreate): Promise<Agent> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  const response = await apiFetch<{ agent: Agent }>("/api/agents", {
-    token,
-    init: { method: "POST", body: JSON.stringify(input) },
-  });
+  const response = await authedFetch<{ agent: Agent }>("/api/agents", { method: "POST", body: JSON.stringify(input) });
   return response.agent;
 }
 
 export async function updateAgent(id: string, patch: AgentPatch): Promise<Agent> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  const response = await apiFetch<{ agent: Agent }>(`/api/agents/${id}`, {
-    token,
-    init: { method: "PATCH", body: JSON.stringify(patch) },
-  });
+  const response = await authedFetch<{ agent: Agent }>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
   return response.agent;
 }
 
 /** Removes the agent; MCP attachments cascade, run history is kept. */
 export async function deleteAgent(id: string): Promise<void> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  await apiFetch<{ deleted: boolean }>(`/api/agents/${id}`, {
-    token,
-    init: { method: "DELETE" },
-  });
+  await authedFetch<{ deleted: boolean }>(`/api/agents/${id}`, { method: "DELETE" });
 }
 
 /**
@@ -101,20 +73,15 @@ export async function uploadAgentAvatar(agentId: string): Promise<string | null>
   const asset = result.assets[0];
   const mediaType = asset.mimeType ?? "image/jpeg";
 
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
 
-  const signed = await apiFetch<{ storagePath: string; token: string }>(
+  const signed = await authedFetch<{ storagePath: string; token: string }>(
     `/api/agents/${agentId}/avatar`,
     {
-      token,
-      init: {
-        method: "POST",
-        body: JSON.stringify({
-          mediaType,
-          ...(asset.fileSize ? { sizeBytes: asset.fileSize } : {}),
-        }),
-      },
+      method: "POST",
+      body: JSON.stringify({
+        mediaType,
+        ...(asset.fileSize ? { sizeBytes: asset.fileSize } : {}),
+      }),
     },
   );
 
@@ -155,9 +122,7 @@ export type RunListItem = {
 };
 
 export async function fetchRuns(): Promise<RunListItem[]> {
-  const token = await accessToken();
-  if (!token) return [];
-  const response = await apiFetch<{ runs: RunListItem[] }>("/api/runs", { token });
+  const response = await authedFetch<{ runs: RunListItem[] }>("/api/runs");
   return response.runs;
 }
 
@@ -185,9 +150,7 @@ export type RunDetail = {
 };
 
 export async function fetchRun(id: string): Promise<RunDetail> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return await apiFetch<RunDetail>(`/api/runs/${id}`, { token });
+  return await authedFetch<RunDetail>(`/api/runs/${id}`);
 }
 
 /** Records an approve/deny decision; the run resumes via Inngest. */
@@ -195,11 +158,9 @@ export async function decideApproval(
   id: string,
   decision: 'approve' | 'deny',
 ): Promise<void> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  await apiFetch<{ ok: boolean }>(`/api/approvals/${id}`, {
-    token,
-    init: { method: 'POST', body: JSON.stringify({ decision }) },
+  await authedFetch<{ ok: boolean }>(`/api/approvals/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
   });
 }
 
@@ -208,12 +169,7 @@ export async function decideApproval(
  * step boundary. Supervisor children pause with their parent.
  */
 export async function pauseRun(id: string): Promise<void> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  await apiFetch<{ status: string }>(`/api/runs/${id}/pause`, {
-    token,
-    init: { method: 'POST' },
-  });
+  await authedFetch<{ status: string }>(`/api/runs/${id}/pause`, { method: 'POST' });
 }
 
 /**
@@ -221,22 +177,12 @@ export async function pauseRun(id: string): Promise<void> {
  * 409 when the run is not paused or its agent is asleep.
  */
 export async function resumeRun(id: string): Promise<void> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  await apiFetch<{ ok: boolean }>(`/api/runs/${id}/resume`, {
-    token,
-    init: { method: 'POST' },
-  });
+  await authedFetch<{ ok: boolean }>(`/api/runs/${id}/resume`, { method: 'POST' });
 }
 
 /** Cancels an unfinished run (and a supervisor's unfinished children). */
 export async function cancelRun(id: string): Promise<void> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  await apiFetch<{ status: string }>(`/api/runs/${id}/cancel`, {
-    token,
-    init: { method: 'POST' },
-  });
+  await authedFetch<{ status: string }>(`/api/runs/${id}/cancel`, { method: 'POST' });
 }
 
 /**
@@ -244,12 +190,7 @@ export async function cancelRun(id: string): Promise<void> {
  * it wakes. Returns how many runs were paused.
  */
 export async function sleepAgent(id: string): Promise<{ pausedRuns: number }> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return await apiFetch<{ sleeping: true; pausedRuns: number }>(`/api/agents/${id}/sleep`, {
-    token,
-    init: { method: 'POST' },
-  });
+  return await authedFetch<{ sleeping: true; pausedRuns: number }>(`/api/agents/${id}/sleep`, { method: 'POST' });
 }
 
 /**
@@ -257,10 +198,5 @@ export async function sleepAgent(id: string): Promise<{ pausedRuns: number }> {
  * tasks (plus supervisors waiting on them). Returns how many were resumed.
  */
 export async function wakeAgent(id: string): Promise<{ resumedRuns: number }> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return await apiFetch<{ sleeping: false; resumedRuns: number }>(`/api/agents/${id}/wake`, {
-    token,
-    init: { method: 'POST' },
-  });
+  return await authedFetch<{ sleeping: false; resumedRuns: number }>(`/api/agents/${id}/wake`, { method: 'POST' });
 }

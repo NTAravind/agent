@@ -28,7 +28,59 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | POST | `/api/notes/sync` | Manual full/partial resync |
 | GET | `/api/notes` / `/api/notes/:id` | List / read (with backlinks) |
 | POST | `/api/notes` | Create/update note (commits to repo) |
+| PUT | `/api/notes/:path` | Create/update a note **by vault path** (Phase 9). Body = raw markdown (`Content-Type: text/markdown`); commits via `putVaultFile` and upserts the notes index. User-initiated → **no approval** |
+| DELETE | `/api/notes/:path` | Delete a note by vault path (Phase 9): removes the file from the vault and the index row. User-initiated → **no approval** |
 | GET | `/api/search?q=&k=` | Hybrid search over notes + memories |
+
+The agent's `write_note` tool keeps its approval requirement — only the HTTP routes above (a human pressing save) skip approval.
+
+## 3b. Skills (Phase 8)
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/skills` | List the user's skills with `assignedAgentIds` |
+| POST | `/api/skills` | Create a skill: composes `skills/<slug>/SKILL.md`, commits to the vault, indexes it. User-initiated → no approval |
+| PATCH | `/api/skills/:id` | Update (name/slug/description/tools/body); recomposes + recommits to the vault |
+| DELETE | `/api/skills/:id` | Delete the vault file, then the index row |
+| PUT | `/api/agents/:id/skills` | `{ skillIds }` — replace the agent's whole assignment set |
+
+## 3c. Productivity (Phase 9)
+All routes are `requireUser()`-guarded and Zod-validated. The API speaks **camelCase**; the database is snake_case (`apps/api/lib/productivity.ts` maps them).
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/task-lists` | List task lists (`{ taskLists }`) |
+| POST | `/api/task-lists` | Create a list (`{ name, sort? }`) → `{ taskList }` |
+| PATCH/DELETE | `/api/task-lists/:id` | Rename / sort / soft-delete a list |
+| GET | `/api/tasks` | List tasks. Filters: `listId`, `status` (`open\|done\|cancelled`), `from`, `to` → `{ tasks }` |
+| POST | `/api/tasks` | Create a task (`{ listId, title, notes?, status?, priority?, dueAt?, dueAllDay?, remindAt?, rrule?, parentId?, createdBy? }`) → `{ task }` |
+| GET/PATCH/DELETE | `/api/tasks/:id` | Read / patch / **soft**-delete (`deleted_at`) a task |
+| GET | `/api/events` | List events. `?from=&to=` returns **expanded occurrences** for recurring items (RRULE is expanded on read; occurrences are never materialised) → `{ events }` |
+| POST | `/api/events` | Create an event (`{ title, startsAt, endsAt, allDay?, tz?, location?, rrule?, exdates?, reminders?, createdBy? }`) → `{ event }` |
+| GET/PATCH/DELETE | `/api/events/:id` | Read / patch / soft-delete an event |
+| POST | `/api/push-tokens` | Register an Expo push token (`{ expoToken, platform }`) — upsert by token |
+| DELETE | `/api/push-tokens?expoToken=` | Remove a registered token |
+
+`createdBy` accepts `user` \| `agent` \| `suggested`. Agent tools always set `created_by='agent'` + `source_run_id`; `extractMemories` writes `created_by='suggested'` rows (shown in the app as suggestions to accept or dismiss).
+
+## 3d. Routines (Phase 10)
+All routes are `requireUser()`-guarded and Zod-validated. The API speaks **camelCase**; the database is snake_case (`apps/api/lib/routines/store.ts` maps them).
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/routines` | List the user's routines with a preview (`{ routines }` — each has `scheduleLabel` + the next three `nextRuns`) |
+| POST | `/api/routines` | Create a routine (`{ name, prompt, schedule, agentId?, threadId?, tz?, sourceText?, approvalMode? }`) → `{ routine }`. Created as a **draft** — nothing recurring starts until it is activated |
+| GET | `/api/routines/:id` | One routine with its preview |
+| PATCH | `/api/routines/:id` | Update `name` / `prompt` / `schedule` / `tz` / `approvalMode` / `status`. A changed schedule re-derives the RRULE and the next run |
+| DELETE | `/api/routines/:id` | Delete the routine |
+| POST | `/api/routines/:id/activate` | **The gate** — confirm the proposal: `status='active'` + `next_run_at` computed server-side → `{ routine }` |
+| POST | `/api/routines/:id/run-now` | Run it immediately → **202** `{ runId }`. The routine's own schedule is left untouched |
+| GET | `/api/routines/:id/runs` | The runs this routine produced (newest first) → `{ runs }` |
+
+**Schedule shape:** `{ frequency: "once" \| "daily" \| "weekly" \| "monthly", days_of_week?: Weekday[], day_of_month?: 1-28, time: "HH:mm", run_at?: ISO }`. `time` is always the **user's local wall clock**; the server converts it to an RRULE and computes the concrete instants in `tz` (default `Asia/Kolkata`). The client never sends a computed date.
+
+**Chat-first flow:** `POST /api/chat` accepts an optional `tz` (the device timezone). When the model calls `create_routine`, the response stream carries an extra `data-routine-proposal` UI part (`{ routineId, name, prompt, scheduleLabel, nextRuns, tz, status }`) next to the tool part — the app renders it as the confirmation card. The `create_routine` tool saves a draft; the routine only runs after `POST /api/routines/:id/activate`.
+
+**Approval mode:** `approvalMode` is `queue` (default) or `deny`. A routine-fired run inherits it — `queue` parks a sensitive tool call in the normal approval gate (24 h expiry), `deny` auto-denies it (`approvalMode: "deny"`), so a routine can never block on a human decision. The policy survives a resume.
 
 ## 4. Agents, runs, approvals
 | Method | Route | Description |
@@ -86,10 +138,12 @@ Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.
 | `agent/run.requested` | Execute graph in durable steps; write `run_events` |
 | `approval/decided` | Resume waiting run |
 | `run/resumed` | Continue a paused run from its graph checkpoint (`invoke(null)`); idempotent when no longer paused |
-| `chat/completed` | Extract & upsert memories |
-| `vault/changed` | Parse, chunk, embed changed notes |
+| `chat/completed` | Extract & upsert memories (facts/preferences/decisions; tasks become suggested rows) |
+| `vault/changed` | Parse, chunk, embed changed notes + index `skills/**/SKILL.md` |
 | `document/uploaded` | Parse, chunk, embed document |
 | `canvas/refresh.requested` + cron | Refresh data-bound canvases |
+| cron `reminder/tick` (every minute) | Send due task/event reminders via Expo push; idempotent via `reminder_log` |
+| cron `routine/tick` (every minute) | Fire due routines: create the run (idempotent via the unique `(routine_id, scheduled_for)`), insert the trigger message, advance `next_run_at`, emit `agent/run.requested`; the run's outcome is posted back into the thread |
 | cron `monitor/tick` | Fetch pages, hash, diff, notify |
 | cron `keepalive` (optional) | Touch DB to avoid pause |
 
@@ -103,10 +157,26 @@ Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.
 | `write_note(path,content)` | **yes** | Commits to vault |
 | `recall_memory(query)` / `save_memory(...)` | no | |
 | `render_canvas(spec)` / `update_canvas(id,patch)` | no | Validated by zod `Canvas` |
+| `load_skill(slug)` | no | Returns an **assigned** skill's body and narrows the tool set to the skill's declared `tools` (intersection only) |
+| `create_task(...)` / `list_tasks(...)` | no | Tool-created rows carry `created_by='agent'` + `source_run_id`; results capped at ~50 items |
+| `complete_task(id)` | no | |
+| `update_task(id, ...)` | **conditional** | Needs approval only when the target is `created_by='user'` |
+| `delete_task(id)` | **yes** | Soft delete; always gated |
+| `create_event(...)` / `list_events(from,to)` | no | Recurrence is expanded on read |
+| `update_event(id, ...)` | **conditional** | Needs approval only when the target is `created_by='user'` |
+| `delete_event(id)` | **yes** | Soft delete; always gated |
+| `find_free_slots(from,to,durationMinutes)` | no | Suggests free slots between existing events |
+| `create_routine(name,prompt,schedule)` | no | Saves a **draft** routine and emits a `data-routine-proposal` part; the schedule is structured (frequency / weekdays / local `HH:mm`), never a cron string or a date |
+| `list_routines()` | no | The user's routines with their schedule and next run |
+| `update_routine(id,...)` | no | A changed schedule re-derives the RRULE and the next run |
+| `pause_routine(id)` / `resume_routine(id)` | no | Pause / (re)activate a routine |
+| `delete_routine(id)` | **yes** | Always gated |
 | `create_monitor(url,...)` | yes | |
 | MCP tools | per-tool flag | Default **yes** |
+
+**Conditional approvals:** the gate resolves the target row's `created_by` server-side (scoped to the run's user). `created_by='user'` → the call parks for approval; `agent`/`suggested` → it runs immediately; an unverifiable target (no id, row gone, wrong owner) → **requires** approval.
 
 Supervisor delegation is not a tool: `is_supervisor` agents execute the dedicated `delegate → fan_out → verify → merge` graph described in §4 (the former `delegate(agent,task)` row was removed 2026-11-18).
 
 ## 9. Streaming
-AI SDK UI message stream. Custom data parts: `data-run-event` (node/tool progress), `data-approval` (pending approval card), `data-canvas` (canvas id).
+AI SDK UI message stream. Custom data parts: `data-run-event` (node/tool progress), `data-approval` (pending approval card), `data-canvas` (canvas id), `data-routine-proposal` (the Phase 10 routine confirmation card — `{ routineId, name, prompt, scheduleLabel, nextRuns, tz, status }`).

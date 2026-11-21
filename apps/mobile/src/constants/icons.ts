@@ -5,6 +5,7 @@ import {
   BellOff,
   Brain,
   BrainOff,
+  CalendarClock,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -67,6 +68,8 @@ export const CHAT_HEADER_ICONS = {
   create: Plus,
   /** Details button on the right of the agent chat header. */
   details: SLEEP_ICON,
+  /** Clock button: the routines bound to this agent (Phase 10). */
+  routine: CalendarClock,
 } as const;
 
 /** Misc screen icons. */

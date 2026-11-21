@@ -4,6 +4,7 @@ import {
   createUIMessageStreamResponse,
   toUIMessageStream,
   type UIMessage,
+  type UIMessageChunk,
 } from "ai";
 import { ChatRequestSchema } from "@agent/shared";
 
@@ -25,6 +26,8 @@ import { buildWebTools } from "@/lib/tools/web-tools";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, findRegistryEntry } from "@/lib/models";
 import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
 import { buildSkillTools } from "@/lib/skills/load";
+import { buildRoutineTools, routineProposalPayload } from "@/lib/routines/tools";
+import { DEFAULT_TIMEZONE } from "@/lib/routines/schedule";
 
 export const maxDuration = 300;
 
@@ -127,6 +130,13 @@ export async function POST(request: Request) {
       ...buildWebTools(),
       // Progressive disclosure: only when this chat is bound to an agent.
       ...(agentId ? buildSkillTools({ userId: user.id, agentId }) : {}),
+      // Routines (Phase 10): the model proposes a schedule, the app confirms it.
+      ...buildRoutineTools({
+        userId: user.id,
+        threadId,
+        agentId,
+        timeZone: body.tz ?? DEFAULT_TIMEZONE,
+      }),
     };
 
     const system = await buildSystemPrompt(
@@ -138,6 +148,7 @@ export async function POST(request: Request) {
             .join(" ")
         : undefined,
       agentId,
+      body.tz ?? DEFAULT_TIMEZONE,
     );
 
     const chatStream = await createChatStream({
@@ -153,17 +164,39 @@ export async function POST(request: Request) {
     const uiStream = createUIMessageStream({
       originalMessages: body.messages as unknown as UIMessage[],
       execute: async ({ writer }) => {
-        writer.merge(
-          toUIMessageStream({
-            stream: chatStream.stream,
-            originalMessages: body.messages as unknown as UIMessage[],
-            messageMetadata: () => ({
-              model: chatStream.modelId,
-              provider: chatStream.provider,
-              threadId,
-            }),
+        const chunks = toUIMessageStream({
+          stream: chatStream.stream,
+          originalMessages: body.messages as unknown as UIMessage[],
+          messageMetadata: () => ({
+            model: chatStream.modelId,
+            provider: chatStream.provider,
+            threadId,
+          }),
+        });
+
+        // Every routine proposal also emits a `data-routine-proposal` part,
+        // so the app can render the confirmation card (the tool part alone
+        // carries no affordance).
+        const toolNames = new Map<string, string>();
+        const withProposals = chunks.pipeThrough(
+          new TransformStream<UIMessageChunk, UIMessageChunk>({
+            transform(chunk, controller) {
+              controller.enqueue(chunk);
+              if (chunk.type === "tool-input-available" && chunk.toolName) {
+                toolNames.set(chunk.toolCallId, chunk.toolName);
+              }
+              if (chunk.type === "tool-output-available") {
+                if (toolNames.get(chunk.toolCallId) !== "create_routine") return;
+                controller.enqueue({
+                  type: "data-routine-proposal",
+                  data: routineProposalPayload(chunk.toolCallId, chunk.output),
+                } as UIMessageChunk);
+              }
+            },
           }),
         );
+
+        writer.merge(withProposals);
       },
       onError: (error) =>
         error instanceof Error ? error.message : "The provider failed to answer.",

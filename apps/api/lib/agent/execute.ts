@@ -48,13 +48,18 @@ export async function resumeExecution(input: {
 }): Promise<{ status: string; result?: string }> {
   const { data: run } = await supabaseAdmin()
     .from("agent_runs")
-    .select("status, goal, model")
+    .select("status, goal, model, routine_id")
     .eq("id", input.runId)
     .eq("user_id", input.userId)
     .maybeSingle();
   if (!run) return { status: "cancelled" };
 
-  const row = run as { status: string; goal: string; model: string | null };
+  const row = run as {
+    status: string;
+    goal: string;
+    model: string | null;
+    routine_id?: string | null;
+  };
   if (row.status !== "paused") return { status: row.status };
 
   // A run paused while parked on an approval must NOT be graph-resumed:
@@ -72,11 +77,26 @@ export async function resumeExecution(input: {
     return { status: "awaiting_approval" };
   }
 
+  // A routine-fired run keeps its approval policy across a resume: the
+  // routine's `approval_mode` decides whether a sensitive call parks the run.
+  let approvalMode: RunAgentInput["approvalMode"];
+  if (row.routine_id) {
+    const { data: routine } = await supabaseAdmin()
+      .from("routines")
+      .select("approval_mode")
+      .eq("id", row.routine_id)
+      .eq("user_id", input.userId)
+      .maybeSingle();
+    const mode = (routine as { approval_mode?: string } | null)?.approval_mode;
+    approvalMode = mode === "deny" ? "deny" : "gate";
+  }
+
   return await executeRun({
     runId: input.runId,
     userId: input.userId,
     goal: row.goal,
     preferredModel: row.model ?? undefined,
     resume: true,
+    approvalMode,
   });
 }

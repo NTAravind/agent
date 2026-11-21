@@ -9,20 +9,7 @@ import type {
   TaskPatch,
 } from '@agent/shared';
 
-import { apiFetch } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
-
-async function accessToken(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) return null;
-  return data.session.access_token;
-}
-
-async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return apiFetch<T>(path, { token, init });
-}
+import { authedFetch } from '@/lib/api-session';
 
 /* ------------------------------------------------------------------ lists */
 

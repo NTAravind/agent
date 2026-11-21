@@ -193,7 +193,46 @@ canvases via the API and they appear in the Canvas tab.
 >   agent's tools list; sensitive tools in *child* runs auto-deny rather than
 >   pause (v1; the supervisor's own tool gate is unchanged).
 
-## Phase 8: Extras (as wanted)
+## Phase 8: Skills — progressive disclosure (3–5 days)
+- [x] Shared zod schemas (`SkillCreateSchema` / `SkillPatchSchema`), `skills` + `agent_skills` tables (`db/migrations/0015_skills.sql`)
+- [x] Vault as source of truth: `skills/<slug>/SKILL.md` (frontmatter `name`, `description`, `tools[]`); Supabase row is the searchable index
+- [x] Agent prompt carries only name + description; `load_skill` returns the body on demand (assigned skills only) and narrows the tool set (intersection only)
+- [x] API: `GET/POST /api/skills`, `PATCH/DELETE /api/skills/:id`, `PUT /api/agents/:id/skills`
+- [x] Mobile Skills screen (More → Skills) with editor and per-agent assignment
+**Done when:** an agent loads an assigned skill and its instructions change the run.
+**Status (2026-11-21): DONE — verified.** Live check `apps/api/scripts/check-skills.ts`; `finalize` receives the trusted loaded-skill bodies (max 4, deduped by slug).
+
+## Phase 9: Productivity — tasks, calendar, notes editing, reminders (5–7 days)
+- [x] Migration `db/migrations/0016_tasks_calendar.sql`: `task_lists`, `tasks`, `calendar_events`, `push_tokens`, `reminder_log` (RLS, soft delete, `created_by` + `source_run_id`)
+- [x] Shared schemas (`packages/shared/src/tasks.ts`); snake_case↔camelCase mappers (`apps/api/lib/productivity.ts`)
+- [x] API: `/api/task-lists`, `/api/tasks`, `/api/events` (RRULE expanded on read), `/api/push-tokens`, `PUT/DELETE /api/notes/:path` (vault commit, no approval)
+- [x] Agent tools: `create_task`, `list_tasks`, `update_task`, `complete_task`, `delete_task`, `create_event`, `list_events`, `update_event`, `delete_event`, `find_free_slots`; conditional approval for edits to user-created rows
+- [x] `extractMemories` writes detected tasks as `created_by='suggested'` rows (not memories)
+- [x] Reminders: `reminder/tick` cron (every minute), claim-then-send via `reminder_log`, Expo push
+- [x] Mobile: Today tab, Tasks screen, Calendar screen, note editor, push registration
+**Done when:** the user manages tasks/events/notes in the app, an agent run can add both, a reminder push arrives once, a weekly event expands correctly, and an agent delete of a user item parks for approval.
+**Status (2026-11-21): DONE — verified.** `check-tasks.ts` 24/24 locally, `check-deployed.ts` 9/9 against production.
+
+## Phase 10: Routines — chat-first scheduling (5–7 days)
+- [x] Migration `db/migrations/0017_routines.sql`: `routines` table (structured schedule + RRULE + timezone), `agent_runs.routine_id` / `scheduled_for` (unique) / `tz`, `agents.primary_thread_id`; RLS + `updated_at` trigger
+- [x] Server-side schedule conversion (structured → RRULE → next 3 occurrences in the user's timezone); never trust model-computed dates — `apps/api/lib/routines/schedule.ts` (own timezone-aware wall-clock math; `rrule@2.8` ignores `tzid` for `BYHOUR`)
+- [x] Agent tools `create_routine`, `list_routines`, `update_routine`, `pause_routine`, `resume_routine`, `delete_routine`; `data-routine-proposal` UI part
+- [x] `routine/tick` cron (every minute): idempotent run creation, trigger message in the bound thread, overlap/missed-run/failure guardrails (3 failures → auto-pause)
+- [x] API: `/api/routines` CRUD + `activate`, `run-now`, `/runs`
+- [x] Mobile: proposal card, trigger-message chip, routine sheet in the chat header (clock icon), Routines list under More, agents-as-chats (primary thread)
+- [x] Current date/time/timezone injected into the chat + agent system prompts
+**Done when:** "every Monday at 9 do X" yields a proposal card with correct IST dates; after Confirm the result posts into the same chat with a push; a reply can update the routine; a sensitive tool parks the run; 3 consecutive failures auto-pause.
+**Status (2026-11-21): DONE — verified.** `check-routines.ts` 27/27 locally, `check-routine-chat.ts` 8/8 (the chat-first proposal part), `check-deployed.ts` 14/14 against the local server (the production deploy still has to pick up the new routes).
+
+## Phase 11: Agent groups & handoff (5–7 days)
+- [ ] `agent_groups`, `group_members`; `threads.group_id`; `messages.from_agent_id` / `to_agent_id` / `handoff`
+- [ ] Group graph `route → agent_turn → route → … → finalize`, child runs per turn, `approvalMode: "gate"` so approvals park the parent
+- [ ] Group tools `handoff_to`, `ask_agent`, `post_to_group`; server-side membership checks
+- [ ] Guardrails: `max_hops`, ping-pong detection, token budget, depth limit; strip private context when the target model is not `private_ok`
+- [ ] API: `/api/groups` CRUD + members; group chat through the run pipeline
+**Done when:** a 3-agent group completes a task through ≥2 handoffs, the chat shows who handed what, a ping-pong stops at the guard, and a handoff to a non-`private_ok` agent carries no private context.
+
+## Phase 12: Extras (as wanted)
 Website monitors → image generation (verify free) → voice (device APIs) → code sandbox → X data (paid).
 
 ## Testing

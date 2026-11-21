@@ -41,6 +41,21 @@ export async function createThread(
     throw new Error(`Could not create thread: ${error?.message ?? "unknown error"}`);
   }
 
+  // Agents are chats: the first thread opened for an agent becomes its
+  // primary (persistent) thread, so the agent's conversation keeps growing
+  // instead of starting over on every visit.
+  if (options.agentId) {
+    const { error: primaryError } = await supabaseAdmin()
+      .from("agents")
+      .update({ primary_thread_id: (data as Thread).id })
+      .eq("id", options.agentId)
+      .eq("user_id", userId)
+      .is("primary_thread_id", null);
+    if (primaryError) {
+      console.warn("[chat] could not set the agent's primary thread:", primaryError.message);
+    }
+  }
+
   const [thread] = await withThreadAgents([data as Thread]);
   return thread;
 }

@@ -1,7 +1,7 @@
-import { apiFetch } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+
+import { authedFetch } from '@/lib/api-session';
 
 /**
  * Remote MCP marketplace client (Phase 6). Thin typed wrapper over the API —
@@ -9,16 +9,8 @@ import * as WebBrowser from 'expo-web-browser';
  * encrypts them server-side and never returns them).
  */
 
-async function accessToken(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) return null;
-  return data.session.access_token;
-}
-
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = await accessToken();
-  if (!token) throw new Error('Not signed in.');
-  return apiFetch<T>(path, { token, init });
+  return authedFetch<T>(path, init);
 }
 
 // --- Catalog ---------------------------------------------------------------

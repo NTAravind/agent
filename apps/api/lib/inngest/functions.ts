@@ -7,6 +7,7 @@ import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, runResumed, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
 import { runReminderTick } from "@/lib/reminders";
+import { handleRoutineOutcome, runRoutineTick } from "@/lib/routines/scheduler";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
 import { refreshCanvas } from "@/lib/canvases";
@@ -83,9 +84,21 @@ export const agentRunFunction = inngest.createFunction(
     },
   },
   async ({ event }) => {
-    const { runId, userId, goal, preferredModel } = event.data;
+    const { runId, userId, goal, preferredModel, tz, routineId, approvalMode } = event.data;
 
-    return await step.run("execute-agent-graph", () => executeRun({ runId, userId, goal, preferredModel }));
+    const result = await step.run("execute-agent-graph", () =>
+      executeRun({ runId, userId, goal, preferredModel, tz, approvalMode }),
+    );
+
+    // A routine run books its own outcome (result posted in the thread,
+    // failure streak, auto-pause after three failures).
+    if (routineId) {
+      await step.run("record-routine-outcome", () =>
+        handleRoutineOutcome(runId, result.status),
+      );
+    }
+
+    return result;
   },
 );
 
@@ -261,6 +274,23 @@ export const reminderTickFunction = inngest.createFunction(
   },
 );
 
+/**
+ * Fires due routines (Phase 10). One cron for every routine — never one cron
+ * per routine. The unique (routine_id, scheduled_for) index on agent_runs
+ * makes a repeated tick a no-op for an occurrence that already fired.
+ */
+export const routineTickFunction = inngest.createFunction(
+  {
+    id: "routine-tick",
+    retries: 2,
+    triggers: { cron: "* * * * *" },
+  },
+  async () => {
+    const result = await step.run("fire-routines", () => runRoutineTick());
+    return result;
+  },
+);
+
 export const functions = [
   keepalive,
   chatCompletedFunction,
@@ -271,4 +301,5 @@ export const functions = [
   canvasRefreshFunction,
   mcpSyncFunction,
   reminderTickFunction,
+  routineTickFunction,
 ];

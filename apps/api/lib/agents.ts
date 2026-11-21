@@ -13,7 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 /** Columns every agent route reads — `system_prompt` is exposed as `instructions`. */
 export const AGENT_COLUMNS =
-  "id, user_id, name, role, system_prompt, model, fallback_models, avatar, is_supervisor, sleeping, created_at";
+  "id, user_id, name, role, system_prompt, model, fallback_models, avatar, is_supervisor, sleeping, primary_thread_id, created_at";
 
 export type AgentRow = {
   id: string;
@@ -26,6 +26,7 @@ export type AgentRow = {
   avatar: unknown;
   is_supervisor: boolean | null;
   sleeping: boolean | null;
+  primary_thread_id?: string | null;
   created_at: string;
 };
 
@@ -43,6 +44,7 @@ export function rowToAgent(row: AgentRow, toolCount = 0): Agent {
     isSupervisor: row.is_supervisor ?? false,
     isSleeping: row.sleeping ?? false,
     toolCount,
+    primaryThreadId: row.primary_thread_id ?? null,
     createdAt: row.created_at,
   };
 }

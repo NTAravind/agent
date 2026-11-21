@@ -2,7 +2,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { Platform } from "react-native";
 
-import { apiFetch } from "@/lib/api";
+import { authedFetch } from "@/lib/api-session";
 import { supabase } from "@/lib/supabase";
 
 export type PendingAttachment = {
@@ -21,12 +21,6 @@ type UploadResponse = {
   token: string;
 };
 
-async function accessToken(): Promise<string | null> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) return null;
-  return data.session.access_token;
-}
-
 /** Uploads a local file to the private attachments bucket via a signed URL. */
 async function uploadFile(
   uri: string,
@@ -34,15 +28,9 @@ async function uploadFile(
   mediaType: string,
   sizeBytes: number,
 ): Promise<PendingAttachment> {
-  const token = await accessToken();
-  if (!token) throw new Error("Not signed in.");
-
-  const signed = await apiFetch<UploadResponse>("/api/upload", {
-    token,
-    init: {
-      method: "POST",
-      body: JSON.stringify({ fileName, mediaType, sizeBytes }),
-    },
+  const signed = await authedFetch<UploadResponse>("/api/upload", {
+    method: "POST",
+    body: JSON.stringify({ fileName, mediaType, sizeBytes }),
   });
 
   // React Native uploads local files as multipart form data.

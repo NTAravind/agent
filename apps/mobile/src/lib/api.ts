@@ -51,18 +51,53 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   });
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : {};
+  const payload = parseJson(text);
+  const contentType = response.headers.get('content-type') ?? '';
 
   if (!response.ok) {
     const error = (payload as { error?: { code: string; message: string } }).error;
     throw new ApiRequestError(
       response.status,
       error?.code ?? 'internal_error',
-      `${error?.message ?? `Request failed with status ${response.status}`} [${response.status} ${text.slice(0, 200)}]`
+      error?.message ?? describeFailure(response.status, contentType, text)
     );
   }
 
   return payload as T;
+}
+
+/**
+ * Parses a response body as JSON, tolerating bodies that are not JSON.
+ *
+ * A non-JSON body is common in practice: Vercel's HTML 404 page for a route
+ * that does not exist in the deployed build, proxy/edge error pages, or an
+ * empty body. Parsing those with `JSON.parse` throws a bare SyntaxError
+ * ("Unexpected token '<'") that hides the actual status code.
+ */
+function parseJson(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return { __raw: trimmed };
+  }
+}
+
+/** Human-readable explanation for a failed response without a JSON error body. */
+function describeFailure(status: number, contentType: string, text: string): string {
+  const snippet = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+  if (contentType.includes('text/html')) {
+    return (
+      `The API returned an HTML page (HTTP ${status}), not JSON. ` +
+      `The route may not exist in the deployed build yet — redeploy the API. ` +
+      `First 200 chars: ${snippet}`
+    );
+  }
+  if (!snippet) {
+    return `Request failed with status ${status} and an empty response body.`;
+  }
+  return `Request failed with status ${status}: ${snippet}`;
 }
 
 export type ApiDebugInfo = {

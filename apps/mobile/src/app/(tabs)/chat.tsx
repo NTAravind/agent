@@ -22,6 +22,7 @@ import { AgentAvatar } from '@/components/agent-avatar';
 import { AgentPicker } from '@/components/agent-picker';
 import { Composer } from '@/components/composer';
 import { MessageBubble } from '@/components/message-bubble';
+import { RoutineListSheet } from '@/components/routine-sheet';
 import { ModelPicker } from '@/components/model-picker';
 import { RunTaskBubble } from '@/components/run-task-bubble';
 import {
@@ -113,6 +114,8 @@ export default function ChatScreen() {
   const [activeRunDetail, setActiveRunDetail] = useState<RunDetail | null>(null);
   /** Set once the user types/sends — blocks thread resumption from clobbering. */
   const touchedRef = useRef(false);
+  /** The routine sheet (clock icon in the agent chat header). */
+  const [routineSheetOpen, setRoutineSheetOpen] = useState(false);
   /** Mirror of the `threadId` state for async comparisons. */
   const threadIdRef = useRef(threadId);
   /**
@@ -243,15 +246,22 @@ export default function ChatScreen() {
   }, [params.threadId, loadThread]);
 
   // Agent contact thread resumption: /chat?agentId=<id> picks up the agent's
-  // most recent thread so each agent feels like a continuous conversation.
+  // primary (persistent) thread — agents are chats — and falls back to the
+  // agent's most recent thread when there is no primary one yet.
   // When none exists (or the user starts typing first) a fresh thread id is
   // generated client-side and created seamlessly on the first send.
   useEffect(() => {
     if (!params.agentId || params.threadId || touchedRef.current) return;
+    // Wait for the agent list so the primary thread is known.
+    if (agents.length === 0) return;
     let active = true;
     void fetchThreads()
       .then((threads) => {
         if (!active || touchedRef.current) return;
+        const primaryThreadId = agents.find(
+          (agent) => agent.id === params.agentId,
+        )?.primaryThreadId;
+        if (primaryThreadId) return loadThread(primaryThreadId);
         const latest = threads
           .filter((thread) => thread.agent_id === params.agentId)
           .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
@@ -262,7 +272,7 @@ export default function ChatScreen() {
     return () => {
       active = false;
     };
-  }, [params.agentId, params.threadId, loadThread]);
+  }, [agents, params.agentId, params.threadId, loadThread]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -490,6 +500,17 @@ export default function ChatScreen() {
                 size="md"
                 variant="ghost"
                 isIconOnly
+                onPress={() => setRoutineSheetOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Routines for this agent"
+                accessibilityHint="Opens the routines bound to this agent"
+              >
+                <CHAT_HEADER_ICONS.routine size={20} color={iconColor} />
+              </Button>
+              <Button
+                size="md"
+                variant="ghost"
+                isIconOnly
                 onPress={() => {
                   // TODO(backend): Implement in-thread message search.
                   RNAlert.alert(
@@ -625,6 +646,7 @@ export default function ChatScreen() {
                 onViewTask={(id) => {
                   router.push({ pathname: '/run', params: { id } });
                 }}
+                onEditRoutine={() => setRoutineSheetOpen(true)}
               />
             );
           })}
@@ -693,6 +715,14 @@ export default function ChatScreen() {
           onToggleThink={toggleThink}
         />
       </View>
+
+      {/* Routines for this agent (Phase 10): the clock icon in the header and
+          the "Edit" action on a routine proposal both open this sheet. */}
+      <RoutineListSheet
+        visible={routineSheetOpen}
+        onClose={() => setRoutineSheetOpen(false)}
+        agentId={contextAgentId}
+      />
     </KeyboardAvoidingView>
   );
 }

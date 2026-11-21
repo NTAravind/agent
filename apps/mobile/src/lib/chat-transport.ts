@@ -3,6 +3,15 @@ import { fetch as expoFetch } from "expo/fetch";
 
 import { API_BASE_URL } from "@/lib/api";
 
+/** The device timezone (IANA id) — "every Monday at 9" means 9 where the user is. */
+export function deviceTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+  } catch {
+    return "Asia/Kolkata";
+  }
+}
+
 export type ChatTransportOptions = {
   threadId?: string | null;
   model?: string | null;
@@ -57,6 +66,8 @@ export class XhrChatTransport<UI_MESSAGE extends UIMessage> implements ChatTrans
       messages,
       threadId: this.options.threadId ?? undefined,
       model: this.options.model ?? undefined,
+      // The device timezone: "every Monday at 9" means 9 where the user is.
+      tz: deviceTimeZone(),
       ...(body ?? {}),
     });
 
@@ -157,6 +168,8 @@ export class ResilientChatTransport<UI_MESSAGE extends UIMessage>
             messages,
             threadId: options.threadId ?? undefined,
             model: options.model ?? undefined,
+            // The device timezone: "every Monday at 9" means 9 where the user is.
+            tz: deviceTimeZone(),
             // Attachments (and any extra fields) come from the send call.
             ...(body ?? {}),
           },

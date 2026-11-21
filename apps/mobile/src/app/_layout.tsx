@@ -62,6 +62,7 @@ function Shell() {
       <Stack.Screen name="memories" options={{ headerShown: false }} />
       <Stack.Screen name="skills" options={{ headerShown: false }} />
       <Stack.Screen name="skills/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="routines" options={{ headerShown: false }} />
       <Stack.Screen name="agents/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="agents/[id]/edit" options={{ headerShown: false }} />
       <Stack.Screen name="run" options={{ headerShown: false }} />

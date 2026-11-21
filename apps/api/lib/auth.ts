@@ -64,7 +64,12 @@ export async function requireUser(request: Request): Promise<AuthedUser> {
 
   const allowedUserId = requiredEnv("ALLOWED_USER_ID");
   if (data.user.id !== allowedUserId) {
-    throw new AuthError("forbidden", "This account is not allowed to use the API.", 403);
+    throw new AuthError(
+      "forbidden",
+      `This account is not allowed to use the API. Signed in as ${data.user.id}. ` +
+        `Sign in with the account configured in ALLOWED_USER_ID on this deployment.`,
+      403,
+    );
   }
 
   return { id: data.user.id, email: data.user.email ?? null };

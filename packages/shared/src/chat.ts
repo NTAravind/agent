@@ -40,6 +40,11 @@ export const ChatRequestSchema = z.object({
   /** Registry id, e.g. "google:gemini-3.6-flash". Defaults to the server default. */
   model: z.string().optional(),
   attachments: z.array(AttachmentRefSchema).optional(),
+  /**
+   * The device timezone (IANA id). "Every Monday at 9" means 9 in the
+   * user's own zone — the server never guesses it.
+   */
+  tz: z.string().min(1).max(80).optional(),
 });
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;

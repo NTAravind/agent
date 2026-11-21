@@ -14,6 +14,12 @@ import { createCanvas, updateCanvasSpec } from "@/lib/canvases";
 import { loadSkillBody, runAgentId } from "@/lib/skills/load";
 import { buildRRuleSet } from "@/lib/recurrence";
 import {
+  ROUTINE_TOOL_DESCRIPTIONS,
+  RoutineScheduleInputSchema,
+  runRoutineTool,
+} from "@/lib/routines/tools";
+import { routineContextForRun } from "@/lib/routines/store";
+import {
   eventInsert,
   eventUpdate,
   rowToEvent,
@@ -227,6 +233,41 @@ export const declarations = {
     inputSchema: z.object({
       id: z.string().uuid().describe("Event UUID."),
     }),
+  },
+  create_routine: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.create_routine,
+    inputSchema: z.object({
+      name: z.string().min(1).max(120),
+      prompt: z.string().min(1).max(4000),
+      schedule: RoutineScheduleInputSchema,
+      source_text: z.string().max(2000).optional(),
+      approval_mode: z.enum(["queue", "deny"]).optional(),
+    }),
+  },
+  list_routines: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.list_routines,
+    inputSchema: z.object({}),
+  },
+  update_routine: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.update_routine,
+    inputSchema: z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1).max(120).optional(),
+      prompt: z.string().min(1).max(4000).optional(),
+      schedule: RoutineScheduleInputSchema.optional(),
+    }),
+  },
+  pause_routine: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.pause_routine,
+    inputSchema: z.object({ id: z.string().uuid() }),
+  },
+  resume_routine: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.resume_routine,
+    inputSchema: z.object({ id: z.string().uuid() }),
+  },
+  delete_routine: {
+    description: ROUTINE_TOOL_DESCRIPTIONS.delete_routine,
+    inputSchema: z.object({ id: z.string().uuid() }),
   },
 } as const;
 
@@ -726,6 +767,25 @@ export async function executeToolCall(
       if (error) return { failed: true, error: error.message };
       if (!data) return { failed: true, error: "Event not found." };
       return { deleted: true, event: data };
+    }
+
+    // --- Routines (Phase 10) -------------------------------------------------
+    // The context (user, thread, agent, timezone) comes from the run row —
+    // the model can never choose them.
+
+    case "create_routine":
+    case "list_routines":
+    case "update_routine":
+    case "pause_routine":
+    case "resume_routine":
+    case "delete_routine": {
+      const routineContext = await routineContextForRun(context.userId, context.runId);
+      return await runRoutineTool(name, args, {
+        userId: context.userId,
+        threadId: routineContext.threadId,
+        agentId: routineContext.agentId,
+        timeZone: routineContext.timeZone,
+      });
     }
 
     default:

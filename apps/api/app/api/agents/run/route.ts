@@ -25,6 +25,8 @@ export async function POST(request: Request) {
       inline?: boolean;
       model?: string;
       agentId?: string;
+      /** The user's timezone — relative dates in the goal resolve against it. */
+      tz?: string;
     };
 
     const goal = body.goal?.trim();
@@ -88,10 +90,11 @@ export async function POST(request: Request) {
       threadId: body.threadId ?? null,
       agentId,
       model: preferredModel,
+      tz: body.tz ?? null,
     });
 
     if (body.inline) {
-      const result = await executeRun({ runId: run.id, userId: user.id, goal, preferredModel });
+      const result = await executeRun({ runId: run.id, userId: user.id, goal, preferredModel, tz: body.tz });
       return Response.json({ runId: run.id, status: result.status, agentId });
     }
 
@@ -103,6 +106,7 @@ export async function POST(request: Request) {
         goal,
         threadId: body.threadId,
         preferredModel,
+        ...(body.tz ? { tz: body.tz } : {}),
       }),
     );
 

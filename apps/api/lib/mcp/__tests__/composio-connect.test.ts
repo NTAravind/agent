@@ -649,7 +649,10 @@ describe("composio callback state", () => {
     const state = newComposioCallbackState();
     assert.match(state, /^[0-9a-f]{32}$/);
     assert.equal(isComposioCallbackState(state, [state]), true);
-    assert.equal(isComposioCallbackState(`${state.slice(0, 31)}0`, [state]), false);
+    // Flip the last character to a *different* hex digit — flipping it to "0"
+    // would be a no-op whenever the state already ends in "0" (1 in 16 runs).
+    const mutated = state.endsWith("0") ? `${state.slice(0, 31)}1` : `${state.slice(0, 31)}0`;
+    assert.equal(isComposioCallbackState(mutated, [state]), false);
     assert.equal(isComposioCallbackState(newComposioCallbackState(), [state]), false);
     assert.equal(isComposioCallbackState("", [state]), false);
     assert.equal(isComposioCallbackState(state, []), false);

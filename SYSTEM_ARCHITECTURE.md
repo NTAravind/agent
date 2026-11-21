@@ -172,6 +172,13 @@ push_tokens (id, user_id, expo_token unique, platform[ios|android], last_seen, c
 reminder_log (id, user_id, item_type[task|event], item_id, remind_at, sent_at,
               unique(item_type, item_id, remind_at))   -- idempotent reminder delivery
 
+-- Routines (Phase 10) — chat-first scheduling
+routines (id, user_id, agent_id, thread_id, name, prompt, schedule jsonb, rrule, tz,
+          source_text, status[draft|active|paused|completed], approval_mode[queue|deny],
+          next_run_at, last_run_at, consecutive_failures, created_at, updated_at)
+-- agent_runs gains: routine_id, scheduled_for (unique(routine_id, scheduled_for)), tz
+-- agents gains: primary_thread_id   -- agents are chats: one persistent thread per agent
+
 -- Provider Catalog & Usage
 provider_models (provider, model_id, app_id, label, capabilities, context_window, tier, metadata, mobile_enabled, fetched_at)
 provider_usage (id bigserial, user_id, provider, model, run_id, input_tokens, output_tokens, status, latency_ms, created_at)
@@ -403,12 +410,20 @@ Declarations (schemas only) → executed by `tool_exec` after gate.
 | `update_event(id, ...)` | **conditional** | Edits an event — needs approval only when the target is `created_by='user'` |
 | `delete_event(id)` | **yes** | Soft-deletes an event (always needs approval) |
 | `find_free_slots(from, to, durationMinutes)` | no | Suggests free slots between existing events |
+| `create_routine(name, prompt, schedule)` | no | Proposes a **structured** schedule (never a cron string, never a date) → saved as a `draft` routine + a `data-routine-proposal` UI part |
+| `list_routines()` | no | Lists the user's routines with their schedule and next run |
+| `update_routine(id, name?, prompt?, schedule?)` | no | Updates a routine; a changed schedule re-derives the RRULE and the next run |
+| `pause_routine(id)` | no | Pauses a routine (keeps its schedule) |
+| `resume_routine(id)` | no | Resumes/activates a routine and schedules its next occurrence |
+| `delete_routine(id)` | **yes** | Deletes a routine (always needs approval) |
 
 **MCP Tools:** Loaded dynamically at run start via `loadMcpToolsForRun()` — namespaced as `mcp_<slug>_<tool>`, max 20 per run.
 
 **Skill index:** Each run loads the agent's assigned skills (`loadSkillIndexForRun`) and injects *name + description only* into the `act_llm` and `finalize` system prompts (`GraphDeps.skillIndex`); the body is fetched on demand by `load_skill`. `tool_exec` records narrowing as a `toolAllow` payload on the `tool_exec` `node_end` timeline event.
 
 **Productivity tools (Phase 9):** Task/event tools live in the same registry and run through the same gate. `create_*`/`list_*`/`complete_*`/`find_free_slots` never need approval; `update_*` needs approval **only** when the target row's `created_by='user'`; `delete_*` always needs approval. Tool-created rows carry `created_by='agent'` and the run's `source_run_id`; `extractMemories` writes detected tasks as `created_by='suggested'` rows (shown in the app as suggestions to accept/dismiss) instead of memories. Results are capped at 50 items.
+
+**Routine tools (Phase 10):** `create_routine` never schedules anything by itself — it saves a **draft** and emits a `data-routine-proposal` UI part; the app shows a confirmation card and the user activates it (`POST /api/routines/:id/activate`). The model supplies a *structured* schedule (`frequency`, `days_of_week`/`day_of_month`, local `HH:mm`); the server converts it to an RRULE and computes the concrete instants in the user's timezone (`apps/api/lib/routines/schedule.ts`) — model-supplied dates are never trusted. `userId`, `agentId`, `threadId` and the timezone always come from the request/run context, never from the model's arguments. A routine's `approval_mode` (`queue` | `deny`) becomes the run's `approvalMode`, so a recurring job can never park on a human decision — and the policy survives a resume.
 
 ### 6.3 Execution Entry Points
 
@@ -674,7 +689,7 @@ type CanvasComponent =
 
 ```typescript
 // apps/api/lib/approvals.ts
-export const SENSITIVE_TOOLS = new Set(["write_note", "delete_task", "delete_event"]);
+export const SENSITIVE_TOOLS = new Set(["write_note", "delete_task", "delete_event", "delete_routine"]);
 export const CONDITIONAL_APPROVAL_TOOLS = new Set(["update_task", "update_event"]);
 // MCP tools: per-tool `requires_approval` (default true, risk_level=high forces true)
 ```
@@ -736,6 +751,7 @@ Run with `approvalMode: "deny"` — sensitive calls **auto-denied** immediately,
 | `canvas/refresh.requested` + cron | `refreshCanvas()` | Re-run data sources |
 | `monitor/tick` (cron) | Website monitors | Fetch, hash, diff, notify |
 | `reminder/tick` (cron, every minute) | `runReminderTick()` | Due task/event reminders → Expo push (idempotent) |
+| `routine/tick` (cron, every minute) | `runRoutineTick()` | Fires due routines → run row + trigger message + `agent/run.requested` (idempotent) |
 | `keepalive` (cron) | Touch DB | Prevent Supabase pause |
 
 **Key:** Each graph node = Inngest `step.run()` → checkpointed, retried independently.
@@ -749,7 +765,7 @@ Run with `approvalMode: "deny"` — sensitive calls **auto-denied** immediately,
 ```
 Root Stack (_layout.tsx):
   (tabs)            → bottom tab group (session-guarded)
-  threads, note, tasks, calendar, memories, skills, skills/[id],
+  threads, note, tasks, calendar, memories, skills, skills/[id], routines,
   agents/[id], agents/[id]/edit, run, canvas, canvas/[id], mcp, mcp/[id],
   sign-in, auth/callback
 
@@ -758,10 +774,11 @@ Tabs group (app/(tabs)/_layout.tsx, expo-router/ui <Tabs>):
   2. Agents     → (tabs)/agents.tsx    (list + pinned creatures)
   3. Today      → (tabs)/index.tsx     (agenda: events + due/overdue tasks, quick-add)
   4. Notes      → (tabs)/notes.tsx     (folder tree + list) → /note (root stack)
-  5. More       → (tabs)/more.tsx      (Canvas, MCP, Skills, Memories, account)
+  5. More       → (tabs)/more.tsx      (Canvas, Routines, MCP, Skills, Memories, account)
 
 Deep links: chat?threadId=, chat?agentId=, agents/[id], agents/[id]/edit,
-            note?path=, tasks, calendar, run/[id], skills, skills/[id] ('new' = create)
+            note?path=, tasks, calendar, run/[id], skills, skills/[id] ('new' = create),
+            routines
 ```
 
 > Detail routes stay in the **root stack** (not inside the tab group): the headless tab
@@ -786,13 +803,28 @@ Deep links: chat?threadId=, chat?agentId=, agents/[id], agents/[id]/edit,
 | **MCP Store** | Browse catalog, connect (OAuth/API key), per-tool enable/approval toggles |
 | **Memories** | List extracted memories with delete |
 | **Skills** | List of `skills/<slug>/SKILL.md` bundles (tools chips, assignment count), editor with name/slug/description/tool-allowlist/body, delete; entry point is the More hub |
+| **Routines** (new, Phase 10) | List of routines (schedule label, next run, status), sheet with pause/resume/edit/run-now/past runs; entry point is the More hub |
 | **Settings** | Account, default model/fallbacks, memory viewer, vault sync status, theme |
+
+**Routines in the app (Phase 10):** the agent chat header has a **clock icon** that opens the
+routine sheet for that agent. A proposed routine renders as a **confirmation card** (name,
+schedule, next three runs) with a Confirm button — nothing recurring starts until the user taps
+it. A routine-fired message renders as a **chip** (`Routine · <name>`), not a normal user bubble.
+The chat request carries the device timezone so "every Monday at 9" means 9 where the user is.
 
 **Push notifications (Phase 9):** on launch the app registers its Expo push token with
 `POST /api/push-tokens`; reminder taps deep-link into `/` (Today) or `/calendar`. Remote push
 requires a **development build** (Expo Go cannot receive remote notifications on Android
 since SDK 53). The EAS project id is read from `Constants.expoConfig.extra.eas.projectId`
 (or `EXPO_PUBLIC_EAS_PROJECT_ID`); without it, registration is skipped and the app keeps working.
+
+**API client resilience (Phase 9):** every call goes through `apps/mobile/src/lib/api-session.ts`
+(`authedFetch`): it refreshes the Supabase session when the access token is expired (or within a
+minute of expiry) and retries once on a 401, so a stale token never surfaces as a failure. A 403
+("this account is not allowed") is surfaced as-is — the signed-in account must match the
+deployment's `ALLOWED_USER_ID`. `apps/mobile/src/lib/api.ts` parses response bodies defensively:
+a non-JSON body (Vercel's HTML 404 for a route missing from the deployed build, proxy error
+pages) becomes a readable `ApiRequestError` instead of a bare `SyntaxError`.
 
 ### Design System
 
@@ -816,6 +848,7 @@ since SDK 53). The EAS project id is read from `Constants.expoConfig.extra.eas.p
 | **Private Context** | Note/memory context only sent to `private_ok` models (Google). Free tiers of other providers assumed to log/train. |
 | **Skills** | `load_skill` only returns skills assigned to the run's agent (agent id from run row, never a model arg). A skill's `tools` list can only **narrow** the offered set (`narrowToolSet` = intersection of current ∩ available ∩ declared) — skills can never add a tool. Skill files are untrusted content like notes. Skill writes skip approvals because they are user-initiated, not model-initiated. |
 | **Productivity (Phase 9)** | Tasks/events are soft-deleted (`deleted_at`) and scoped by `user_id` in every query. The agent can only act on rows owned by the run's user. Editing a user-created row needs approval; deleting always does. Recurrence is expanded on read (never materialised), and reminders are claimed in `reminder_log` (unique key) so a push fires at most once. |
+| **Routines (Phase 10)** | The model never supplies dates: it emits a *structured* schedule and the server computes the instants in the user's timezone. `userId`, `agentId`, `threadId` and the timezone come from the request/run context, never from the model's arguments. A routine only starts after the user confirms it (`activate`). Each occurrence creates at most one run (unique `(routine_id, scheduled_for)`), and deleting a routine is approval-gated. |
 | **Rate Limiting** | Endpoint rate limits; per-run step/token caps to protect free quotas. |
 | **MCP Security** | Validate all tool inputs; restrict server network access; isolate untrusted servers; enforce timeouts; limit output sizes; maintain execution logs; never expose secrets to descriptions/context. |
 
@@ -882,6 +915,27 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
       → no delivery ⇒ releaseReminders (delete claims) ⇒ the next tick retries
 ```
 
+### 16.7 Routine Scheduling (Phase 10)
+```
+User (agent chat): "every Monday at 9 summarize my open tasks"
+      → POST /api/chat → the model calls create_routine(name, prompt, schedule{weekly, MO, 09:00})
+      → server normalises the schedule → routines row (status='draft', rrule, next_run_at=null)
+      → the stream emits a data-routine-proposal part → the app renders the confirmation card
+      → User taps Confirm → POST /api/routines/:id/activate → status='active', next_run_at = 09:00 IST
+
+Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
+      → load due routines (status='active', next_run_at ≤ now)
+      → overlap? (a previous run is still queued/running/awaiting_approval)
+            → yes ⇒ post a note in the thread, advance the schedule, skip
+      → INSERT agent_runs (routine_id, scheduled_for=the occurrence, tz)   -- unique ⇒ idempotent
+      → INSERT the trigger message (role='user', parts marked { source: "routine" })
+      → advance next_run_at FROM the scheduled instant (a missed occurrence fires once, never backfilled)
+      → inngest.send(agent/run.requested { routineId })
+      → Inngest: runAgent() → the result is posted as an assistant message in the same thread
+      → handleRoutineOutcome: success ⇒ reset the failure streak + Expo push
+                               failure ⇒ streak++; after 3 ⇒ auto-pause + explain in the chat
+```
+
 ---
 
 ## 17. Configuration & Environment
@@ -901,7 +955,7 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 | `GITHUB_VAULT_TOKEN`, `GITHUB_VAULT_REPO` | Vault sync (e.g. `owner/repo`) |
 | `GITHUB_WEBHOOK_SECRET` | HMAC verification |
 | `ENCRYPTION_KEY` | 32-byte hex for AES-256-GCM (MCP credentials) |
-| `ALLOWED_USER_ID` | Your Supabase user UUID (single-user gate) |
+| `ALLOWED_USER_ID` | Your Supabase user UUID (single-user gate) — **must be the account the app signs in with**, otherwise every route answers 403 |
 | `EXPO_PUBLIC_API_BASE_URL` | Mobile → API base |
 
 ### Mobile (Expo) Env
@@ -923,6 +977,7 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 - Agent schema, canvas schema
 - Skills: frontmatter parse/compose round-trip (incl. list-after-empty-key fix), path detection, slugify, `narrowToolSet` (never adds), `pickAssignedSkill` guard, `skillIndexSection` (body-free)
 - Productivity (Phase 9): RRULE expansion (weekly anchor keeps the time of day, EXDATEs exclude one occurrence, explicit DTSTART wins, unparseable rule falls back), snake_case↔camelCase row/insert/update mappers, approval decision (`needsApproval`: create/list/complete never gated, delete always gated, edit gated only for user-created items, unknown target gated), reminder scheduling (`computeDueReminders`)
+- Routines (Phase 10): timezone-aware wall-clock math (`zonedTimeToUtc` across a DST transition), `computeNextRuns` (weekly/daily/monthly/one-shot, strictly after the reference instant), RRULE derivation, schedule labels, trigger-message detection, schedule normalisation (one-shot derives its wall clock from `run_at`)
 
 ### Contract Tests (Manual, Consumes Quota)
 - One tool-call prompt per registry model
@@ -942,6 +997,9 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 - `check-providers.ts` — runs same prompt on each provider, forces 429 on primary
 - `check-skills.ts` — skills E2E: index body-free, assignment guard, chat prompt index, real run follows loaded skill + narrowing timeline event (consumes quota)
 - `check-tasks.ts` — productivity E2E: task/list CRUD + soft delete, agent tools (`create_task`/`list_tasks`/`create_event`/`list_events`), recurring expansion, approval gate matrix, reminder claim-once, notes write/delete, HTTP route checks (Phase 9)
+- `check-routines.ts` — routines E2E: agent tool proposes a draft with a structured schedule, the preview lands at 09:00 IST, the tick fires a due routine exactly once, an overlapping run is skipped, a missed occurrence is never backfilled, a one-shot completes, the approval gate covers `delete_routine`, HTTP route checks (Phase 10)
+- `check-routine-chat.ts` — the chat-first flow: the model calls `create_routine` and the stream carries a `data-routine-proposal` part with the right schedule (Phase 10, consumes quota)
+- `check-deployed.ts` — the same Phase 9 + Phase 10 route checks against a **deployed** API (`npx tsx --env-file=.env.local scripts/check-deployed.ts [base-url]`), so a deploy can be verified without touching the app
 - `check-supervisor.mjs` — 11 supervisor E2E checks *(claimed; not present in repo)*
 - `check-agent-crud.mjs`, `check-agent-avatars.mjs`, `check-chat-route.mjs`, etc. *(claimed; not present in repo)*
 
@@ -965,6 +1023,7 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 | 7 | Multi-Agent | Supervisor delegates to 2+ agents, merges cross-checked results |
 | 8 | Extras | Monitors, image gen, voice, code sandbox, X data |
 | 9 | Productivity | Tasks, calendar, note editing, reminders; agent adds tasks/events; user-created items protected by approvals |
+| 10 | Routines | "every Monday at 9 do X" yields a proposal card with correct IST dates; the result posts back into the same chat; 3 failures auto-pause |
 
 **Rule:** Work one phase at a time. Don't start next until current phase confirmed.
 
@@ -980,6 +1039,7 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 | **New Canvas component** | 1. Add to `CanvasSpec` schema in `packages/shared/src/canvas.ts`<br>2. Add renderer in `apps/mobile/src/components/canvas/`<br>3. Add to `validateCanvasSpec()` allowed types |
 | **New memory kind** | 1. Add to `kind` enum in `memories` table & `MemorySchema`<br>2. Update extraction prompt in `extract.ts` |
 | **New approval type** | 1. Add tool to `SENSITIVE_TOOLS` or MCP tool `requires_approval`<br>2. Approval UI already generic (shows tool, args, reason) |
+| **A new scheduled job** | 1. Add a table + a `lib/<job>/` module (pure logic + store)<br>2. Add one cron in `lib/inngest/functions.ts` (never one cron per item)<br>3. Make the occurrence idempotent with a unique key |
 
 ---
 
@@ -992,8 +1052,13 @@ Inngest cron "reminder/tick" (* * * * *) → runReminderTick(now)
 | MCP tools not appearing | `user_mcp_connections.status = "connected"`? `agent_mcp_servers.enabled = true`? Server `enabled = true`? Tool `enabled = true`? |
 | Fallback not working | `withFallback` logs attempts; check `provider_usage` for `skipped` reasons |
 | Canvas not refreshing | `dataSources` in spec valid? `POST /api/canvases/:id/refresh` works? Cron registered? |
+| App shows a JSON parse error | The API returned a non-JSON body — usually Vercel's HTML 404 for a route missing from the deployed build. Redeploy the API (`check-deployed.ts` verifies it). |
+| Every API call returns 401 | The stored access token expired — the app refreshes and retries automatically now; if it persists, sign out and back in. |
+| Every API call returns 403 | The signed-in account is not the deployment's `ALLOWED_USER_ID` (the error names the signed-in id). Sign in with the right account or update the env var. |
 | Reminder push not arriving | Device registered in `push_tokens`? `EXPO_PUBLIC_EAS_PROJECT_ID` set? `reminder_log` row exists (claimed)? `reminder/tick` cron running? Remote push needs a **dev build** (not Expo Go on Android) |
 | Recurring event shows the wrong time | The rule must be anchored to the item's `starts_at` (DTSTART) — `expandStarts` in `lib/recurrence.ts` |
+| A routine fires at the wrong hour | The schedule's `time` is the user's **local** wall clock — check `routines.tz` and that the client sent its device timezone (`tz` in the chat body). `rrule@2.8` ignores `tzid` for `BYHOUR`, so the occurrences are computed by `lib/routines/schedule.ts`, not by the library. |
+| A routine never fires | `routines.status='active'`? `next_run_at` in the past? Is the `routine/tick` cron deployed in Inngest? Did the run fail 3 times (auto-paused)? Check `agent_runs` for the routine. |
 | Memory not retrieved | Model `privateOk = true`? `searchMemories` returning results? |
 | Supabase paused | Keepalive cron running? `SELECT 1` from Vercel? |
 
@@ -1043,6 +1108,11 @@ apps/api/lib/
 ├── productivity.ts        # task/event row↔API mappers (rowToTask, taskInsert, eventUpdate, …)
 ├── recurrence.ts          # buildRRuleSet, expandStarts (RRULE expansion, DTSTART-anchored)
 ├── reminders.ts           # computeDueReminders, runReminderTick, claim/release reminders
+├── routines/
+│   ├── schedule.ts        # timezone-aware wall-clock math, computeNextRuns, RRULE derivation, schedule labels
+│   ├── store.ts           # routine CRUD, activation, due-routine query, run history
+│   ├── tools.ts           # buildRoutineTools (chat) + runRoutineTool (graph), schedule normalisation
+│   └── scheduler.ts       # runRoutineTick, fireRoutine, runRoutineNow, handleRoutineOutcome
 ├── push.ts                # sendPush — Expo Push Service REST client
 ├── inngest/
 │   ├── client.ts          # inngest client
@@ -1070,14 +1140,35 @@ apps/api/app/api/
 ├── events/route.ts            # GET (from/to → expanded occurrences), POST (create)
 ├── events/[id]/route.ts       # GET, PATCH, DELETE (soft delete)
 ├── push-tokens/route.ts       # POST (register/upsert), DELETE (?expoToken=)
-└── notes/[path]/route.ts      # PUT (vault commit, user-initiated), DELETE (vault + index)
+├── notes/[path]/route.ts      # PUT (vault commit, user-initiated), DELETE (vault + index)
+├── routines/route.ts          # GET (list + preview), POST (create a draft)
+├── routines/[id]/route.ts     # GET, PATCH (name/prompt/schedule/status), DELETE
+├── routines/[id]/activate/route.ts  # POST — confirm the proposal (the gate)
+├── routines/[id]/run-now/route.ts   # POST — run it immediately (the schedule is untouched)
+└── routines/[id]/runs/route.ts      # GET — the runs this routine produced
 
 packages/shared/src/skill.ts   # SkillFrontmatterSchema, SkillCreate/Patch, AgentSkillsPut
 packages/shared/src/tasks.ts   # TaskList/Task/CalendarEvent/PushToken schemas + EventsRangeQuery
+packages/shared/src/routines.ts # RoutineSchedule/Routine/RoutineCreate/Patch + RoutineRun schemas
 apps/api/scripts/check-skills.ts  # live skills E2E check
 apps/api/scripts/check-tasks.ts   # live productivity E2E check (Phase 9)
+apps/api/scripts/check-routines.ts    # live routines E2E check (Phase 10)
+apps/api/scripts/check-routine-chat.ts # live chat-first proposal check (Phase 10)
+apps/api/scripts/check-deployed.ts # live productivity + routines E2E against a deployed API
+
+apps/mobile/src/lib/
+├── api.ts           # apiFetch (defensive JSON parsing), ApiRequestError
+├── api-session.ts   # authedFetch: proactive session refresh + 401 retry (Phase 9)
+├── productivity.ts  # tasks, task lists, events, push tokens (mobile client)
+├── routines.ts      # routines: list, activate, pause, resume, update, delete, run-now, runs
+├── push.ts          # Expo push token registration on launch
+└── dates.ts         # IST date/day helpers for the agenda views
+
+apps/mobile/src/components/
+├── routine-proposal-card.tsx # the confirmation card (name, schedule, next runs, Confirm)
+└── routine-sheet.tsx         # the routine list + detail sheets (pause/resume/edit/run-now/runs)
 ```
 
 ---
 
-*Generated from live codebase audit (2026-11-20; updated 2026-11-21 for Phase 8 — Skills, and Phase 9 — Tasks, Calendar, Notes editing, reminders). Phases 0–9 implemented and verified. This document reflects the actual implementation, not just the spec.*
+*Generated from live codebase audit (2026-11-20; updated 2026-11-21 for Phase 8 — Skills, Phase 9 — Tasks, Calendar, Notes editing, reminders, and Phase 10 — Routines). Phases 0–10 implemented and verified. This document reflects the actual implementation, not just the spec.*

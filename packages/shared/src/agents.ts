@@ -66,6 +66,11 @@ export const AgentSchema = z.object({
   isSleeping: z.boolean(),
   /** Enabled MCP tools the agent can currently call. */
   toolCount: z.number().int().nonnegative(),
+  /**
+   * The agent's primary (persistent) chat thread. Agents are chats: opening
+   * the agent resumes this thread.
+   */
+  primaryThreadId: z.string().uuid().nullable().optional(),
   createdAt: z.string(),
 });
 export type Agent = z.infer<typeof AgentSchema>;

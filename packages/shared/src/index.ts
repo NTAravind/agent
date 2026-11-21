@@ -5,6 +5,7 @@ export * from "./chat";
 export * from "./knowledge";
 export * from "./mcp";
 export * from "./models";
+export * from "./routines";
 export * from "./skill";
 export * from "./tasks";
 export * from "./tools";

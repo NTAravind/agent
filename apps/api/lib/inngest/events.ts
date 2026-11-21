@@ -12,6 +12,16 @@ export type AgentRunRequested = {
   goal: string;
   threadId?: string;
   preferredModel?: string;
+  /** The user's timezone — "every Monday at 9" means 9 in their own zone. */
+  tz?: string;
+  /** Set when the run was fired by a routine (Phase 10). */
+  routineId?: string;
+  /**
+   * Sensitive-tool policy. "gate" (default) parks the run on an approval;
+   * "deny" auto-denies sensitive calls. A routine with
+   * `approval_mode='deny'` fires its runs with "deny".
+   */
+  approvalMode?: "gate" | "deny";
 };
 
 export type ApprovalDecided = {

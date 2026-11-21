@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Activity,
   BookMarked,
+  CalendarClock,
   CalendarDays,
   ChevronRight,
   Database,
@@ -116,6 +117,13 @@ export default function HomeScreen() {
           icon: LayoutDashboard,
           color: '#F59E0B',
           route: '/canvas',
+        },
+        {
+          title: 'Routines',
+          subtitle: 'Scheduled agent runs that post back into their chat',
+          icon: CalendarClock,
+          color: '#8B5CF6',
+          route: '/routines',
         },
         {
           title: 'Integrations (MCP)',

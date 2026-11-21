@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, FAST_MODEL_ID } from "@/lib/models";
 import { withFallback } from "@/lib/models/fallback";
 import { upsertMemories } from "@/lib/knowledge/search";
+import { isRoutineTriggerMessage } from "@/lib/routines/scheduler";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -64,6 +65,9 @@ export async function extractMemories(
 
   const transcript = (messages as Array<{ role: string; parts: unknown }>)
     .map((message) => {
+      // Routine trigger messages are not the user speaking — they must not
+      // become "what the user said" memories (Phase 10).
+      if (isRoutineTriggerMessage(message.parts)) return null;
       const text = (message.parts as Array<{ type: string; text?: string }>)
         .filter((part) => part.type === "text")
         .map((part) => part.text ?? "")

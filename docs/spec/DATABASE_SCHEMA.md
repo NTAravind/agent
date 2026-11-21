@@ -215,6 +215,144 @@ create table monitor_snapshots (
   hash text, summary_of_change text,
   created_at timestamptz default now()
 );
+
+-- Skills (Phase 8): progressive-disclosure instruction bundles.
+-- The GitHub vault (`skills/<slug>/SKILL.md`) is the source of truth; this
+-- table is the searchable index.
+create table skills (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  slug text not null,
+  name text not null,
+  description text not null,            -- one line, used for discovery
+  body text not null default '',         -- full markdown, loaded on demand
+  tools text[] default '{}',            -- allowlist that can only NARROW tools
+  vault_path text not null,
+  git_sha text,
+  enabled boolean default true,
+  created_at timestamptz default now(), updated_at timestamptz default now(),
+  unique (user_id, slug)
+);
+create table agent_skills (
+  agent_id uuid not null references agents(id) on delete cascade,
+  skill_id uuid not null references skills(id) on delete cascade,
+  enabled boolean default true,
+  primary key (agent_id, skill_id)
+);
+
+-- Productivity (Phase 9): tasks, calendar, reminders.
+-- The database is snake_case; the API is camelCase (mappers in
+-- apps/api/lib/productivity.ts).
+create table task_lists (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  name text not null,
+  sort int default 0,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create table tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  list_id uuid not null references task_lists(id) on delete cascade,
+  parent_id uuid references tasks(id) on delete cascade,   -- subtasks
+  title text not null,
+  notes text,
+  status text default 'open' check (status in ('open','done','cancelled')),
+  priority int default 0,
+  due_at timestamptz,
+  due_all_day boolean default false,
+  remind_at timestamptz,
+  rrule text,                          -- stored, expanded on read
+  reminded_at timestamptz,             -- last delivery (quick inspection)
+  completed_at timestamptz,
+  created_by text default 'user' check (created_by in ('user','agent','suggested')),
+  source_run_id uuid,                  -- set for agent-created rows
+  deleted_at timestamptz,              -- soft delete everywhere
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index on tasks (user_id, status, due_at);
+create index on tasks (user_id, remind_at) where remind_at is not null;
+
+create table calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  title text not null,
+  description text,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  all_day boolean default false,
+  tz text default 'Asia/Kolkata',
+  location text,
+  rrule text,                          -- stored, expanded on read
+  exdates timestamptz[] default '{}',
+  reminders jsonb default '[]',        -- [{ minutesBefore, method }]
+  created_by text default 'user' check (created_by in ('user','agent','suggested')),
+  source_run_id uuid,
+  ical_uid text,
+  deleted_at timestamptz,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index on calendar_events (user_id, starts_at);
+
+create table push_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  expo_token text not null unique,
+  platform text not null check (platform in ('ios','android')),
+  last_seen timestamptz default now(),
+  created_at timestamptz default now()
+);
+
+-- Idempotent reminder delivery: one row per (item, scheduled instant).
+create table reminder_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  item_type text not null check (item_type in ('task','event')),
+  item_id uuid not null,
+  remind_at timestamptz not null,
+  sent_at timestamptz default now(),
+  unique (item_type, item_id, remind_at)
+);
+```
+
+## Routines (Phase 10)
+
+A routine is a scheduled prompt bound to an agent and a thread. The model proposes a
+**structured** schedule; the server derives the RRULE and computes the concrete instants in the
+user's timezone — model-supplied dates are never stored.
+
+```sql
+create table routines (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  agent_id uuid references agents(id) on delete cascade,
+  thread_id uuid not null references threads(id) on delete cascade,
+  name text not null,
+  prompt text not null,
+  schedule jsonb not null,              -- { frequency, days_of_week?, day_of_month?, time, run_at? }
+  rrule text,                           -- RRULE for recurring routines (null for one-shot)
+  tz text not null default 'Asia/Kolkata',
+  source_text text,                     -- the user's original wording
+  status text not null default 'draft'
+    check (status in ('draft','active','paused','completed')),
+  approval_mode text not null default 'queue'
+    check (approval_mode in ('queue','deny')),
+  next_run_at timestamptz,              -- null until the user confirms (activate)
+  last_run_at timestamptz,
+  consecutive_failures int not null default 0,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index on routines (user_id, status, next_run_at);
+
+-- A routine-fired run: the unique key makes one occurrence create one run.
+alter table agent_runs add column routine_id uuid references routines(id) on delete set null;
+alter table agent_runs add column scheduled_for timestamptz;
+alter table agent_runs add column tz text not null default 'Asia/Kolkata';
+create unique index idx_agent_runs_routine_occurrence
+  on agent_runs (routine_id, scheduled_for) where routine_id is not null;
+
+-- Agents are chats: the first thread opened for an agent becomes its primary thread.
+alter table agents add column primary_thread_id uuid references threads(id) on delete set null;
 ```
 
 ## Search function (hybrid)
@@ -225,6 +363,15 @@ Created by the checkpointer's `setup()` on the same database; don't hand-write t
 
 ## Row Level Security
 Enable RLS on every table above. Policy pattern: `using (user_id = auth.uid())`; for child tables join through the parent. `mcp_servers` is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by `user_id` explicitly in server queries.
+
+## Memory kinds (Phase 9)
+`memories.kind` still accepts `'task'` for historical rows, but extraction no longer writes it: a detected task becomes a row in `tasks` with `created_by = 'suggested'`, which the app shows as a suggestion to accept or dismiss. This keeps one todo store instead of two.
+
+## Routine triggers (Phase 10)
+A routine inserts a **trigger message** into its thread with `role = 'user'` and a part marked
+`{ type: 'routine-trigger', source: 'routine', routine_id, routine_name }`. The app renders it as a
+chip, not a normal user bubble, and memory extraction skips it — the routine's prompt is not
+something the user said.
 
 ## Retention (protect the 500 MB cap)
 Prune `run_events` and `provider_usage` older than 30 days; keep `agent_runs` summaries. Truncate large tool outputs before storing. Store files only in Storage.

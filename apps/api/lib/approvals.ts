@@ -12,7 +12,12 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  */
 
 /** Tools that ALWAYS require approval before execution. */
-export const SENSITIVE_TOOLS = new Set(["write_note", "delete_task", "delete_event"]);
+export const SENSITIVE_TOOLS = new Set([
+  "write_note",
+  "delete_task",
+  "delete_event",
+  "delete_routine",
+]);
 
 /** Tools that require approval ONLY when targeting user-created items. */
 export const CONDITIONAL_APPROVAL_TOOLS = new Set(["update_task", "update_event"]);

@@ -70,6 +70,28 @@ Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes
 3. `POST /api/agents/:id/sleep` sets `agents.sleeping`, pauses the agent's active runs, and makes `POST /api/agents/run` return 409. `POST /api/agents/:id/wake` clears the flag and re-emits `run/resumed` for the agent's paused runs plus paused supervisors waiting on its children.
 4. `POST /api/runs/:id/cancel` uses the same boundaries and cascades the same way; a cancelled or finished run cannot be resurrected (resume is idempotent and bails).
 
+### 3.10 Skills (Phase 8)
+1. A skill is a markdown file with frontmatter in the GitHub vault at `skills/<slug>/SKILL.md` (vault = source of truth, Supabase = index).
+2. Vault sync (`vault/changed`) parses the frontmatter (`name`, `description`, optional `tools[]`) and upserts the `skills` row — no chunking or embedding.
+3. The agent's system prompt carries only **name + description** for each assigned skill; the body is fetched on demand by the `load_skill` tool, which only accepts skills assigned to the current agent.
+4. A loaded skill's `tools` list can only **narrow** the offered tool set (intersection of current ∩ available ∩ declared) — it never grants a tool.
+5. The app's Skills screen writes through the API, which recomposes and commits the file to the vault (user-initiated → no approval).
+
+### 3.11 Productivity (Phase 9)
+1. Tasks, task lists and calendar events live in Supabase with **soft delete** (`deleted_at`) and an explicit `created_by` (`user` / `agent` / `suggested`) plus `source_run_id`.
+2. Recurrence is stored as an RRULE and **expanded on read** (never materialised). The expansion is anchored to the item's start instant so a weekly rule keeps its time of day in the user's timezone.
+3. Agent tools (`create_task`, `list_tasks`, `update_task`, `complete_task`, `delete_task`, `create_event`, `list_events`, `update_event`, `delete_event`, `find_free_slots`) share the normal tool gate: create/list/complete never need approval, edits need approval only for `created_by='user'` rows, deletes always do.
+4. `extractMemories` no longer stores tasks as memories — a detected task becomes a `created_by='suggested'` row the app shows as a suggestion to accept or dismiss.
+5. Reminders: the `reminder/tick` cron (every minute) computes due task/event reminders, claims them in `reminder_log` (unique `(item_type, item_id, remind_at)`) and only then sends the Expo push — so a reminder fires at most once, and a failed delivery releases the claim for the next tick.
+
+### 3.12 Routines (Phase 10)
+1. A routine is a scheduled prompt bound to an agent and a thread. The agent proposes it (`create_routine`) with a **structured** schedule — never a cron string; the server converts it to an RRULE in the user's timezone and computes the next occurrences.
+2. The proposal lands as a `data-routine-proposal` UI part (like `data-approval` / `data-canvas`). Nothing recurring starts until the user confirms (`POST /api/routines/:id/activate`).
+3. A single `routine/tick` cron (every minute) picks up `status='active' AND next_run_at <= now()`, creates the `agent_runs` row (unique `(routine_id, scheduled_for)` → idempotent), inserts a trigger message in the bound thread, advances `next_run_at` and emits `agent/run.requested`.
+4. The run posts its result as a normal assistant message in the same thread, and the app is notified by an Expo push that deep-links to that chat. The user can reply in the thread and the agent can `update_routine`.
+5. Guardrails: overlapping runs are skipped (with a note in the thread), missed runs fire once (never backfilled), one-shot routines complete after firing, and three consecutive failures auto-pause the routine with an explanation in the chat.
+6. Approvals follow the routine's `approval_mode`: `queue` parks the run in the normal approval gate (24 h expiry), `deny` reuses `approvalMode: "deny"` (the policy also survives a resume).
+
 ## 4. Security model
 - Single allowed user; every API route verifies the Supabase JWT and `ALLOWED_USER_ID`. RLS on all tables as defense in depth.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.
