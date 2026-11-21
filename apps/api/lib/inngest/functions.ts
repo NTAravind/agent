@@ -1,11 +1,12 @@
 import { step } from "inngest";
 
 import { resumeAgentRun } from "@/lib/agent/graph";
-import { executeRun } from "@/lib/agent/execute";
+import { executeRun, resumeExecution } from "@/lib/agent/execute";
 import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
-import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, vaultChanged } from "@/lib/inngest/events";
+import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, runResumed, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
+import { runReminderTick } from "@/lib/reminders";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
 import { refreshCanvas } from "@/lib/canvases";
@@ -108,6 +109,31 @@ export const approvalResumeFunction = inngest.createFunction(
     const { runId, userId } = event.data;
 
     return await step.run("resume-agent-graph", () => resumeAgentRun({ runId, userId }));
+  },
+);
+
+/**
+ * Resumes a paused run (POST /api/runs/:id/resume, agent wake): the graph
+ * continues from its checkpoint via `invoke(null)` — the node that hit the
+ * pause boundary re-runs, everything before it is replayed from the
+ * checkpointer. Idempotent when the run is no longer paused.
+ */
+export const runResumeFunction = inngest.createFunction(
+  {
+    id: "run-resume",
+    retries: 3,
+    triggers: { event: runResumed },
+    onFailure: async ({ event, error }) => {
+      const data = (event as { data?: { runId?: string } }).data;
+      if (data?.runId) {
+        await failRun(data.runId, error instanceof Error ? error.message : String(error));
+      }
+    },
+  },
+  async ({ event }) => {
+    const { runId, userId } = event.data;
+
+    return await step.run("resume-paused-graph", () => resumeExecution({ runId, userId }));
   },
 );
 
@@ -218,12 +244,31 @@ export const mcpSyncFunction = inngest.createFunction(
   },
 );
 
+/**
+ * Fires due task/event reminders (Phase 9). Runs every minute; the
+ * reminder_log's unique key makes a repeated tick a no-op, so a reminder
+ * is never pushed twice.
+ */
+export const reminderTickFunction = inngest.createFunction(
+  {
+    id: "reminder-tick",
+    retries: 2,
+    triggers: { cron: "* * * * *" },
+  },
+  async () => {
+    const result = await step.run("send-reminders", () => runReminderTick());
+    return result;
+  },
+);
+
 export const functions = [
   keepalive,
   chatCompletedFunction,
   vaultChangedFunction,
   agentRunFunction,
   approvalResumeFunction,
+  runResumeFunction,
   canvasRefreshFunction,
   mcpSyncFunction,
+  reminderTickFunction,
 ];

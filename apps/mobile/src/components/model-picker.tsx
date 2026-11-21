@@ -1,11 +1,10 @@
-
 import { useMemo, useState } from 'react';
 import { Button, Typography } from 'heroui-native';
 import { FlatList, Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PROVIDER_LABELS } from '@agent/shared';
-
+import { MESSAGE_ICONS } from '@/constants/icons';
 import type { ModelOption } from '@/lib/models';
 
 type Props = {
@@ -59,6 +58,10 @@ function statusTags(model: ModelOption): string[] {
   return tags;
 }
 
+/**
+ * Grok-inspired model picker.
+ * Features a sleek capsule trigger and obsidian bottom sheet.
+ */
 export function ModelPicker({
   models,
   selectedId,
@@ -84,12 +87,13 @@ export function ModelPicker({
         accessibilityLabel={`Choose model${value ? `, selected ${value.label}` : ''}`}
         accessibilityHint="Opens the model list"
         onPress={() => setOpen(true)}
-        className="max-w-[240px] flex-row items-center justify-center gap-1 rounded-full px-3 py-2 active:opacity-60"
+        className="max-w-[220px] flex-row items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 active:bg-white/10"
       >
-        <Text numberOfLines={1} className="shrink text-base font-semibold text-foreground">
+        <MESSAGE_ICONS.sparkles size={13} color="#ffffff" />
+        <Text numberOfLines={1} className="shrink text-sm font-semibold text-white">
           {value?.label ?? 'Select model'}
         </Text>
-        <Text className="text-sm text-muted">⌄</Text>
+        <MESSAGE_ICONS.chevronDown size={13} color="#71717a" />
       </Pressable>
 
       <Modal
@@ -103,16 +107,21 @@ export function ModelPicker({
           <Pressable
             accessibilityLabel="Close model picker"
             onPress={() => setOpen(false)}
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/60"
           />
           <View
-            className="max-h-[82%] rounded-t-3xl border-t border-border bg-background"
+            className="max-h-[82%] rounded-t-[32px] border-t border-white/10 bg-[#101014]"
             style={{ paddingBottom: Math.max(insets.bottom, 16) }}
           >
-            <View className="flex-row items-center justify-between px-5 pb-3 pt-5">
+            {/* Sheet Handle */}
+            <View className="items-center pt-3 pb-1">
+              <View className="h-1 w-10 rounded-full bg-white/20" />
+            </View>
+
+            <View className="flex-row items-center justify-between px-5 pb-3 pt-2">
               <View>
-                <Typography type="body" className="font-semibold text-foreground">Choose a model</Typography>
-                <Typography type="body-xs" color="muted">Provider and capabilities</Typography>
+                <Typography type="body" weight="semibold" className="text-white">Choose Model</Typography>
+                <Typography type="body-xs" className="text-zinc-400">Select model and capabilities</Typography>
               </View>
               <Button size="sm" variant="ghost" onPress={() => setOpen(false)} accessibilityLabel="Close model picker">
                 <Button.Label>Done</Button.Label>
@@ -122,37 +131,47 @@ export function ModelPicker({
               data={models}
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 12 }}
+              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 16 }}
               renderItem={({ item: model }) => {
-          const tags = statusTags(model);
+                const tags = statusTags(model);
+                const isSelected = model.id === selectedId;
 
-          return (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: model.id === selectedId, disabled: !model.available }}
-              onPress={() => {
-                onSelect(model.id);
-                setOpen(false);
-              }}
-              className={`mx-1 mb-1 min-h-16 flex-row items-center rounded-2xl px-4 py-3 active:bg-surface ${
-                !model.available ? 'opacity-50' : ''
-              } ${model.id === selectedId ? 'bg-surface' : ''}`}
-            >
-              <View className="flex-1 gap-1">
-                <Text className="text-base font-medium text-foreground">{model.label}</Text>
-                <Typography type="body-xs" color="muted">
-                  {`${providerLabel(model.provider)} · ${capabilitySummary(model)}`}
-                </Typography>
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected, disabled: !model.available }}
+                    onPress={() => {
+                      onSelect(model.id);
+                      setOpen(false);
+                    }}
+                    className={`mx-1 mb-2 flex-row items-center rounded-2xl border px-4 py-3 active:opacity-75 ${
+                      isSelected
+                        ? 'border-white/25 bg-white/10'
+                        : 'border-white/5 bg-[#16161b]'
+                    } ${!model.available ? 'opacity-40' : ''}`}
+                  >
+                    <View className="flex-1 gap-1">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-base font-semibold text-white">{model.label}</Text>
+                        {isSelected ? (
+                          <View className="h-2 w-2 rounded-full bg-emerald-400" />
+                        ) : null}
+                      </View>
+                      <Typography type="body-xs" className="text-zinc-400">
+                        {`${providerLabel(model.provider)} · ${capabilitySummary(model)}`}
+                      </Typography>
 
-                {tags.length > 0 && (
-                  <Typography type="body-xs" color="muted">
-                    {tags.join(' · ')}
-                  </Typography>
-                )}
-              </View>
-              {model.id === selectedId ? <Text className="text-base text-accent">✓</Text> : null}
-            </Pressable>
-          );
+                      {tags.length > 0 && (
+                        <Typography type="body-xs" className="text-zinc-500">
+                          {tags.join(' · ')}
+                        </Typography>
+                      )}
+                    </View>
+                    {isSelected ? (
+                      <MESSAGE_ICONS.check size={16} color="#ffffff" />
+                    ) : null}
+                  </Pressable>
+                );
               }}
             />
           </View>
@@ -171,14 +190,14 @@ export function ModelBadges({
 
   return (
     <View className="flex-row flex-wrap gap-1">
-      <Typography type="body-xs" color="muted">
+      <Typography type="body-xs" className="text-zinc-400">
         {providerLabel(model.provider)}
       </Typography>
 
       {CAPABILITIES.filter(
         (capability) => model.capabilities[capability],
       ).map((capability) => (
-        <Typography key={capability} type="body-xs" color="muted">
+        <Typography key={capability} type="body-xs" className="text-zinc-500">
           {`· ${CAPABILITY_LABELS[capability]}`}
         </Typography>
       ))}

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Button, Chip, Spinner } from 'heroui-native';
-import { Alert, TextInput, View } from 'react-native';
+import { Spinner, Typography } from 'heroui-native';
+import { Alert, Pressable, TextInput, View } from 'react-native';
 
+import { COMPOSER_ICONS } from '@/constants/icons';
 import type { PendingAttachment } from '@/lib/attachments';
 
 type Props = {
@@ -14,12 +15,17 @@ type Props = {
   onRemoveAttachment: (documentId: string) => void;
   isStreaming: boolean;
   disabled?: boolean;
+  deepSearchActive?: boolean;
+  onToggleDeepSearch?: () => void;
+  thinkActive?: boolean;
+  onToggleThink?: () => void;
+  placeholder?: string;
 };
 
 /**
- * Single-card composer. Text input on top, then a toolbar
- * row with a single "+" attach button on the left and a round send button on
- * the right.
+ * Grok-inspired floating capsule composer.
+ * Features a dark glass capsule container, capability quick-pills (DeepSearch, Think),
+ * streamlined attachment chips, and high-contrast circular send button.
  */
 export function Composer({
   value,
@@ -31,6 +37,11 @@ export function Composer({
   onRemoveAttachment,
   isStreaming,
   disabled,
+  deepSearchActive = false,
+  onToggleDeepSearch,
+  thinkActive = false,
+  onToggleThink,
+  placeholder = 'Ask anything…',
 }: Props) {
   const [uploading, setUploading] = useState(false);
   const canSend = value.trim().length > 0 && !isStreaming && !disabled;
@@ -46,34 +57,41 @@ export function Composer({
 
   const openAttachMenu = () => {
     Alert.alert('Add to chat', undefined, [
-      { text: 'Photo', onPress: () => void withBusy(onAttachImage) },
-      { text: 'Document (PDF)', onPress: () => void withBusy(onAttachDocument) },
+      { text: '📷 Photo', onPress: () => void withBusy(onAttachImage) },
+      { text: '📄 Document (PDF)', onPress: () => void withBusy(onAttachDocument) },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
 
   return (
-    <View className="gap-2 rounded-3xl border border-border bg-surface px-3 pb-2 pt-3">
+    <View className="rounded-[28px] border border-white/10 bg-[#121215] px-3.5 pb-2.5 pt-3 shadow-2xl">
+      {/* Attachment Preview Row */}
       {attachments.length > 0 ? (
-        <View className="flex-row flex-wrap gap-1.5">
+        <View className="mb-2 flex-row flex-wrap gap-1.5">
           {attachments.map((attachment) => (
-            <Chip
+            <Pressable
               key={attachment.documentId}
-              variant="soft"
-              size="sm"
               onPress={() => onRemoveAttachment(attachment.documentId)}
+              accessibilityRole="button"
               accessibilityLabel={`Remove ${attachment.name}`}
+              className="flex-row items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 active:opacity-60"
             >
-              <Chip.Label numberOfLines={1}>{`${attachment.name}  ✕`}</Chip.Label>
-            </Chip>
+              <Typography type="body-xs" className="max-w-[140px] text-white" numberOfLines={1}>
+                {attachment.name}
+              </Typography>
+              <Typography type="body-xs" className="text-zinc-400 font-semibold">
+                ✕
+              </Typography>
+            </Pressable>
           ))}
         </View>
       ) : null}
 
+      {/* Multiline Input */}
       <TextInput
-        className="max-h-40 min-h-[40px] px-1 text-base text-foreground"
-        placeholder="Message…"
-        placeholderTextColor="#9ca3af"
+        className="max-h-36 min-h-[44px] px-1 text-base leading-5 text-white"
+        placeholder={placeholder}
+        placeholderTextColor="#71717a"
         value={value}
         onChangeText={onChangeText}
         editable={!disabled}
@@ -81,29 +99,100 @@ export function Composer({
         textAlignVertical="top"
       />
 
-      <View className="flex-row items-center justify-between">
-        <Button
-          size="sm"
-          variant="ghost"
-          isIconOnly
-          className="rounded-full"
-          onPress={openAttachMenu}
-          isDisabled={uploading || disabled}
-          accessibilityLabel="Add attachment"
-        >
-          {uploading ? <Spinner size="sm" /> : <Button.Label>＋</Button.Label>}
-        </Button>
+      {/* Capsule Toolbar Row */}
+      <View className="mt-2 flex-row items-center justify-between">
+        {/* Left Actions: Attach (+) + Mode Quick-Pills */}
+        <View className="flex-row items-center gap-1.5">
+          {/* Add media button */}
+          <Pressable
+            onPress={openAttachMenu}
+            disabled={uploading || disabled}
+            accessibilityRole="button"
+            accessibilityLabel="Add attachment"
+            className="h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 active:bg-white/10 active:opacity-70"
+          >
+            {uploading ? (
+              <Spinner size="sm" color="default" />
+            ) : (
+              <COMPOSER_ICONS.attach size={16} color="#a1a1aa" />
+            )}
+          </Pressable>
 
-        <Button
-          size="sm"
-          isIconOnly
-          className="rounded-full"
+          {/* DeepSearch toggle pill */}
+          {onToggleDeepSearch ? (
+            <Pressable
+              onPress={onToggleDeepSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle DeepSearch"
+              className={`flex-row items-center gap-1.5 rounded-full border px-2.5 py-1 active:opacity-75 ${
+                deepSearchActive
+                  ? 'border-sky-500/50 bg-sky-500/15'
+                  : 'border-white/10 bg-white/5'
+              }`}
+            >
+              <COMPOSER_ICONS.deepSearch
+                size={13}
+                color={deepSearchActive ? '#38bdf8' : '#71717a'}
+              />
+              <Typography
+                type="body-xs"
+                weight={deepSearchActive ? 'semibold' : 'normal'}
+                className={deepSearchActive ? 'text-sky-400' : 'text-zinc-400'}
+              >
+                DeepSearch
+              </Typography>
+            </Pressable>
+          ) : null}
+
+          {/* Think toggle pill */}
+          {onToggleThink ? (
+            <Pressable
+              onPress={onToggleThink}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle Think mode"
+              className={`flex-row items-center gap-1.5 rounded-full border px-2.5 py-1 active:opacity-75 ${
+                thinkActive
+                  ? 'border-purple-500/50 bg-purple-500/15'
+                  : 'border-white/10 bg-white/5'
+              }`}
+            >
+              <COMPOSER_ICONS.think
+                size={13}
+                color={thinkActive ? '#c084fc' : '#71717a'}
+              />
+              <Typography
+                type="body-xs"
+                weight={thinkActive ? 'semibold' : 'normal'}
+                className={thinkActive ? 'text-purple-300' : 'text-zinc-400'}
+              >
+                Think
+              </Typography>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Right Action: Circular High-Contrast Send Button */}
+        <Pressable
           onPress={onSend}
-          isDisabled={!canSend}
+          disabled={!canSend}
+          accessibilityRole="button"
           accessibilityLabel="Send message"
+          className={`h-8 w-8 items-center justify-center rounded-full transition-all ${
+            canSend
+              ? 'bg-white shadow-md active:scale-95 active:opacity-90'
+              : 'bg-white/10'
+          }`}
         >
-          {isStreaming ? <Spinner size="sm" color="default" /> : <Button.Label>↑</Button.Label>}
-        </Button>
+          {isStreaming ? (
+            <Spinner size="sm" color="default" />
+          ) : (
+            <COMPOSER_ICONS.send
+              size={15}
+              color={canSend ? '#000000' : '#71717a'}
+              strokeWidth={2.6}
+            />
+          )}
+        </Pressable>
       </View>
     </View>
   );

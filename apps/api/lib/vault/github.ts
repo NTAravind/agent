@@ -181,3 +181,54 @@ export async function putVaultFile(path: string, content: string): Promise<{ sha
     url: payload.content?.html_url ?? "",
   };
 }
+
+/**
+ * Deletes a file from the vault (used when the user deletes a skill from the
+ * app). GitHub requires the blob sha of the file being deleted.
+ */
+export async function deleteVaultFile(path: string): Promise<void> {
+  const repo = vaultRepo();
+  if (!repo) throw new Error("GITHUB_VAULT_REPO is not set.");
+
+  if (!/^[\w\-. \/()'"&+#]+$/.test(path) || path.includes("..")) {
+    throw new Error(`Refusing to delete an unsafe path: ${path}`);
+  }
+
+  let sha: string;
+  try {
+    const existing = await githubFetch<GitHubContent>(
+      `/repos/${repo.owner}/${repo.repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(repo.branch)}`,
+    );
+    if (existing.type !== "file") {
+      throw new Error(`GitHub delete refused: ${path} is not a file.`);
+    }
+    sha = existing.sha;
+  } catch (error) {
+    // 404 → already gone; deletion stays idempotent.
+    if (error instanceof Error && /GitHub API 404/.test(error.message)) return;
+    throw error;
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${repo.owner}/${repo.repo}/contents/${encodeURIComponent(path)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${vaultToken()}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `agent: delete ${path}`,
+        sha,
+        branch: repo.branch,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub delete failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+}

@@ -1,5 +1,7 @@
 import { runAgent, type RunAgentInput } from "@/lib/agent/graph";
 import { runSupervisor } from "@/lib/agent/supervisor";
+import { listPendingByRun } from "@/lib/approvals";
+import { updateRun } from "@/lib/agent/runs";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -31,4 +33,50 @@ export async function executeRun(
     return runSupervisor(input);
   }
   return runAgent(input);
+}
+
+/**
+ * Resume entry for the `run/resumed` event (POST /api/runs/:id/resume and
+ * agent wake). Idempotent: a duplicate event, or a run that finished or was
+ * cancelled while the event was in flight, reports the status that won instead
+ * of re-invoking the graph. The graph itself flips paused → running
+ * (`beginResume`) and continues from its checkpoint.
+ */
+export async function resumeExecution(input: {
+  runId: string;
+  userId: string;
+}): Promise<{ status: string; result?: string }> {
+  const { data: run } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("status, goal, model")
+    .eq("id", input.runId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  if (!run) return { status: "cancelled" };
+
+  const row = run as { status: string; goal: string; model: string | null };
+  if (row.status !== "paused") return { status: row.status };
+
+  // A run paused while parked on an approval must NOT be graph-resumed:
+  // `invoke(null)` would resume the interrupt with an undefined value and the
+  // tool gate would read the still-pending row as denied. Restore the parked
+  // status instead — the approval decision itself resumes the graph later.
+  const pending = await listPendingByRun(input.runId);
+  const undecided = pending.filter(
+    (approval) =>
+      !approval.expires_at ||
+      new Date(approval.expires_at).getTime() > Date.now(),
+  );
+  if (undecided.length > 0) {
+    await updateRun(input.runId, { status: "awaiting_approval" });
+    return { status: "awaiting_approval" };
+  }
+
+  return await executeRun({
+    runId: input.runId,
+    userId: input.userId,
+    goal: row.goal,
+    preferredModel: row.model ?? undefined,
+    resume: true,
+  });
 }

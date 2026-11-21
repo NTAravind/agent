@@ -144,6 +144,14 @@ export type RunListItem = {
   tokens_used: number;
   created_at: string;
   finished_at: string | null;
+  /**
+   * The agent that owns the run. `GET /api/runs` already joins this — it was
+   * previously undeclared on the mobile side, which forced a goal-substring
+   * heuristic to match runs to agents. Null for runs started without an agent.
+   */
+  agent_id?: string | null;
+  /** Embedded agent summary (name + resolved avatar) from the same join. */
+  agent?: AgentSummary | null;
 };
 
 export async function fetchRuns(): Promise<RunListItem[]> {
@@ -192,5 +200,67 @@ export async function decideApproval(
   await apiFetch<{ ok: boolean }>(`/api/approvals/${id}`, {
     token,
     init: { method: 'POST', body: JSON.stringify({ decision }) },
+  });
+}
+
+/**
+ * Pauses a run: the API flips the status row and the graph stops at its next
+ * step boundary. Supervisor children pause with their parent.
+ */
+export async function pauseRun(id: string): Promise<void> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  await apiFetch<{ status: string }>(`/api/runs/${id}/pause`, {
+    token,
+    init: { method: 'POST' },
+  });
+}
+
+/**
+ * Resumes a paused run from its checkpoint (queued via Inngest `run/resumed`).
+ * 409 when the run is not paused or its agent is asleep.
+ */
+export async function resumeRun(id: string): Promise<void> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  await apiFetch<{ ok: boolean }>(`/api/runs/${id}/resume`, {
+    token,
+    init: { method: 'POST' },
+  });
+}
+
+/** Cancels an unfinished run (and a supervisor's unfinished children). */
+export async function cancelRun(id: string): Promise<void> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  await apiFetch<{ status: string }>(`/api/runs/${id}/cancel`, {
+    token,
+    init: { method: 'POST' },
+  });
+}
+
+/**
+ * Sleeps an agent: pauses all of its active tasks and blocks new ones until
+ * it wakes. Returns how many runs were paused.
+ */
+export async function sleepAgent(id: string): Promise<{ pausedRuns: number }> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  return await apiFetch<{ sleeping: true; pausedRuns: number }>(`/api/agents/${id}/sleep`, {
+    token,
+    init: { method: 'POST' },
+  });
+}
+
+/**
+ * Wakes a sleeping agent: clears the flag and resumes all of its paused
+ * tasks (plus supervisors waiting on them). Returns how many were resumed.
+ */
+export async function wakeAgent(id: string): Promise<{ resumedRuns: number }> {
+  const token = await accessToken();
+  if (!token) throw new Error('Not signed in.');
+  return await apiFetch<{ sleeping: false; resumedRuns: number }>(`/api/agents/${id}/wake`, {
+    token,
+    init: { method: 'POST' },
   });
 }

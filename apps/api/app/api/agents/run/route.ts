@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     if (body.agentId) {
       const { data: agent } = await supabaseAdmin()
         .from("agents")
-        .select("id")
+        .select("id, sleeping")
         .eq("id", body.agentId)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -55,11 +55,31 @@ export async function POST(request: Request) {
           { status: 404 },
         );
       }
+      if ((agent as { sleeping?: boolean }).sleeping) {
+        return Response.json(
+          { error: { code: "conflict", message: "That agent is asleep — wake it before starting a task." } },
+          { status: 409 },
+        );
+      }
       agentId = agent.id as string;
     } else {
       // Default agent on demand — but never block a run if the agents table
       // isn't migrated yet (Phase 6 ships code before the migration runs).
       agentId = await defaultAgentId(user.id).catch(() => null);
+      if (agentId) {
+        const { data: agent } = await supabaseAdmin()
+          .from("agents")
+          .select("sleeping")
+          .eq("id", agentId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if ((agent as { sleeping?: boolean } | null)?.sleeping) {
+          return Response.json(
+            { error: { code: "conflict", message: "That agent is asleep — wake it before starting a task." } },
+            { status: 409 },
+          );
+        }
+      }
     }
 
     const run = await createRun({

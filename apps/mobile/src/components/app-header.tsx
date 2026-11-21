@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Props = {
-  /** Left-hand control (usually a 48px icon button). */
+  /** Left-hand control (usually an icon button or drawer toggle). */
   left?: ReactNode;
-  /** Centred content — a title or a control. */
+  /** Centred content — a title or model capsule picker. */
   center?: ReactNode;
   /** Right-hand control. */
   right?: ReactNode;
@@ -14,21 +15,33 @@ type Props = {
 };
 
 /**
- * Safe-area aware screen header.
- *
- * The top inset keeps the content clear of the status bar / notch, and the
- * row is 48px tall so every control keeps a comfortable touch target.
+ * Grok-inspired translucent frosted header.
+ * Uses BlurView with a dark obsidian tint and hairline border.
  */
-export function AppHeader({ left, center, right }: Props) {
+export function AppHeader({ left, center, right, bottomInset = 0 }: Props) {
   const insets = useSafeAreaInsets();
 
-  return (
-    <View className="border-b border-separator bg-background px-3 pb-2" style={{ paddingTop: insets.top + 6 }}>
-      <View className="h-12 flex-row items-center justify-between gap-2">
-        <View className="min-w-12 flex-row items-center justify-start">{left}</View>
+  const content = (
+    <View
+      className="border-b border-white/10 px-3.5 pb-2.5"
+      style={{ paddingTop: insets.top + 6, paddingBottom: 10 + bottomInset }}
+    >
+      <View className="h-11 flex-row items-center justify-between gap-2">
+        <View className="min-w-10 flex-row items-center justify-start">{left}</View>
         <View className="flex-1 items-center justify-center">{center}</View>
-        <View className="min-w-12 flex-row items-center justify-end">{right}</View>
+        <View className="min-w-10 flex-row items-center justify-end">{right}</View>
       </View>
     </View>
   );
+
+  if (Platform.OS === 'ios') {
+    return (
+      <BlurView intensity={70} tint="dark" className="bg-[#09090b]/60">
+        {content}
+      </BlurView>
+    );
+  }
+
+  // Android / Web fallback
+  return <View className="bg-[#09090b]/95">{content}</View>;
 }

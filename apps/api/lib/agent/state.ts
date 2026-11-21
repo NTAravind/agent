@@ -62,6 +62,31 @@ export const AgentState = Annotation.Root({
     reducer: (_prev, next) => next ?? _prev,
     default: () => null,
   }),
+  /**
+   * Skill-driven tool allowlist: null = not narrowed yet. Set by tool_exec
+   * when a loaded skill declares `tools` (intersected with the current set —
+   * skills can only narrow, never grant). Checkpointed, so narrowing survives
+   * Inngest retries and approval resumes.
+   */
+  toolAllow: Annotation<string[] | null>({
+    reducer: (_prev, next) => next ?? _prev,
+    default: () => null,
+  }),
+  /**
+   * Bodies of skills loaded this run. These are trusted, user-authored vault
+   * content (unlike findings, which can echo untrusted tool output) — finalize
+   * applies them to the final answer. Deduped by slug, capped in count.
+   */
+  loadedSkills: Annotation<Array<{ slug: string; body: string }>>({
+    reducer: (prev, next) => {
+      const merged = [...(prev ?? [])];
+      for (const entry of next ?? []) {
+        if (!merged.some((item) => item.slug === entry.slug)) merged.push(entry);
+      }
+      return merged.slice(0, MAX_LOADED_SKILLS);
+    },
+    default: () => [],
+  }),
 
   /** The observe node's decision for what happens next. */
   nextAction: Annotation<ObserveAction | null>({
@@ -98,3 +123,5 @@ export type AgentStateType = typeof AgentState.State;
 export const MAX_AGENT_STEPS = 10;
 /** Hard cap on LLM/tool round-trips within one step. */
 export const MAX_TOOL_ROUNDS_PER_STEP = 4;
+/** Max distinct skill bodies carried in state (finalize prompt budget). */
+const MAX_LOADED_SKILLS = 4;

@@ -1,10 +1,11 @@
 # UI / UX Spec (Expo app)
 
 ## 1. Principles
+- **Grok-inspired Cyber-Minimalism**: Obsidian / pure pitch-black canvas (`#000000` / `#09090b`), smoky graphite surfaces (`#121215` / `#18181b`), razor-thin translucent borders (`rgba(255, 255, 255, 0.08)`), high-contrast typography, and subtle glowing electric accents.
 - Chat is home; everything else is one tap away.
-- Show work: long tasks show a live timeline, not a spinner.
+- Show work: long tasks show a live timeline, not a spinner; reasoning models surface an interactive collapsible "Thinking" trace accordion.
 - Ask before acting: approvals are impossible to miss and fast to answer.
-- Native-feeling, dark and light themes, thumb-reachable controls.
+- Native-feeling, dark and light themes, thumb-reachable floating capsule controls.
 
 ## 2. Navigation (bottom tabs)
 | Tab | Purpose |
@@ -19,12 +20,18 @@
 Approvals badge appears on the tab bar and as a banner anywhere.
 
 ## 3. Screens
-**Chat**: thread list drawer with the selected agent's avatar badge; composer with attach (image/PDF/file), mic (P2), agent picker, **model picker** (a flat list labelled by provider — Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face, Cohere — with capability badges and a warning if the model can't handle the attachment), mode toggle (Chat / Run as task). Messages render the authoring agent's avatar alongside markdown, code with copy, citations as tappable chips, tool-call chips (collapsible), inline canvas cards, approval cards.
-**Run detail**: header (goal, status, elapsed), vertical timeline of events (node, tool call, result, retry), with the responsible agent's avatar on each step and child run; cancel button, final result. Supervisor runs show a **Specialists** section with each child run (specialist avatar + name + status), tappable through to the child's own timeline.
+**Chat**:
+- **Header**: Translucent frosted blur header (`expo-blur`), clean minimalist icons (`menu`, `plus`, `back`, `details`), centered pill-shaped model picker.
+- **Empty / Welcome Hero**: Grok-style centered glowing geometric emblem, bold prompt (*"What do you want to explore?"*), categorized prompt pills with icons (🌐 DeepSearch, 🧠 Think & Analyze, ⚡ Quick Answer, 🛠️ Run Agent Task).
+- **Composer**: Floating `rounded-3xl` dark glass capsule with embedded quick toggles: **DeepSearch** (web search), **Think** (reasoning models), and **Task Mode** (autonomous run), flanked by `+` media attach and a circular high-contrast send button (pure white circle with black arrow).
+- **Messages**:
+  - User: Compact dark graphite capsule bubble (`#1c1c21`, `rounded-2xl`).
+  - Assistant: Full-bleed natural typography directly on canvas. Includes interactive collapsible **"Thinking"** trace accordion (*"✦ Thought for 4s ▾"*) for reasoning tokens, sleek numbered source citation cards for web search results, collapsible tool chips, inline canvas cards, approval cards, and an action bar (copy, regenerate, view task).
+**Run detail**: header (goal, status — `queued / running / awaiting_approval / paused / succeeded / failed / cancelled` —, elapsed), vertical timeline of events (node, tool call, result, retry), with the responsible agent's avatar on each step and child run; footer controls (Pause + Cancel while executing, Resume + Cancel while paused), final result. Supervisor runs show a **Specialists** section with each child run (specialist avatar + name + status), tappable through to the child's own timeline.
 **Approval card**: agent avatar and identity (for example, “Researcher wants to…”), tool name, plain-language summary, arguments (expandable), buttons Approve / Deny, optional edit of arguments. States: pending, approved, denied, expired.
 **Canvas list/detail**: cards with title and last updated; detail renders spec full-screen, pull-to-refresh, "Ask about this" button that opens chat with the canvas as context.
 **Notes**: folder tree, search bar (hybrid), note view (markdown, `[[links]]` tappable, backlinks section), edit (writes need confirmation), "Ask agent about this note".
-**Agents**: list with avatar, role and MCP tool count; editor for name, role, instructions, primary model + fallback order, tools toggle list with per-tool "require approval", and a **Supervisor** switch (orchestrates specialist agents in multi-agent runs). Avatar picker has Emoji, Icon and Upload tabs plus a color swatch row.
+**Agents**: list with avatar, role and MCP tool count; swipe/long-press row actions (**pause/resume the active task** is server-backed, skip and notifications are local) and a per-row activity line (`⏸ Paused: …` for paused tasks); overview with quick-action tiles — pause/resume the active task (disabled when none), notifications (local), **sleep/wake** (pauses all of the agent's tasks and blocks new ones while asleep), memory (local) — plus editor for name, role, instructions, primary model + fallback order, tools toggle list with per-tool "require approval", and a **Supervisor** switch (orchestrates specialist agents in multi-agent runs). Avatar picker has Emoji, Icon and Upload tabs plus a color swatch row.
 The new-task form includes an **agent picker** (a supervisor agent is preselected when one exists, with a hint explaining it delegates to specialists) and a model chooser populated from enabled provider catalog entries.
 **Store**: grid of servers with icon, description, auth type. Tap Add → permission sheet listing tools → connect (OAuth in system browser or key entry) → enable for agents. Connected servers show a Manage state. Detail screens show a **Setup instructions** card when the listing has `instructions` (steps only, never secrets).
 **Settings**: sign out, memory viewer (list, delete), vault repo status and last sync, default model and fallback order, theme.
@@ -44,12 +51,16 @@ The new-task form includes an **agent picker** (a supervisor agent is preselecte
 | `stack` | direction, children | Layout; nesting depth ≤ 4 |
 Invalid or unknown nodes render a muted "can't display this block" card, never crash. Spec size limit 100 KB. Optional `html` fallback in sandboxed WebView (no network, no bridge).
 
-## 5. Design tokens (starting point)
-Spacing scale 4/8/12/16/24/32. Radius 8 (inputs), 12 (cards). Type: system font; sizes 12/14/16/20/28. Avatar sizes: 24 pt in timelines, 32 pt in chat, 56 pt in the editor. If an avatar image is missing or unavailable, fall back to its emoji. Color roles: background, surface, text, text-muted, primary, success, warning, danger (define light and dark values). Minimum tap target 44 pt.
+## 5. Design tokens (Grok obsidian palette)
+- Canvas: `#000000` (deep true pitch black) / `#09090b` (zinc-950)
+- Surface / Cards: `#121215` / `#18181b` (obsidian charcoal)
+- Borders: `rgba(255, 255, 255, 0.08)` / `#27272a` (ultra-thin hairline)
+- Accent: `#ffffff` (crisp white) / subtle neon glow `#38bdf8`
+- Spacing scale: 4/8/12/16/24/32. Radius: 12 (chips/cards), 24 (capsule containers), 9999 (full pills). Type: system font; sizes 12/14/16/20/28. Avatar sizes: 24 pt in timelines, 32 pt in chat, 56 pt in the editor. Minimum tap target 44 pt.
 
 ## 6. States & feedback
-- Loading: skeletons for lists; streaming cursor for chat.
-- Empty: say what to do next ("Add your vault in Settings to search notes").
+- Loading: skeletons for lists; streaming cursor and glowing indicator for chat.
+- Empty: Grok-style hero and quick capability suggestions.
 - Errors: plain cause + action ("Rate limit reached. Retrying in 20 s." / Retry button). No blame, no apology.
 - Offline: cached threads and canvases readable; composer queues until online.
 - Quota meter warns at 80% of monthly free limits.

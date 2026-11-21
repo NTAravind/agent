@@ -33,15 +33,21 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 ## 4. Agents, runs, approvals
 | Method | Route | Description |
 |---|---|---|
-| GET/POST | `/api/agents` | List / create (`AgentCreateSchema`: name, role, instructions, model, fallbackModels, avatar, isSupervisor). Full agent responses: `avatar` object (image avatars carry a response-only signed `url`; `value` stays the raw Storage path), `toolCount`, `isSupervisor` |
+| GET/POST | `/api/agents` | List / create (`AgentCreateSchema`: name, role, instructions, model, fallbackModels, avatar, isSupervisor). Full agent responses: `avatar` object (image avatars carry a response-only signed `url`; `value` stays the raw Storage path), `toolCount`, `isSupervisor`, `isSleeping` |
 | PATCH/DELETE | `/api/agents/:id` | Update (`AgentPatchSchema`; `null` clears nullable fields) / delete |
 | POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
-| POST | `/api/agents/run` | `{ goal, threadId?, model?, agentId?, inline? }` → `{ runId }` (queues Inngest unless `inline: true`; `agentId` scopes the run to an agent, `model` is preferred for task nodes) |
+| POST | `/api/agents/:id/sleep` | Sleep: sets `agents.sleeping` and pauses the agent's active runs (plus a supervisor's unfinished inline children); new tasks are rejected until wake |
+| POST | `/api/agents/:id/wake` | Wake: clears `agents.sleeping` and emits `run/resumed` for the agent's paused runs plus the paused supervisors waiting on them |
+| POST | `/api/agents/run` | `{ goal, threadId?, model?, agentId?, inline? }` → `{ runId }` (queues Inngest unless `inline: true`; `agentId` scopes the run to an agent, `model` is preferred for task nodes; **409 when the target agent is asleep**) |
 | GET | `/api/runs` | List recent top-level runs — supervisor child runs are excluded and live under their parent |
 | GET | `/api/runs/:id` | Status + result + the full `run_events` timeline (returned whole on each poll — there is no separate events/SSE route); includes the run agent's `avatar` object, `pendingApprovals`, and for supervisor runs `children` (child runs each embedded with their agent summary) |
-| POST | `/api/runs/:id/cancel` | Cancel |
+| POST | `/api/runs/:id/pause` | Pause an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
+| POST | `/api/runs/:id/resume` | Resume a paused run → **202** `{ ok }` (queued as `run/resumed`); **409** when not paused or the agent is asleep; a run paused while parked on an undecided approval restores `awaiting_approval` instead of invoking |
+| POST | `/api/runs/:id/cancel` | Cancel an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
 | GET | `/api/approvals?status=pending` | Pending approvals |
 | POST | `/api/approvals/:id` | `{ decision: "approve"\|"deny", edits? }` → emits `approval/decided` |
+
+**Pause & sleep:** `paused` is a first-class run status. Pause flips only the status row — every node in both graphs sits behind a status boundary (`assertRunActive`, `apps/api/lib/agent/pause.ts`), so the graph stops at the next node boundary with the LangGraph checkpoint left before that node. The stop is control flow, not failure: `runAgent`/`runSupervisor` return `{status:"paused"}` (or `cancelled`) without failing the run, so the Inngest function succeeds and `onFailure` never fires. Resume emits `run/resumed`, which continues via `invoke(null)` — the boundary node re-runs and everything before it replays from the Postgres checkpointer (an empty thread falls back to a fresh input invoke). Resuming a run parked on an *undecided* approval restores `awaiting_approval` instead of invoking: `invoke(null)` would resume the interrupt with an undefined value and the tool gate would read the still-pending row as denied. Pause, cancel and sleep all cascade to unfinished supervisor children; a paused child parks its supervisor's `fan_out`, which resumes it from its own checkpoint on the parent's resume.
 
 **Supervisor runs:** runs whose agent has `is_supervisor = true` execute the dedicated supervisor graph `delegate → fan_out → verify → merge` (`apps/api/lib/agent/supervisor.ts`) instead of the single-agent graph. `delegate` emits ≥2 structured briefs on distinct specialist agents (capped at 4); `fan_out` creates full single-agent child runs (`agent_runs.parent_run_id`, idempotent on Inngest retry) and runs them in parallel with `approvalMode: "deny"` — children auto-deny sensitive tools instead of parking on approvals (v1 decision, not yet approval-gated); `verify` cross-checks their outputs with a model from a *different* provider than the workers (`pickCrossProviderModel`, keyed providers only); `merge` synthesizes the final answer with the run's model chain, applying the verifier's corrections. Fewer than 2 specialists falls back to the single-agent graph plus a `message` event. Dispatch is `executeRun` (`apps/api/lib/agent/execute.ts`), used by both POST `/api/agents/run` and the Inngest handler.
 
@@ -79,6 +85,7 @@ Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.
 |---|---|
 | `agent/run.requested` | Execute graph in durable steps; write `run_events` |
 | `approval/decided` | Resume waiting run |
+| `run/resumed` | Continue a paused run from its graph checkpoint (`invoke(null)`); idempotent when no longer paused |
 | `chat/completed` | Extract & upsert memories |
 | `vault/changed` | Parse, chunk, embed changed notes |
 | `document/uploaded` | Parse, chunk, embed document |

@@ -124,7 +124,13 @@ const canvasSpecBase = z.object({
     .array(
       z.object({
         id: z.string().min(1).max(80),
-        kind: z.enum(["web_search", "search_notes", "recall_memory"]),
+        kind: z.enum([
+          "web_search",
+          "search_notes",
+          "recall_memory",
+          "list_tasks",
+          "list_events",
+        ]),
         query: z.string().min(2).max(400),
       }),
     )

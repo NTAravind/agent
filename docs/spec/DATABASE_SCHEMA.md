@@ -91,6 +91,7 @@ create table agents (
   fallback_models text[] default '{}',        -- ordered registry ids
   config jsonb default '{}',
   is_supervisor boolean default false,
+  sleeping boolean default false,           -- asleep: active runs paused, new tasks rejected (migration 0014)
   created_at timestamptz default now()
 );
 -- Storage buckets: `attachments` (chat files) and `avatars` (agent identity
@@ -134,7 +135,7 @@ create table agent_runs (
   parent_run_id uuid references agent_runs(id),
   goal text not null,
   status text default 'queued' check (status in
-    ('queued','running','awaiting_approval','succeeded','failed','cancelled')),
+    ('queued','running','awaiting_approval','paused','succeeded','failed','cancelled')), -- 'paused' via migration 0014
   result jsonb, error text,
   model text,
   tokens_used int default 0,

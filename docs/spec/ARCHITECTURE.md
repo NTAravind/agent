@@ -64,6 +64,12 @@ Agent calls `render_canvas(spec)` → zod-validated → saved in `canvases` → 
 ### 3.8 Model routing
 Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through `getModel(id)` / `withFallback(ids)`. Registry entries declare capabilities and `private_ok`. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to `provider_usage`. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Mistral, DeepSeek, Hugging Face and Cohere are selectable per chat/agent and join the fallback chain as soon as their keys are configured. Embeddings are pinned to one model.
 
+### 3.9 Pause / resume / sleep
+1. `POST /api/runs/:id/pause` sets `agent_runs.status = 'paused'` (cascading to unfinished supervisor children). Every graph node is wrapped in an `assertRunActive` boundary, so execution stops at the next node boundary — control flow, not failure; the Inngest step returns `{status:"paused"}` normally.
+2. `POST /api/runs/:id/resume` emits `run/resumed` → `resumeExecution`: `beginResume` flips `paused → running` (re-entrant), then `invoke(null)` continues from the Postgres checkpoint (only the stopped node re-runs; an empty thread falls back to an input invoke). A run paused while parked on an undecided approval restores `awaiting_approval` instead of invoking — `invoke(null)` would resume the interrupt with an undefined value and the tool gate would read the still-pending row as denied.
+3. `POST /api/agents/:id/sleep` sets `agents.sleeping`, pauses the agent's active runs, and makes `POST /api/agents/run` return 409. `POST /api/agents/:id/wake` clears the flag and re-emits `run/resumed` for the agent's paused runs plus paused supervisors waiting on its children.
+4. `POST /api/runs/:id/cancel` uses the same boundaries and cascades the same way; a cancelled or finished run cannot be resurrected (resume is idempotent and bails).
+
 ## 4. Security model
 - Single allowed user; every API route verifies the Supabase JWT and `ALLOWED_USER_ID`. RLS on all tables as defense in depth.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.

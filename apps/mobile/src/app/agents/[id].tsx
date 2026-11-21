@@ -1,115 +1,76 @@
-import type { Agent, AgentAvatar } from '@agent/shared';
-import { DEFAULT_AGENT_AVATAR } from '@agent/shared';
-import { useCallback, useState } from 'react';
-import {
-  Alert as RNAlert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { Button, Chip, Input, Spinner, Switch, Typography } from 'heroui-native';
+import type { Agent } from '@agent/shared';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert as RNAlert, ScrollView, View } from 'react-native';
+import { BottomSheet, Button, Chip, Spinner, Typography, useThemeColor } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar as AgentAvatarBadge } from '@/components/agent-avatar';
-import { ModelPicker } from '@/components/model-picker';
-import {
-  createAgent,
-  deleteAgent,
-  fetchAgents,
-  updateAgent,
-  uploadAgentAvatar,
-} from '@/lib/agents';
-import { fetchEnabledModels, type ModelOption } from '@/lib/models';
+import { AgentQuickActions } from '@/components/agent-quick-actions';
+import { AgentDetailSection } from '@/components/agent-detail-section';
+import { SCREEN_ICONS } from '@/constants/icons';
+import { deleteAgent, fetchAgents, fetchRuns, pauseRun, resumeRun, sleepAgent, wakeAgent, type RunListItem } from '@/lib/agents';
 
-type AvatarTab = 'emoji' | 'icon' | 'upload';
+/** Local-only quick-action prefs — TODO(backend) when per-agent prefs exist. */
+const INITIAL_PREFS = {
+  notificationsEnabled: true,
+  memoryEnabled: true,
+};
 
-const EMOJI_CHOICES = [
-  '🤖', '🎯', '⚡', '📚', '🔬', '🧭', '✅', '📈',
-  '🛡️', '🎨', '🧠', '🔍', '🚀', '🛠️', '💡', '🌿',
-];
-const ICON_CHOICES = ['★', '⚙', '▲', '●', '◆', '✦', '❖', '⬢', '☾', '⌘', '✚', '◐'];
-const AVATAR_COLORS = [
-  '#7F9DFF', '#22C55E', '#F59E0B', '#EF4444',
-  '#A855F7', '#14B8A6', '#0EA5E9', '#64748B',
-];
+type LocalPrefs = typeof INITIAL_PREFS;
 
 /**
- * Agent editor: name, role, instructions, primary model + fallback order and
- * the avatar picker (Emoji / Icon / Upload tabs + color swatches). Route
- * param `new` creates; any other id edits (the list endpoint supplies the
- * agent — GET /api/agents/:id is not in the spec). Per-tool MCP permissions
- * live on the integration screen, not here.
+ * Agent overview / detail screen.
+ * - Top: centered avatar + large name
+ * - Bottom: rounded sheet panel with quick actions, agent info, tools
+ * - Danger zone: Duplicate / Delete
+ * The full editor lives at agents/[id]/edit.tsx.
  */
-export default function AgentEditorScreen() {
+export default function AgentDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === 'string' ? params.id : '';
-  const isNew = id === 'new';
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [activeRun, setActiveRun] = useState<RunListItem | null>(null);
+  const [prefs, setPrefs] = useState<LocalPrefs>(INITIAL_PREFS);
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
+  const iconColor = useThemeColor('foreground');
 
-  const [name, setName] = useState('');
-  const [role, setRole] = useState('');
-  const [instructions, setInstructions] = useState('');
-  const [modelId, setModelId] = useState<string | null>(null);
-  const [fallbacks, setFallbacks] = useState<string[]>([]);
-  const [avatar, setAvatar] = useState<AgentAvatar>(DEFAULT_AGENT_AVATAR);
-  const [avatarTab, setAvatarTab] = useState<AvatarTab>('emoji');
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [isSupervisor, setIsSupervisor] = useState(false);
-  const [toolCount, setToolCount] = useState(0);
-  const [models, setModels] = useState<ModelOption[]>([]);
+  // `/agents/new` is the create flow — it lands in the editor, not here.
+  useEffect(() => {
+    if (id === 'new') {
+      router.replace('/agents/new/edit');
+    }
+  }, [id, router]);
 
   const load = useCallback(async () => {
+    if (id === 'new') return; // redirecting to the editor
     try {
-      const [modelResponse, agents] = await Promise.all([fetchEnabledModels(), fetchAgents()]);
-      const available =
-        modelResponse?.models.filter(
-          (model) => model.available && model.capabilities.tools && model.capabilities.structuredOutput,
-        ) ?? [];
-      setModels(available);
-      const appDefault =
-        available.find((model) => model.id === modelResponse?.defaultModel)?.id ??
-        available[0]?.id ??
-        null;
-
-      if (isNew) {
-        setModelId(appDefault);
-      } else {
-        const agent: Agent | undefined = agents.find((row) => row.id === id);
-        if (!agent) {
-          setError('This agent no longer exists.');
-          return;
-        }
-        setName(agent.name);
-        setRole(agent.role ?? '');
-        setInstructions(agent.instructions ?? '');
-        setAvatar(agent.avatar);
-        setIsSupervisor(agent.isSupervisor);
-        setToolCount(agent.toolCount);
-        setModelId(
-          agent.model && available.some((model) => model.id === agent.model)
-            ? agent.model
-            : appDefault,
-        );
-        // Keep only fallbacks the current catalog still knows, in saved order.
-        setFallbacks(agent.fallbackModels.filter((saved) => available.some((m) => m.id === saved)));
+      const [agents, runs] = await Promise.all([fetchAgents(), fetchRuns()]);
+      const found = agents.find((a) => a.id === id) ?? null;
+      setAgent(found);
+      if (!found) {
+        setError('Agent not found');
+        return;
       }
+      // Most recent non-finished run owned by this agent (agent_id is joined
+      // by GET /api/runs — no goal-name heuristic needed).
+      const agentRuns = runs.filter(
+        (r) => r.agent_id === found.id && !['succeeded', 'failed', 'cancelled'].includes(r.status),
+      );
+      setActiveRun(agentRuns[0] ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [id, isNew]);
+  }, [id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -117,79 +78,55 @@ export default function AgentEditorScreen() {
     }, [load]),
   );
 
-  const handleSelectPrimary = useCallback(
-    (next: string) => {
-      setModelId(next);
-      // The primary can't also be a fallback (the API rejects it).
-      setFallbacks((current) => current.filter((entry) => entry !== next));
-    },
-    [],
-  );
+  /** Pauses/resumes the agent's active task (server-backed, see lib/agents). */
+  const handlePauseToggle = useCallback(() => {
+    if (!activeRun) return;
+    const resuming = activeRun.status === 'paused';
+    void (async () => {
+      try {
+        if (resuming) await resumeRun(activeRun.id);
+        else await pauseRun(activeRun.id);
+        await load();
+      } catch (err) {
+        RNAlert.alert(
+          resuming ? 'Could not resume' : 'Could not pause',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    })();
+  }, [activeRun, load]);
 
-  const toggleFallback = useCallback((entry: string) => {
-    setFallbacks((current) =>
-      current.includes(entry)
-        ? current.filter((value) => value !== entry)
-        : [...current, entry],
+  /** Sleeps/wakes the agent: pauses all of its tasks + blocks new ones. */
+  const handleSleepToggle = useCallback(() => {
+    if (!agent) return;
+    const sleeping = agent.isSleeping;
+    void (async () => {
+      try {
+        if (sleeping) await wakeAgent(agent.id);
+        else await sleepAgent(agent.id);
+        await load();
+      } catch (err) {
+        RNAlert.alert(
+          sleeping ? 'Could not wake' : 'Could not sleep',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    })();
+  }, [agent, load]);
+
+  const handleQuickAction = useCallback((key: keyof LocalPrefs) => {
+    // TODO(backend): notifications + memory are still optimistic local prefs
+    // (no per-agent preference endpoints yet).
+    setPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const handleDuplicate = useCallback(() => {
+    // TODO(backend): POST /api/agents/:id/duplicate
+    RNAlert.alert(
+      'Duplicate Agent',
+      'This will create a copy of this agent. (TODO(backend): API not yet implemented)',
     );
   }, []);
-
-  const pickGlyph = useCallback((type: 'emoji' | 'icon', value: string) => {
-    setAvatar((current) => ({ type, value, color: current.color }));
-  }, []);
-
-  const pickColor = useCallback((color: string) => {
-    setAvatar((current) => ({ ...current, color }));
-  }, []);
-
-  /** Uploads a photo now (saves the image avatar immediately) via signed URL. */
-  const handleUploadAvatar = useCallback(async () => {
-    if (isNew) return;
-    setUploadingAvatar(true);
-    try {
-      const path = await uploadAgentAvatar(id);
-      if (!path) return; // picker canceled
-      const saved = await updateAgent(id, {
-        avatar: {
-          type: 'image',
-          value: path,
-          ...(avatar.color ? { color: avatar.color } : {}),
-        },
-      });
-      setAvatar(saved.avatar);
-    } catch (err) {
-      RNAlert.alert('Could not upload avatar', err instanceof Error ? err.message : String(err));
-    } finally {
-      setUploadingAvatar(false);
-    }
-  }, [avatar.color, id, isNew]);
-
-  const handleSave = useCallback(async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      RNAlert.alert('Name required', 'Give the agent a name.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload = {
-        name: trimmed,
-        role: role.trim() || null,
-        instructions: instructions.trim() || null,
-        model: modelId,
-        fallbackModels: fallbacks,
-        avatar,
-        isSupervisor,
-      };
-      if (isNew) await createAgent(payload);
-      else await updateAgent(id, payload);
-      router.back();
-    } catch (err) {
-      RNAlert.alert('Could not save', err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }, [avatar, fallbacks, instructions, isSupervisor, isNew, id, modelId, name, role, router]);
 
   const handleDelete = useCallback(() => {
     RNAlert.alert(
@@ -215,250 +152,307 @@ export default function AgentEditorScreen() {
     );
   }, [id, router]);
 
+  /** "⋯" fallback menu: edit / duplicate / delete (moved from the list's long-press). */
+  const handleMoreMenu = useCallback(() => {
+    RNAlert.alert(agent?.name ?? 'Agent', 'Manage this agent', [
+      {
+        text: 'Edit',
+        onPress: () => router.push({ pathname: '/agents/[id]/edit', params: { id } }),
+      },
+      { text: 'Duplicate', onPress: handleDuplicate },
+      { text: 'Delete', style: 'destructive', onPress: handleDelete },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [agent?.name, handleDelete, handleDuplicate, id, router]);
+
+  // `/agents/new` is mid-redirect to the editor.
+  if (id === 'new') return null;
+
+  if (loading) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center gap-3">
+        <Spinner />
+        <Typography type="body" color="muted">Loading agent...</Typography>
+      </View>
+    );
+  }
+
+  if (error || !agent) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center px-6">
+        <Typography type="h3" weight="semibold" className="text-center mb-2">
+          {error ?? 'Agent not found'}
+        </Typography>
+        <Button variant="secondary" onPress={() => router.back()} className="mt-4">
+          <Button.Label>Back</Button.Label>
+        </Button>
+      </View>
+    );
+  }
+
+  const modelLabel = agent.model ?? 'App default';
+  const toolsSummary = agent.toolCount > 0
+    ? `${agent.toolCount} MCP tool${agent.toolCount === 1 ? '' : 's'} enabled`
+    : 'No MCP tools enabled';
+
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-background"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View className="flex-1 bg-background">
+      {/* Header */}
       <AppHeader
         left={
-          <Button size="md" variant="ghost" onPress={() => router.back()}>
-            <Button.Label>Cancel</Button.Label>
+          <Button
+            size="md"
+            variant="ghost"
+            isIconOnly
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            accessibilityHint="Returns to the previous screen"
+          >
+            <SCREEN_ICONS.back size={22} color={iconColor} />
           </Button>
         }
-        center={<Typography type="h4">{isNew ? 'New agent' : 'Edit agent'}</Typography>}
+        center={
+          <Typography type="body" weight="semibold">
+            {agent.name}
+          </Typography>
+        }
+        right={
+          <Button
+            size="md"
+            variant="ghost"
+            isIconOnly
+            onPress={handleMoreMenu}
+            accessibilityRole="button"
+            accessibilityLabel="More actions"
+            accessibilityHint="Opens edit, duplicate and delete options"
+          >
+            <SCREEN_ICONS.more size={22} color={iconColor} />
+          </Button>
+        }
       />
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <Spinner />
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        className="flex-1"
+      >
+        {/* Top area: centered avatar + name with breathing room */}
+        <View className="items-center justify-center px-6 py-10 gap-3">
+          <AgentAvatarBadge avatar={agent.avatar} name={agent.name} size={96} />
+          <Typography type="h2" weight="bold" className="text-center">
+            {agent.name}
+          </Typography>
+          {agent.isSleeping && (
+            <Chip variant="soft" size="sm" color="default">
+              <Chip.Label>💤 Sleeping</Chip.Label>
+            </Chip>
+          )}
+          {activeRun && (
+            <Chip
+              variant="soft"
+              size="sm"
+              color={activeRun.status === 'paused' ? 'default' : 'warning'}
+            >
+              <Chip.Label>
+                {activeRun.status === 'paused'
+                  ? `Paused: ${activeRun.goal}`
+                  : `Active: ${activeRun.goal}`}
+              </Chip.Label>
+            </Chip>
+          )}
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 16 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {error ? (
-            <Typography type="body-sm" className="text-danger">
-              {error}
-            </Typography>
-          ) : null}
 
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Avatar
-            </Typography>
-            <View className="items-center gap-2">
-              <AgentAvatarBadge avatar={avatar} size={56} />
-              {!isNew && toolCount > 0 ? (
-                <Typography type="body-sm" color="muted">
-                  {toolCount} MCP tool{toolCount === 1 ? '' : 's'} enabled
+        {/* Bottom sheet panel */}
+        <View className="bg-surface rounded-t-2xl shadow-lg flex-1 pt-6 px-4 gap-6">
+          {/* Quick actions row */}
+          <View className="w-full">
+            <AgentQuickActions
+              agentName={agent.name}
+              isPaused={activeRun?.status === 'paused'}
+              pauseDisabled={!activeRun}
+              onPauseToggle={handlePauseToggle}
+              notificationsEnabled={prefs.notificationsEnabled}
+              onNotificationsToggle={() => handleQuickAction('notificationsEnabled')}
+              isSleeping={agent.isSleeping}
+              onSleepToggle={handleSleepToggle}
+              memoryEnabled={prefs.memoryEnabled}
+              onMemoryToggle={() => handleQuickAction('memoryEnabled')}
+            />
+          </View>
+
+          {/* Agent info section */}
+          <AgentDetailSection
+            label="Agent info"
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => router.push({ pathname: '/agents/[id]/edit', params: { id } })}
+                accessibilityLabel="Edit agent info"
+              >
+                <Button.Label>Edit</Button.Label>
+              </Button>
+            }
+          >
+            <View className="gap-2">
+              <View className="flex-row justify-between">
+                <Typography type="body" color="muted">Name</Typography>
+                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
+                  {agent.name}
                 </Typography>
+              </View>
+              <View className="flex-row justify-between">
+                <Typography type="body" color="muted">Role</Typography>
+                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
+                  {agent.role ?? '—'}
+                </Typography>
+              </View>
+              <View className="flex-row justify-between">
+                <Typography type="body" color="muted">Model</Typography>
+                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
+                  {modelLabel}
+                </Typography>
+              </View>
+              <View className="flex-row justify-between">
+                <Typography type="body" color="muted">Fallback</Typography>
+                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
+                  {agent.fallbackModels.length > 0 ? agent.fallbackModels.join(', ') : '—'}
+                </Typography>
+              </View>
+              <View className="flex-row justify-between">
+                <Typography type="body" color="muted">Supervisor</Typography>
+                <Typography type="body" weight="semibold">
+                  {agent.isSupervisor ? 'Yes' : 'No'}
+                </Typography>
+              </View>
+              {agent.instructions ? (
+                <View className="gap-0.5 pt-1">
+                  <Typography type="body" color="muted">Instructions</Typography>
+                  <Typography type="body-sm" numberOfLines={2}>
+                    {agent.instructions}
+                  </Typography>
+                </View>
               ) : null}
             </View>
+          </AgentDetailSection>
 
-            {/* Tabs: Emoji · Icon · Upload */}
-            <View className="flex-row gap-2">
-              {(['emoji', 'icon', 'upload'] as const).map((tab) => (
-                <Chip
-                  key={tab}
-                  variant={avatarTab === tab ? 'primary' : 'soft'}
-                  size="sm"
-                  disabled={tab === 'upload' && isNew}
-                  onPress={() => setAvatarTab(tab)}
-                >
-                  <Chip.Label>
-                    {tab === 'emoji' ? 'Emoji' : tab === 'icon' ? 'Icon' : 'Upload'}
-                  </Chip.Label>
-                </Chip>
-              ))}
-            </View>
-
-            {avatarTab === 'emoji' || avatarTab === 'icon' ? (
-              <View className="flex-row flex-wrap gap-2">
-                {(avatarTab === 'emoji' ? EMOJI_CHOICES : ICON_CHOICES).map((glyph) => {
-                  const selected = avatar.type === avatarTab && avatar.value === glyph;
-                  return (
-                    <Pressable
-                      key={glyph}
-                      onPress={() => pickGlyph(avatarTab, glyph)}
-                      accessibilityLabel={`Avatar glyph ${glyph}`}
-                      accessibilityState={{ selected }}
-                      className="h-10 w-10 items-center justify-center rounded-full border active:opacity-60"
-                      style={
-                        selected
-                          ? { backgroundColor: 'rgba(32,138,239,0.15)', borderColor: '#208AEF' }
-                          : { borderColor: 'transparent' }
-                      }
-                    >
-                      <Text style={{ fontSize: 20, fontWeight: avatarTab === 'icon' ? '700' : '400' }}>
-                        {glyph}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : (
-              <View className="gap-2">
-                {isNew ? (
-                  <Typography type="body-sm" color="muted">
-                    Create the agent first, then upload a photo.
-                  </Typography>
-                ) : (
-                  <>
-                    <Button
-                      variant="secondary"
-                      isDisabled={uploadingAvatar}
-                      onPress={() => void handleUploadAvatar()}
-                    >
-                      {uploadingAvatar ? (
-                        <Spinner size="sm" />
-                      ) : (
-                        <Button.Label>
-                          {avatar.type === 'image' ? 'Replace photo' : 'Choose a photo'}
-                        </Button.Label>
-                      )}
-                    </Button>
-                    <Typography type="body-sm" color="muted">
-                      Stored privately in your bucket; the app renders a signed link.
-                    </Typography>
-                  </>
-                )}
-              </View>
-            )}
-
-            {/* Color swatches */}
-            <View className="flex-row flex-wrap items-center gap-2">
-              <Typography type="body-xs" color="muted">
-                Color
-              </Typography>
-              {AVATAR_COLORS.map((color) => (
-                <Pressable
-                  key={color}
-                  onPress={() => pickColor(color)}
-                  accessibilityLabel={`Avatar color ${color}`}
-                  accessibilityState={{ selected: avatar.color === color }}
-                  className="h-7 w-7 rounded-full active:opacity-60"
-                  style={{
-                    backgroundColor: color,
-                    borderWidth: avatar.color === color ? 2 : 0,
-                    borderColor: '#0F172A',
-                  }}
-                />
-              ))}
-            </View>
-          </View>
-
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Name
-            </Typography>
-            <Input
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g. Researcher"
-              maxLength={60}
-            />
-          </View>
-
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Role
-            </Typography>
-            <Input
-              value={role}
-              onChangeText={setRole}
-              placeholder="e.g. Finds and cites sources"
-              maxLength={120}
-            />
-          </View>
-
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Instructions
-            </Typography>
-            <Input
-              value={instructions}
-              onChangeText={setInstructions}
-              placeholder="How this agent should work, what to avoid, how to answer…"
-              multiline
-            />
-          </View>
-
-          {/* Supervisor toggle (Phase 7): delegation target for task runs. */}
-          <View className="flex-row items-center justify-between rounded-xl border border-border px-3 py-2">
-            <View className="flex-1 gap-1 pr-3">
-              <Typography type="body-sm" weight="semibold">
-                Supervisor
-              </Typography>
-              <Typography type="body-xs" color="muted">
-                Delegates tasks to your specialists in parallel, then cross-checks and merges
-                their results. Needs at least 2 non-supervisor agents.
-              </Typography>
-            </View>
-            <Switch
-              isSelected={isSupervisor}
-              onSelectedChange={setIsSupervisor}
-              accessibilityLabel="Make this agent a supervisor"
-            />
-          </View>
-
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Primary model
-            </Typography>
-            <ModelPicker models={models} selectedId={modelId} onSelect={handleSelectPrimary} />
-          </View>
-
-          <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Fallback order
-            </Typography>
-            <Typography type="body-sm" color="muted">
-              Tried when the primary is rate-limited or down. Tap to add or remove; the
-              numbered order is the priority.
-            </Typography>
-            <View className="flex-row flex-wrap gap-2">
-              {models
-                .filter((model) => model.id !== modelId)
-                .map((model) => {
-                  const index = fallbacks.indexOf(model.id);
-                  const selected = index >= 0;
-                  return (
-                    <Chip
-                      key={model.id}
-                      variant={selected ? 'primary' : 'soft'}
-                      size="sm"
-                      onPress={() => toggleFallback(model.id)}
-                    >
-                      <Chip.Label>
-                        {selected ? `${index + 1}. ` : ''}
-                        {model.label}
-                      </Chip.Label>
-                    </Chip>
-                  );
-                })}
-            </View>
-          </View>
-
-          <Button
-            onPress={() => void handleSave()}
-            isDisabled={saving || name.trim().length === 0}
+          {/* Tools section */}
+          <AgentDetailSection
+            label="Tools"
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => setToolsSheetOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Edit tools"
+                accessibilityHint="Opens a sheet summarising this agent's enabled tools"
+              >
+                <Button.Label>Edit tools</Button.Label>
+              </Button>
+            }
+            secondaryAction={
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => router.push('/mcp')}
+                accessibilityRole="button"
+                accessibilityLabel="Add integrations"
+                accessibilityHint="Opens the MCP Store to browse integrations"
+              >
+                <Button.Label>Add integrations</Button.Label>
+              </Button>
+            }
           >
-            {saving ? (
-              <Spinner size="sm" />
-            ) : (
-              <Button.Label>{isNew ? 'Create agent' : 'Save changes'}</Button.Label>
-            )}
-          </Button>
+            <View className="gap-2">
+              <Typography type="body" color="muted">{toolsSummary}</Typography>
+              {agent.toolCount > 0 && (
+                <View className="flex-row flex-wrap gap-2">
+                  <Chip variant="soft" size="sm">
+                    <Chip.Label>MCP Tools Enabled</Chip.Label>
+                  </Chip>
+                </View>
+              )}
+            </View>
+          </AgentDetailSection>
 
-          {!isNew ? (
-            <Button variant="danger" onPress={handleDelete}>
-              <Button.Label>Delete agent</Button.Label>
-            </Button>
-          ) : null}
-        </ScrollView>
-      )}
-    </KeyboardAvoidingView>
+          {/* Danger zone */}
+          <View className="gap-2 w-full">
+            <Typography type="body-xs" color="muted" weight="semibold" className="text-center">
+              DANGER ZONE
+            </Typography>
+            <View className="flex-row gap-3">
+              <Button
+                variant="secondary"
+                onPress={handleDuplicate}
+                className="flex-1"
+                accessibilityLabel="Duplicate this agent"
+              >
+                <Button.Label>Duplicate</Button.Label>
+              </Button>
+              <Button
+                variant="danger"
+                onPress={handleDelete}
+                className="flex-1"
+                accessibilityLabel="Delete this agent"
+              >
+                <Button.Label>Delete</Button.Label>
+              </Button>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Tools sheet: summary + link to the integration screens.
+          Per-agent tool toggles are not in the API yet — the per-tool
+          permission UI lives on each MCP integration screen. */}
+      <BottomSheet
+        isOpen={toolsSheetOpen}
+        onOpenChange={(open: boolean) => setToolsSheetOpen(open)}
+      >
+        <BottomSheet.Portal>
+          <BottomSheet.Overlay />
+          <BottomSheet.Content enableDynamicSizing={false} snapPoints={['45%']}>
+            <BottomSheet.Close accessibilityLabel="Close tools sheet" />
+            <BottomSheet.Title>Tools</BottomSheet.Title>
+            <BottomSheet.Description>
+              {toolsSummary}
+            </BottomSheet.Description>
+
+            <View className="gap-4 px-4 pb-6">
+              <Typography type="body-sm" color="muted">
+                Tool permissions are managed per integration. Enable, disable or require
+                approval for individual tools on each integration&apos;s screen.
+              </Typography>
+
+              {agent.toolCount > 0 ? (
+                <View className="flex-row flex-wrap gap-2">
+                  <Chip variant="soft" size="sm">
+                    <Chip.Label>{agent.toolCount} MCP tool{agent.toolCount === 1 ? '' : 's'} enabled</Chip.Label>
+                  </Chip>
+                </View>
+              ) : (
+                <Typography type="body-sm" color="muted">
+                  No tools enabled yet — connect an integration to give this agent tools.
+                </Typography>
+              )}
+
+              <Button
+                variant="primary"
+                onPress={() => {
+                  setToolsSheetOpen(false);
+                  router.push('/mcp');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Manage integrations"
+                accessibilityHint="Opens the MCP Store to browse and connect integrations"
+              >
+                <Button.Label>Manage integrations</Button.Label>
+              </Button>
+            </View>
+          </BottomSheet.Content>
+        </BottomSheet.Portal>
+      </BottomSheet>
+    </View>
   );
 }

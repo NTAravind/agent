@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Spinner, Typography } from 'heroui-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { exchangeCode } from '@/lib/auth';
@@ -32,15 +33,19 @@ export default function AuthCallbackScreen() {
   }, [code, router]);
 
   return (
-    <View style={styles.container}>
-      {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator />}
-      <Text style={styles.subtitle}>Signing you in…</Text>
+    <View className="flex-1 items-center justify-center bg-[#0B0C0E] px-6 gap-3">
+      {error ? (
+        <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 max-w-[320px]">
+          <Typography type="body-sm" className="text-center text-red-400">
+            {error}
+          </Typography>
+        </View>
+      ) : (
+        <Spinner size="lg" color="default" />
+      )}
+      <Typography type="body-sm" className="text-white/60">
+        Signing you in…
+      </Typography>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  subtitle: { opacity: 0.7 },
-  error: { color: '#c0392b', textAlign: 'center', paddingHorizontal: 24 },
-});

@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Chip, Input, ListGroup, Spinner, Typography } from 'heroui-native';
-import { Alert as RNAlert, RefreshControl, ScrollView, View } from 'react-native';
+import { Spinner, Typography } from 'heroui-native';
+import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ArrowLeft,
+  Blocks,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Cloud,
+  Globe,
+  Search,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
 import {
@@ -15,19 +27,6 @@ import {
   type ComposioCatalogItem,
 } from '@/lib/mcp';
 
-/**
- * Remote MCP marketplace (Phase 6). Two sources side by side:
- *  - "Built-in": the admin-seeded catalog of vendor-hosted MCP listings;
- *  - "Composio": Composio's live toolkit catalog (1,700+ apps). Rows are
- *    browsed from the Composio API and materialize into a real listing on
- *    first connect, after which the normal detail/attach flow applies.
- *
- * Connection states drive the row action: none → Connect, `pending` →
- * Finish connecting (reopens the hosted consent link), `connected` → open
- * the detail page, `expired`/`error` → Reconnect. After a link is opened we
- * poll verify every 2s (max 60s) so the row flips to connected on its own.
- */
-
 const CATEGORIES = ['all', 'search', 'data', 'dev', 'productivity', 'payments', 'observability', 'other'] as const;
 const TABS = ['built-in', 'composio'] as const;
 type Tab = (typeof TABS)[number];
@@ -35,23 +34,15 @@ type Tab = (typeof TABS)[number];
 const AUTH_LABEL: Record<string, string> = {
   none: 'No sign-in',
   api_key: 'API key',
-  oauth2: 'Sign in',
-  pat: 'Token',
-  provider_managed: 'Managed',
+  oauth2: 'OAuth 2.0',
+  pat: 'Personal Token',
+  provider_managed: 'Managed auth',
 };
 
-/** Row action for a connection that isn't (or is no longer) connected. */
 const ACTION_LABEL: Record<string, string> = {
-  pending: 'Finish connecting ›',
-  expired: 'Reconnect ›',
-  error: 'Reconnect ›',
-};
-
-const STATUS_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
-  connected: 'success',
-  pending: 'warning',
-  expired: 'danger',
-  error: 'danger',
+  pending: 'Finish connecting',
+  expired: 'Reconnect',
+  error: 'Reconnect',
 };
 
 const POLL_INTERVAL_MS = 2_000;
@@ -112,7 +103,6 @@ export default function MarketplaceScreen() {
     }, [load]),
   );
 
-  // Polling must not touch state after the screen goes away.
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -121,11 +111,6 @@ export default function MarketplaceScreen() {
     };
   }, []);
 
-  /**
-   * After the hosted link is opened: re-check every 2s (up to 60s) with
-   * `issueLink: false` (side-effect free) until consent lands, then reload
-   * so the row shows as connected.
-   */
   const pollVerify = useCallback(
     async (connectionId: string) => {
       for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
@@ -156,14 +141,6 @@ export default function MarketplaceScreen() {
     setLoading(true);
   };
 
-  /**
-   * Composio row tap:
-   *  - connected → open the detail page;
-   *  - pending/expired/error → verify to get the hosted link back (a fresh
-   *    one when the old consent is dead) and open it;
-   *  - never connected → connect (materializes the listing) and open the
-   *    link when sign-in is needed.
-   */
   const onPressToolkit = async (item: ComposioCatalogItem) => {
     if (item.connected && item.serverId) {
       router.push(`/mcp/${item.serverId}`);
@@ -183,8 +160,6 @@ export default function MarketplaceScreen() {
         const connectionId = item.connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
         if (connectionId) void pollVerify(connectionId);
       } else {
-        // No link needed: either it connected (consent was already ACTIVE)
-        // or there is a message to surface after the reload.
         await load();
         if (result.status === 'connected') {
           const serverId = item.serverId ?? ('serverId' in result ? result.serverId : undefined);
@@ -207,23 +182,31 @@ export default function MarketplaceScreen() {
   const showSpinner = loading && emptyRows.length === 0 && !error;
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-[#0B0C0E]">
       <AppHeader
         left={
-          <Button size="md" variant="ghost" onPress={() => router.back()}>
-            <Button.Label>Close</Button.Label>
-          </Button>
+          <Pressable
+            onPress={() => router.back()}
+            className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={20} color="#fff" />
+          </Pressable>
         }
-        center={<Typography type="h4">Integrations</Typography>}
+        center={
+          <Typography type="h4" className="font-semibold text-white tracking-tight">
+            Integrations
+          </Typography>
+        }
       />
 
       {showSpinner ? (
         <View className="flex-1 items-center justify-center">
-          <Spinner />
+          <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 12 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 14 }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
@@ -232,208 +215,283 @@ export default function MarketplaceScreen() {
                 setRefreshing(true);
                 void load();
               }}
-              tintColor="#208AEF"
+              tintColor="#fff"
             />
           }
         >
-          <View className="flex-row gap-2">
-            {TABS.map((item) => (
-              <Chip
-                key={item}
-                variant={tab === item ? 'primary' : 'soft'}
-                size="md"
-                onPress={() => switchTab(item)}
-              >
-                <Chip.Label>{item === 'built-in' ? 'Built-in' : 'Composio'}</Chip.Label>
-              </Chip>
-            ))}
-          </View>
-
-          <Input
-            value={query}
-            onChangeText={setQuery}
-            placeholder={tab === 'built-in' ? 'Search integrations…' : 'Search Composio toolkits…'}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-
-          <View className="flex-row flex-wrap gap-2">
-            {(tab === 'built-in' ? CATEGORIES : ['all', ...composioCategories]).map((item) => (
-              <Chip
-                key={item}
-                variant={category === item ? 'primary' : 'soft'}
-                size="sm"
-                onPress={() => setCategory(item)}
-              >
-                <Chip.Label>{item}</Chip.Label>
-              </Chip>
-            ))}
-            <Chip
-              variant={showConnected ? 'primary' : 'soft'}
-              size="sm"
-              color={showConnected ? 'success' : 'default'}
-              onPress={() => setShowConnected((current) => !current)}
+          {/* Segmented Tab Switcher */}
+          <View className="flex-row rounded-full border border-white/10 bg-white/5 p-1">
+            <Pressable
+              onPress={() => switchTab('built-in')}
+              className={`flex-1 items-center justify-center rounded-full py-2 ${
+                tab === 'built-in' ? 'bg-white shadow-sm' : ''
+              }`}
             >
-              <Chip.Label>connected</Chip.Label>
-            </Chip>
+              <Typography
+                type="body-sm"
+                className={`font-semibold ${tab === 'built-in' ? 'text-black' : 'text-white/60'}`}
+              >
+                Built-in
+              </Typography>
+            </Pressable>
+            <Pressable
+              onPress={() => switchTab('composio')}
+              className={`flex-1 items-center justify-center rounded-full py-2 ${
+                tab === 'composio' ? 'bg-white shadow-sm' : ''
+              }`}
+            >
+              <Typography
+                type="body-sm"
+                className={`font-semibold ${tab === 'composio' ? 'text-black' : 'text-white/60'}`}
+              >
+                Composio {composioTotal > 0 ? `(${composioTotal})` : ''}
+              </Typography>
+            </Pressable>
           </View>
 
-          {tab === 'composio' && !composioConfigured ? (
-            <Alert status="warning">
-              <Alert.Content>
-                <Alert.Title>Composio is not configured</Alert.Title>
-                <Alert.Description>
-                  Set COMPOSIO_API_KEY on the API server to browse its catalog.
-                </Alert.Description>
-              </Alert.Content>
-            </Alert>
-          ) : null}
+          {/* Search Input */}
+          <View className="flex-row items-center rounded-full border border-white/10 bg-[#16171B] px-4 py-2.5">
+            <Search size={16} color="rgba(255,255,255,0.4)" />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={tab === 'built-in' ? 'Search integrations…' : 'Search 1,700+ Composio apps…'}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              className="ml-2.5 flex-1 text-sm text-white"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
 
-          {tab === 'composio' && composioConfigured && composioTotal > toolkits.length ? (
-            <Typography type="body-xs" color="muted">
-              Showing {toolkits.length} of {composioTotal} toolkits — refine your search.
-            </Typography>
-          ) : null}
-
-          {error ? (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Title>Could not load integrations</Alert.Title>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          ) : null}
-
-          {emptyRows.length === 0 && !error ? (
-            <View className="mt-16 items-center gap-2">
-              <Typography type="body" color="muted">
-                No integrations match.
+          {/* Category Chips Scroll */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {(tab === 'built-in' ? CATEGORIES : ['all', ...composioCategories]).map((item) => {
+              const active = category === item;
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => setCategory(item)}
+                  className={`rounded-full px-3.5 py-1.5 border ${
+                    active
+                      ? 'border-white bg-white'
+                      : 'border-white/10 bg-white/5 active:bg-white/10'
+                  }`}
+                >
+                  <Typography
+                    type="body-xs"
+                    className={`font-medium capitalize ${active ? 'text-black font-semibold' : 'text-white/70'}`}
+                  >
+                    {item}
+                  </Typography>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => setShowConnected((current) => !current)}
+              className={`flex-row items-center gap-1.5 rounded-full px-3.5 py-1.5 border ${
+                showConnected
+                  ? 'border-emerald-500/40 bg-emerald-500/20'
+                  : 'border-white/10 bg-white/5 active:bg-white/10'
+              }`}
+            >
+              <View
+                className={`h-2 w-2 rounded-full ${showConnected ? 'bg-emerald-400' : 'bg-white/30'}`}
+              />
+              <Typography
+                type="body-xs"
+                className={`font-medium ${showConnected ? 'text-emerald-300 font-semibold' : 'text-white/70'}`}
+              >
+                Connected
               </Typography>
-              <Typography type="body-sm" color="muted" className="text-center">
-                {tab === 'built-in'
-                  ? 'The catalog is seeded and verified server-side. Try another filter.'
-                  : 'Try another search, or clear the filters.'}
+            </Pressable>
+          </ScrollView>
+
+          {/* Warning Notice if Composio Not Configured */}
+          {tab === 'composio' && !composioConfigured ? (
+            <View className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+              <Typography type="body-sm" className="font-semibold text-amber-300">
+                Composio is not configured
+              </Typography>
+              <Typography type="body-xs" className="mt-1 text-amber-300/80">
+                Set COMPOSIO_API_KEY in the API server environment to unlock 1,700+ app toolkits.
               </Typography>
             </View>
           ) : null}
 
-          {tab === 'built-in' && servers.length > 0 ? (
-            <ListGroup className="rounded-2xl">
-              {servers.map((server) => {
-                const suffix = server.connected
-                  ? '›'
-                  : (ACTION_LABEL[server.connectionStatus ?? ''] ?? '›');
-                return (
-                  <ListGroup.Item
-                    key={server.id}
-                    onPress={() => router.push(`/mcp/${server.id}`)}
-                  >
-                    <ListGroup.ItemContent>
-                      <View className="flex-row items-center gap-2">
-                        <ListGroup.ItemTitle>{server.name}</ListGroup.ItemTitle>
-                        {server.connected ? (
-                          <Chip variant="soft" size="sm" color="success">
-                            <Chip.Label>connected</Chip.Label>
-                          </Chip>
-                        ) : server.connectionStatus ? (
-                          <Chip
-                            variant="soft"
-                            size="sm"
-                            color={STATUS_COLOR[server.connectionStatus] ?? 'default'}
-                          >
-                            <Chip.Label>{server.connectionStatus}</Chip.Label>
-                          </Chip>
-                        ) : null}
-                        {server.isVerified ? (
-                          <Chip variant="soft" size="sm" color="accent">
-                            <Chip.Label>verified</Chip.Label>
-                          </Chip>
-                        ) : null}
-                      </View>
-                      <ListGroup.ItemDescription numberOfLines={2}>
-                        {server.description || 'Vendor-hosted remote MCP server.'}
-                      </ListGroup.ItemDescription>
-                      <View className="mt-1 flex-row gap-2">
-                        <Typography type="body-xs" color="muted">
-                          {AUTH_LABEL[server.authType] ?? server.authType}
-                        </Typography>
-                        {server.isFreeTier ? (
-                          <Typography type="body-xs" color="muted">
-                            · free tier
-                          </Typography>
-                        ) : null}
-                      </View>
-                    </ListGroup.ItemContent>
-                    <ListGroup.ItemSuffix>
-                      <Typography
-                        type="body-sm"
-                        color={server.connected ? 'muted' : 'default'}
-                      >
-                        {suffix}
-                      </Typography>
-                    </ListGroup.ItemSuffix>
-                  </ListGroup.Item>
-                );
-              })}
-            </ListGroup>
+          {/* Total Indicator */}
+          {tab === 'composio' && composioConfigured && composioTotal > toolkits.length ? (
+            <Typography type="body-xs" className="px-1 text-white/40">
+              Showing {toolkits.length} of {composioTotal} toolkits — refine search to filter.
+            </Typography>
           ) : null}
 
+          {/* Error Notice */}
+          {error ? (
+            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+              <Typography type="body-sm" className="text-red-400">
+                {error}
+              </Typography>
+            </View>
+          ) : null}
+
+          {/* Empty State */}
+          {emptyRows.length === 0 && !error ? (
+            <View className="mt-14 items-center justify-center px-6">
+              <View className="h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
+                <Blocks size={28} color="rgba(255,255,255,0.4)" />
+              </View>
+              <Typography type="h4" className="text-center font-semibold text-white mb-1.5">
+                No integrations found
+              </Typography>
+              <Typography type="body-sm" className="text-center text-white/50 leading-relaxed max-w-[280px]">
+                {tab === 'built-in'
+                  ? 'No built-in services match your filter. Try clearing the search or category.'
+                  : 'Try typing a different app name like GitHub, Slack, Notion, or Gmail.'}
+              </Typography>
+            </View>
+          ) : null}
+
+          {/* Built-in Servers List */}
+          {tab === 'built-in' && servers.length > 0 ? (
+            <View className="gap-2.5">
+              {servers.map((server) => {
+                const isConn = server.connected;
+                return (
+                  <Pressable
+                    key={server.id}
+                    onPress={() => router.push(`/mcp/${server.id}`)}
+                    className="rounded-2xl border border-white/5 bg-[#131418] p-4 active:scale-[0.99] transition-transform"
+                  >
+                    <View className="flex-row items-center gap-3">
+                      <View className="h-11 w-11 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
+                        <Cloud size={20} color="#22D3EE" />
+                      </View>
+                      <View className="flex-1">
+                        <View className="flex-row items-center gap-2">
+                          <Typography type="h5" className="font-semibold text-white" numberOfLines={1}>
+                            {server.name}
+                          </Typography>
+                          {server.isVerified ? (
+                            <ShieldCheck size={15} color="#38BDF8" />
+                          ) : null}
+                        </View>
+                        <Typography type="body-xs" className="mt-0.5 text-white/50" numberOfLines={2}>
+                          {server.description || 'Vendor-hosted remote MCP server.'}
+                        </Typography>
+                        <View className="mt-2 flex-row items-center gap-2">
+                          <View className="rounded-md bg-white/10 px-1.5 py-0.5">
+                            <Typography type="body-xs" className="text-white/60">
+                              {AUTH_LABEL[server.authType] ?? server.authType}
+                            </Typography>
+                          </View>
+                          {server.isFreeTier ? (
+                            <View className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 border border-emerald-500/20">
+                              <Typography type="body-xs" className="text-emerald-400">
+                                free tier
+                              </Typography>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                      <View className="items-end gap-1">
+                        {isConn ? (
+                          <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1">
+                            <CheckCircle2 size={12} color="#34D399" />
+                            <Typography type="body-xs" className="font-medium text-emerald-400">
+                              Active
+                            </Typography>
+                          </View>
+                        ) : server.connectionStatus ? (
+                          <View className="flex-row items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1">
+                            <Clock size={12} color="#FBBF24" />
+                            <Typography type="body-xs" className="font-medium text-amber-400">
+                              {server.connectionStatus}
+                            </Typography>
+                          </View>
+                        ) : (
+                          <View className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                            <Typography type="body-xs" className="text-white/60">
+                              Connect
+                            </Typography>
+                            <ChevronRight size={12} color="rgba(255,255,255,0.4)" />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {/* Composio Toolkits List */}
           {tab === 'composio' && toolkits.length > 0 ? (
-            <ListGroup className="rounded-2xl">
+            <View className="gap-2.5">
               {toolkits.map((item) => {
                 const isConnecting = connecting === item.toolkit;
-                const suffix = item.connected
-                  ? '›'
-                  : (ACTION_LABEL[item.connectionStatus ?? ''] ?? 'Connect ›');
+                const isConn = item.connected;
+                const actionText = isConn
+                  ? 'Manage'
+                  : (ACTION_LABEL[item.connectionStatus ?? ''] ?? 'Connect');
+
                 return (
-                  <ListGroup.Item
+                  <Pressable
                     key={item.toolkit}
                     disabled={isConnecting}
                     onPress={() => void onPressToolkit(item)}
+                    className="rounded-2xl border border-white/5 bg-[#131418] p-4 active:scale-[0.99] transition-transform"
                   >
-                    <ListGroup.ItemContent>
-                      <View className="flex-row items-center gap-2">
-                        <ListGroup.ItemTitle>{item.name}</ListGroup.ItemTitle>
-                        {item.connected ? (
-                          <Chip variant="soft" size="sm" color="success">
-                            <Chip.Label>connected</Chip.Label>
-                          </Chip>
-                        ) : item.connectionStatus ? (
-                          <Chip
-                            variant="soft"
-                            size="sm"
-                            color={STATUS_COLOR[item.connectionStatus] ?? 'default'}
-                          >
-                            <Chip.Label>{item.connectionStatus}</Chip.Label>
-                          </Chip>
-                        ) : null}
-                        {item.toolCount > 0 ? (
-                          <Chip variant="soft" size="sm">
-                            <Chip.Label>{item.toolCount} tools</Chip.Label>
-                          </Chip>
-                        ) : null}
+                    <View className="flex-row items-center gap-3">
+                      <View className="h-11 w-11 items-center justify-center rounded-xl border border-purple-500/20 bg-purple-500/10">
+                        <Zap size={20} color="#C084FC" />
                       </View>
-                      <ListGroup.ItemDescription numberOfLines={2}>
-                        {item.description || 'Composio-managed toolkit.'}
-                      </ListGroup.ItemDescription>
-                      <Typography type="body-xs" color="muted" className="mt-1">
-                        {item.authSchemes.length > 0 ? item.authSchemes.join(' · ') : 'managed auth'}
-                      </Typography>
-                    </ListGroup.ItemContent>
-                    <ListGroup.ItemSuffix>
-                      {isConnecting ? (
-                        <Spinner size="sm" />
-                      ) : (
-                        <Typography type="body-sm" color={item.connected ? 'muted' : 'default'}>
-                          {suffix}
+                      <View className="flex-1">
+                        <View className="flex-row items-center gap-2">
+                          <Typography type="h5" className="font-semibold text-white" numberOfLines={1}>
+                            {item.name}
+                          </Typography>
+                          {item.toolCount > 0 ? (
+                            <View className="rounded-md bg-white/10 px-1.5 py-0.5">
+                              <Typography type="body-xs" className="text-white/60">
+                                {item.toolCount} tools
+                              </Typography>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Typography type="body-xs" className="mt-0.5 text-white/50" numberOfLines={2}>
+                          {item.description || 'Composio toolkit integration.'}
                         </Typography>
-                      )}
-                    </ListGroup.ItemSuffix>
-                  </ListGroup.Item>
+                        <Typography type="body-xs" className="mt-1.5 text-white/40">
+                          {item.authSchemes.length > 0 ? item.authSchemes.join(' · ') : 'managed auth'}
+                        </Typography>
+                      </View>
+
+                      <View className="items-end">
+                        {isConnecting ? (
+                          <Spinner size="sm" color="default" />
+                        ) : isConn ? (
+                          <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1">
+                            <CheckCircle2 size={12} color="#34D399" />
+                            <Typography type="body-xs" className="font-medium text-emerald-400">
+                              Connected
+                            </Typography>
+                          </View>
+                        ) : (
+                          <View className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 active:bg-white/20">
+                            <Typography type="body-xs" className="font-semibold text-white">
+                              {actionText}
+                            </Typography>
+                            <ChevronRight size={12} color="#fff" />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </Pressable>
                 );
               })}
-            </ListGroup>
+            </View>
           ) : null}
         </ScrollView>
       )}

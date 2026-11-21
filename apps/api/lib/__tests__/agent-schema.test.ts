@@ -72,6 +72,7 @@ test("AgentSchema validates the API response shape", () => {
     fallbackModels: [],
     avatar: DEFAULT_AGENT_AVATAR,
     isSupervisor: false,
+    isSleeping: false,
     toolCount: 4,
     createdAt: "2026-11-18T00:00:00.000Z",
   });
@@ -89,6 +90,7 @@ test("AgentSchema rejects a negative tool count", () => {
     fallbackModels: [],
     avatar: DEFAULT_AGENT_AVATAR,
     isSupervisor: false,
+    isSleeping: false,
     toolCount: -1,
     createdAt: "2026-11-18T00:00:00.000Z",
   });

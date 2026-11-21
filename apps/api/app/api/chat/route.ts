@@ -24,6 +24,7 @@ import { buildKnowledgeTools } from "@/lib/tools/knowledge";
 import { buildWebTools } from "@/lib/tools/web-tools";
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, findRegistryEntry } from "@/lib/models";
 import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
+import { buildSkillTools } from "@/lib/skills/load";
 
 export const maxDuration = 300;
 
@@ -124,6 +125,8 @@ export async function POST(request: Request) {
     const tools = {
       ...buildKnowledgeTools({ userId: user.id, threadId }),
       ...buildWebTools(),
+      // Progressive disclosure: only when this chat is bound to an agent.
+      ...(agentId ? buildSkillTools({ userId: user.id, agentId }) : {}),
     };
 
     const system = await buildSystemPrompt(
@@ -134,6 +137,7 @@ export async function POST(request: Request) {
             .map((part) => String((part as { text?: unknown }).text ?? ""))
             .join(" ")
         : undefined,
+      agentId,
     );
 
     const chatStream = await createChatStream({

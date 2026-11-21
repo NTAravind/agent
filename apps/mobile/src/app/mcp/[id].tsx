@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Card, Chip, Input, ListGroup, Spinner, Switch, Typography } from 'heroui-native';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Spinner, Switch, Typography } from 'heroui-native';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Info,
+  KeyRound,
+  RotateCw,
+  ShieldAlert,
+  ShieldCheck,
+  UserCheck,
+  Wrench,
+  Zap,
+} from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -22,45 +37,40 @@ import {
   type ServerDetail,
 } from '@/lib/mcp';
 
-/**
- * Integration detail (Phase 6): connect (1 tap for no-auth, API key form, or
- * a browser flow — OAuth dance / Composio hosted consent), attach to an
- * agent, and tune per-tool permissions. Credentials are typed here but never
- * stored on the device.
- *
- * Composio connections follow pending → authorize → verify: while consent
- * is missing the card offers "Finish connecting"/"Reconnect" (reopening the
- * hosted link), the screen re-verifies on focus, and after a link is opened
- * it polls verify every 2s (max 60s) until the status lands on `connected`.
- */
-
 type AttachmentTool = AgentAttachment['tools'][number];
 type CachedTool = ServerDetail['tools'][number];
 type Notice = { kind: 'success' | 'warning' | 'danger'; text: string };
 
-const RISK_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
-  low: 'success',
-  medium: 'warning',
-  high: 'danger',
-};
-
-const STATUS_COLOR: Record<string, 'success' | 'warning' | 'danger'> = {
-  connected: 'success',
-  pending: 'warning',
-  expired: 'danger',
-  error: 'danger',
-};
-
 const POLL_INTERVAL_MS = 2_000;
 const POLL_ATTEMPTS = 30;
-/** Don't re-verify a pending row more than once per 15s of screen focus. */
 const AUTO_VERIFY_THROTTLE_MS = 15_000;
 
-function RiskChip({ level }: { level: string }) {
+function RiskBadge({ level }: { level: string }) {
+  if (level === 'high') {
+    return (
+      <View className="flex-row items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5">
+        <ShieldAlert size={11} color="#F87171" />
+        <Typography type="body-xs" className="font-semibold capitalize text-red-400">
+          high risk
+        </Typography>
+      </View>
+    );
+  }
+  if (level === 'medium') {
+    return (
+      <View className="flex-row items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5">
+        <Typography type="body-xs" className="font-semibold capitalize text-amber-400">
+          med risk
+        </Typography>
+      </View>
+    );
+  }
   return (
-    <Chip variant="soft" size="sm" color={RISK_COLOR[level] ?? 'default'}>
-      <Chip.Label>{level}</Chip.Label>
-    </Chip>
+    <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5">
+      <Typography type="body-xs" className="font-semibold capitalize text-emerald-400">
+        low risk
+      </Typography>
+    </View>
   );
 }
 
@@ -93,10 +103,9 @@ export default function IntegrationDetailScreen() {
   const authType = server?.authType ?? 'none';
   const needsKey = authType === 'api_key' || authType === 'pat';
   const isOAuth = authType === 'oauth2';
-  /** Composio (provider-managed): pending/expired/error drive the action. */
   const isManaged = authType === 'provider_managed';
   const connectLabel = isOAuth
-    ? 'Sign in'
+    ? 'Sign in with Provider'
     : status === 'pending'
       ? 'Finish connecting'
       : status === 'expired' || status === 'error'
@@ -108,8 +117,6 @@ export default function IntegrationDetailScreen() {
     (connectionId ? attachments.find((row) => row.connection?.id === connectionId) : null) ?? null;
   const attached = attachment !== null;
 
-  // Consent-state refs: the focus effect reads them without re-subscribing
-  // (load changes identity whenever its dependencies change).
   const statusRef = useRef<string | null>(null);
   const cidRef = useRef<string | null>(null);
   const lastAutoVerifyRef = useRef(0);
@@ -118,7 +125,6 @@ export default function IntegrationDetailScreen() {
     statusRef.current = status;
     cidRef.current = connectionId;
   }, [status, connectionId]);
-  // Polling must not touch state after the screen goes away.
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -130,7 +136,6 @@ export default function IntegrationDetailScreen() {
     try {
       const [nextDetail, agentList] = await Promise.all([
         fetchServer(serverId),
-        // Agent picker is auxiliary — never block the detail view on it.
         fetchAgents().catch(() => [] as Agent[]),
       ]);
       setDetail(nextDetail);
@@ -156,9 +161,6 @@ export default function IntegrationDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       void load();
-      // One background re-check while waiting on consent (throttled): the
-      // hosted-link callback may have landed while the app was backgrounded
-      // without a deep link, or the user may have finished signing in.
       if (
         statusRef.current === 'pending' &&
         cidRef.current &&
@@ -175,9 +177,6 @@ export default function IntegrationDetailScreen() {
     }, [load]),
   );
 
-  const shownNotice = notice;
-
-  /** Re-check every 2s (max 60s) after a link is opened; stop on any answer. */
   const pollVerify = useCallback(
     async (cid: string) => {
       for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
@@ -199,7 +198,7 @@ export default function IntegrationDetailScreen() {
             return;
           }
         } catch {
-          // Transient failure → keep polling until the budget runs out.
+          // Transient failure
         }
       }
       if (aliveRef.current) {
@@ -213,9 +212,6 @@ export default function IntegrationDetailScreen() {
     [load],
   );
 
-  // Callback URLs return here only after server-side callback handling. Reload
-  // the authoritative connection first; never show success from URL params
-  // alone. A provider may still be initializing, so keep using verify polling.
   const handledCallbackRef = useRef<string | null>(null);
   useEffect(() => {
     const callbackStatus = oauthParams.status;
@@ -250,52 +246,38 @@ export default function IntegrationDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [load, oauthParams.message, oauthParams.status, pollVerify, serverId]);
+  }, [serverId, oauthParams.status, oauthParams.message, load, pollVerify]);
 
   const handleConnect = async () => {
     setBusy('connect');
     setError(null);
+    setNotice(null);
     try {
-      // A Composio row that already exists is resolved through verify: it
-      // returns the hosted link to reopen (or flips straight to `connected`
-      // when consent actually landed). Everything else starts fresh.
-      const result =
-        connectionId && status && status !== 'disconnected' && isManaged
+      if (isOAuth || (isManaged && (status === 'pending' || status === 'expired' || status === 'error'))) {
+        const result = isManaged && connectionId
           ? await verifyConnection(connectionId, { issueLink: true })
-          : await connectServer(serverId, needsKey ? { apiKey: apiKey.trim() } : {});
+          : await connectServer(serverId);
 
-      if (result.authorizationUrl) {
-        setOauthPending(true);
-        try {
-          const targetServerId = 'serverId' in result ? result.serverId : undefined;
-          await openMarketplaceAuthorization(result.authorizationUrl, targetServerId ?? serverId);
-        } finally {
-          setOauthPending(false);
+        if (result.authorizationUrl) {
+          setOauthPending(true);
+          await openMarketplaceAuthorization(result.authorizationUrl, serverId);
+          const cid = ('connectionId' in result ? result.connectionId : undefined) ?? connectionId;
+          if (cid) void pollVerify(cid);
+        } else {
+          await load();
         }
-        await load();
-        const cid = connectionId ?? ('connectionId' in result ? result.connectionId : undefined);
-        if (cid) void pollVerify(cid);
         return;
       }
+
+      await connectServer(serverId, needsKey ? { apiKey: apiKey.trim() } : undefined);
       setApiKey('');
       await load();
-      if (result.status === 'connected') {
-        setNotice({
-          kind: 'success',
-          text: `Connected — ${result.toolCount ?? 0} tools discovered.`,
-        });
-      } else {
-        setNotice({
-          kind: 'danger',
-          text:
-            ('message' in result && result.message) ||
-            'Sign-in did not complete — try connecting again.',
-        });
-      }
+      setNotice({ kind: 'success', text: 'Connected. Tools discovered below.' });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
+      setOauthPending(false);
     }
   };
 
@@ -304,30 +286,9 @@ export default function IntegrationDetailScreen() {
     setBusy('refresh');
     setError(null);
     try {
-      const result = await refreshConnection(connectionId);
+      await refreshConnection(connectionId);
       await load();
-      if (result.authorizationUrl) {
-        // Consent expired/revoked mid-flight → reopen the hosted link.
-        setOauthPending(true);
-        try {
-          await openMarketplaceAuthorization(result.authorizationUrl, serverId);
-        } finally {
-          setOauthPending(false);
-        }
-        void pollVerify(connectionId);
-        return;
-      }
-      if (result.status === 'error' || result.status === 'expired') {
-        setNotice({
-          kind: 'danger',
-          text: result.message || 'This connection needs to be reconnected.',
-        });
-        return;
-      }
-      setNotice({
-        kind: 'success',
-        text: `Refreshed — ${result.toolCount} tools (${result.changed} changed).`,
-      });
+      setNotice({ kind: 'success', text: 'Tools refreshed.' });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -341,9 +302,8 @@ export default function IntegrationDetailScreen() {
     setError(null);
     try {
       await disconnectServer(connectionId);
-      setApiKey('');
-      setNotice({ kind: 'success', text: 'Disconnected. Its tools are no longer available to any agent.' });
       await load();
+      setNotice({ kind: 'success', text: 'Disconnected.' });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -358,7 +318,7 @@ export default function IntegrationDetailScreen() {
     try {
       await attachServer(selectedAgentId, connectionId);
       await load();
-      setNotice({ kind: 'success', text: 'Added to agent. Its next run can use these tools.' });
+      setNotice({ kind: 'success', text: `Attached to ${selectedAgent?.name ?? 'agent'}.` });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -373,7 +333,7 @@ export default function IntegrationDetailScreen() {
     try {
       await detachServer(selectedAgentId, connectionId);
       await load();
-      setNotice({ kind: 'success', text: 'Removed from agent.' });
+      setNotice({ kind: 'success', text: `Removed from ${selectedAgent?.name ?? 'agent'}.` });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -387,7 +347,6 @@ export default function IntegrationDetailScreen() {
   ) => {
     if (!selectedAgentId) return;
     const previous = attachments;
-    // Optimistic: move the switch immediately, roll back via reload on failure.
     setAttachments((rows) =>
       rows.map((row) =>
         row.connection?.id === connectionId
@@ -419,26 +378,50 @@ export default function IntegrationDetailScreen() {
     : (detail?.tools ?? []);
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-[#0B0C0E]">
       <AppHeader
         left={
-          <Button size="md" variant="ghost" onPress={() => router.back()}>
-            <Button.Label>Close</Button.Label>
-          </Button>
+          <Pressable
+            onPress={() => router.back()}
+            className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={20} color="#fff" />
+          </Pressable>
         }
-        center={<Typography type="h4">{server?.name ?? 'Integration'}</Typography>}
+        center={
+          <Typography type="h4" numberOfLines={1} className="font-semibold text-white tracking-tight">
+            {server?.name ?? 'Integration'}
+          </Typography>
+        }
+        right={
+          connected ? (
+            <Pressable
+              onPress={() => void handleRefresh()}
+              disabled={busy === 'refresh'}
+              className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+              accessibilityLabel="Refresh tools"
+            >
+              {busy === 'refresh' ? (
+                <Spinner size="sm" color="default" />
+              ) : (
+                <RotateCw size={18} color="#fff" />
+              )}
+            </Pressable>
+          ) : null
+        }
       />
 
       {loading && !detail ? (
-        <View className="flex-1 items-center justify-center">
-          <Spinner />
+        <View className="mt-20 items-center justify-center">
+          <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
           contentContainerStyle={{
             padding: 16,
             paddingBottom: insets.bottom + 24,
-            gap: 12,
+            gap: 14,
           }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -448,216 +431,344 @@ export default function IntegrationDetailScreen() {
                 setRefreshing(true);
                 void load();
               }}
-              tintColor="#208AEF"
+              tintColor="#fff"
             />
           }
         >
-          {shownNotice ? (
-            <Alert status={shownNotice.kind}>
-              <Alert.Content>
-                <Alert.Title>
-                  {shownNotice.kind === 'success'
+          {/* Notifications */}
+          {notice ? (
+            <View
+              className={`rounded-2xl border p-4 ${
+                notice.kind === 'success'
+                  ? 'border-emerald-500/20 bg-emerald-500/10'
+                  : notice.kind === 'warning'
+                    ? 'border-amber-500/20 bg-amber-500/10'
+                    : 'border-red-500/20 bg-red-500/10'
+              }`}
+            >
+              <View className="flex-row items-center gap-2">
+                {notice.kind === 'success' ? (
+                  <CheckCircle2 size={16} color="#34D399" />
+                ) : notice.kind === 'warning' ? (
+                  <Clock size={16} color="#FBBF24" />
+                ) : (
+                  <AlertCircle size={16} color="#F87171" />
+                )}
+                <Typography
+                  type="body-sm"
+                  className={`font-semibold ${
+                    notice.kind === 'success'
+                      ? 'text-emerald-300'
+                      : notice.kind === 'warning'
+                        ? 'text-amber-300'
+                        : 'text-red-300'
+                  }`}
+                >
+                  {notice.kind === 'success'
                     ? 'Done'
-                    : shownNotice.kind === 'warning'
-                      ? 'Checking connection'
-                      : 'Something went wrong'}
-                </Alert.Title>
-                <Alert.Description>{shownNotice.text}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+                    : notice.kind === 'warning'
+                      ? 'Notice'
+                      : 'Error'}
+                </Typography>
+              </View>
+              <Typography
+                type="body-xs"
+                className={`mt-1 ${
+                  notice.kind === 'success'
+                    ? 'text-emerald-300/80'
+                    : notice.kind === 'warning'
+                      ? 'text-amber-300/80'
+                      : 'text-red-300/80'
+                }`}
+              >
+                {notice.text}
+              </Typography>
+            </View>
           ) : null}
 
           {error ? (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Title>Could not complete that</Alert.Title>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+              <Typography type="body-sm" className="font-semibold text-red-300">
+                Action failed
+              </Typography>
+              <Typography type="body-xs" className="mt-1 text-red-300/80">
+                {error}
+              </Typography>
+            </View>
           ) : null}
 
-          <Card className="rounded-2xl">
-            <Card.Body className="gap-2">
-              <View className="flex-row flex-wrap items-center gap-2">
-                <Typography type="h4">{server?.name}</Typography>
-                <Chip variant="soft" size="sm">
-                  <Chip.Label>{server?.category ?? 'other'}</Chip.Label>
-                </Chip>
-                <Chip variant="soft" size="sm" color={STATUS_COLOR[status ?? ''] ?? 'default'}>
-                  <Chip.Label>{connected ? 'connected' : (status ?? 'not connected')}</Chip.Label>
-                </Chip>
-                {server?.isVerified ? (
-                  <Chip variant="soft" size="sm" color="accent">
-                    <Chip.Label>verified</Chip.Label>
-                  </Chip>
-                ) : null}
-              </View>
-              <Typography type="body-sm" color="muted">
-                {server?.description || 'Vendor-hosted remote MCP server.'}
+          {/* Hero Overview Card */}
+          <View className="rounded-2xl border border-white/5 bg-[#131418] p-5">
+            <View className="flex-row flex-wrap items-center gap-2">
+              <Typography type="h3" className="font-bold text-white">
+                {server?.name}
               </Typography>
-              {server?.endpoint ? (
-                <Typography type="body-xs" color="muted" numberOfLines={1}>
-                  {server.endpoint}
+              <View className="rounded-full bg-white/10 px-2.5 py-0.5">
+                <Typography type="body-xs" className="capitalize text-white/70">
+                  {server?.category ?? 'integration'}
                 </Typography>
+              </View>
+              {connected ? (
+                <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5">
+                  <CheckCircle2 size={12} color="#34D399" />
+                  <Typography type="body-xs" className="font-semibold text-emerald-400">
+                    connected
+                  </Typography>
+                </View>
+              ) : status ? (
+                <View className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5">
+                  <Typography type="body-xs" className="font-semibold text-amber-400 capitalize">
+                    {status}
+                  </Typography>
+                </View>
               ) : null}
-              {connected && detail ? (
-                <Typography type="body-sm">
-                  {`${detail.tools.length} tools cached${
+              {server?.isVerified ? (
+                <View className="flex-row items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5">
+                  <ShieldCheck size={12} color="#38BDF8" />
+                  <Typography type="body-xs" className="text-sky-400 font-medium">
+                    verified
+                  </Typography>
+                </View>
+              ) : null}
+            </View>
+
+            <Typography type="body-sm" className="mt-2 text-white/60 leading-relaxed">
+              {server?.description || 'Vendor-hosted remote Model Context Protocol server.'}
+            </Typography>
+
+            {server?.endpoint ? (
+              <Typography type="body-xs" className="mt-2 text-white/30 font-mono" numberOfLines={1}>
+                {server.endpoint}
+              </Typography>
+            ) : null}
+
+            {connected && detail ? (
+              <View className="mt-3 flex-row items-center gap-2 border-t border-white/5 pt-3">
+                <Wrench size={14} color="#818CF8" />
+                <Typography type="body-xs" className="text-white/60">
+                  {`${detail.tools.length} tools discovered${
                     detail.connection?.lastCheckedAt
-                      ? ` · checked ${new Date(detail.connection.lastCheckedAt).toLocaleString()}`
+                      ? ` · synced ${new Date(detail.connection.lastCheckedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}`
                       : ''
                   }`}
                 </Typography>
-              ) : null}
-            </Card.Body>
-          </Card>
+              </View>
+            ) : null}
+          </View>
 
+          {/* Setup instructions */}
           {server?.instructions ? (
-            <Card className="rounded-2xl">
-              <Card.Body className="gap-2">
-                <Card.Title>Setup instructions</Card.Title>
-                <Typography type="body-sm" color="muted">
-                  {server.instructions}
+            <View className="rounded-2xl border border-white/5 bg-[#131418] p-4">
+              <View className="flex-row items-center gap-2 mb-1.5">
+                <Info size={16} color="#818CF8" />
+                <Typography type="h5" className="font-semibold text-white">
+                  Setup instructions
                 </Typography>
-              </Card.Body>
-            </Card>
+              </View>
+              <Typography type="body-sm" className="text-white/60 leading-relaxed">
+                {server.instructions}
+              </Typography>
+            </View>
           ) : null}
 
+          {/* Connect / Authenticate Card */}
           {!connected && server ? (
-            <Card className="rounded-2xl">
-              <Card.Body className="gap-3">
-                <Card.Title>
+            <View className="rounded-2xl border border-white/5 bg-[#131418] p-5">
+              <View className="flex-row items-center gap-2 mb-2">
+                <KeyRound size={18} color="#fff" />
+                <Typography type="h5" className="font-semibold text-white">
                   {isOAuth
                     ? `Sign in with ${server.name}`
                     : needsKey
-                      ? 'Add your API key'
+                      ? 'API key required'
                       : status === 'pending'
                         ? `Finish connecting ${server.name}`
                         : status === 'expired' || status === 'error'
                           ? `Reconnect ${server.name}`
-                          : 'Connect'}
-                </Card.Title>
-                {needsKey ? (
-                  <Input
+                          : 'Connect service'}
+                </Typography>
+              </View>
+
+              {needsKey ? (
+                <View className="my-2">
+                  <TextInput
                     value={apiKey}
                     onChangeText={setApiKey}
-                    placeholder="API key"
+                    placeholder="Enter API key or token"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
                     autoCapitalize="none"
                     autoCorrect={false}
                     secureTextEntry
+                    className="rounded-xl border border-white/10 bg-[#16171B] px-4 py-3 text-sm text-white"
                   />
-                ) : null}
-                {oauthPending ? (
-                  <Typography type="body-sm" color="muted">
-                    Waiting for the browser… return to the app when you are done.
+                </View>
+              ) : null}
+
+              {oauthPending ? (
+                <View className="my-2 rounded-xl border border-sky-500/20 bg-sky-500/10 p-3">
+                  <Typography type="body-xs" className="text-sky-300">
+                    Waiting for sign-in in browser… return to the app once completed.
                   </Typography>
-                ) : status === 'pending' ? (
-                  <Typography type="body-sm" color="muted">
-                    {isManaged
-                      ? 'Sign-in not finished yet — open the link to authorize this account.'
-                      : 'Authorization not finished yet.'}
-                  </Typography>
-                ) : null}
-                <Button
-                  onPress={() => void handleConnect()}
-                  isDisabled={
-                    busy === 'connect' || (needsKey && !apiKey.trim()) || oauthPending
-                  }
-                >
-                  {busy === 'connect' ? (
-                    <Spinner size="sm" />
-                  ) : (
-                    <Button.Label>{connectLabel}</Button.Label>
-                  )}
-                </Button>
-                <Typography type="body-xs" color="muted" className="text-center">
-                  Credentials are encrypted on the server and never sent back to this device.
+                </View>
+              ) : status === 'pending' ? (
+                <Typography type="body-xs" className="my-1 text-white/50">
+                  {isManaged
+                    ? 'Sign-in not finished yet — open the link to authorize your account.'
+                    : 'Authorization pending confirmation.'}
                 </Typography>
-              </Card.Body>
-            </Card>
+              ) : null}
+
+              <Pressable
+                onPress={() => void handleConnect()}
+                disabled={busy === 'connect' || (needsKey && !apiKey.trim()) || oauthPending}
+                className={`mt-2 flex-row items-center justify-center rounded-full py-3.5 ${
+                  busy === 'connect' || (needsKey && !apiKey.trim()) || oauthPending
+                    ? 'bg-white/20'
+                    : 'bg-white active:opacity-90'
+                }`}
+              >
+                {busy === 'connect' ? (
+                  <Spinner size="sm" color="default" />
+                ) : (
+                  <View className="flex-row items-center gap-2">
+                    <Typography
+                      type="body-sm"
+                      className={`font-semibold ${
+                        (needsKey && !apiKey.trim()) || oauthPending ? 'text-white/40' : 'text-black'
+                      }`}
+                    >
+                      {connectLabel}
+                    </Typography>
+                    {isOAuth || isManaged ? <ExternalLink size={14} color="#000" /> : null}
+                  </View>
+                )}
+              </Pressable>
+
+              <Typography type="body-xs" className="mt-3 text-center text-white/40">
+                Credentials are encrypted on the server and never stored locally.
+              </Typography>
+            </View>
           ) : null}
 
+          {/* Attach to Agent Card */}
           {connected && server ? (
-            <Card className="rounded-2xl">
-              <Card.Body className="gap-3">
-                <Card.Title>Use with an agent</Card.Title>
-                {agents.length > 1 ? (
-                  <View className="flex-row flex-wrap gap-2">
-                    {agents.map((agent) => (
-                      <Chip
-                        key={agent.id}
-                        variant={selectedAgentId === agent.id ? 'primary' : 'soft'}
-                        size="sm"
-                        style={{ gap: 6 }}
-                        onPress={() => setSelectedAgentId(agent.id)}
-                      >
-                        <AgentAvatar avatar={agent.avatar} size={18} />
-                        <Chip.Label>{agent.name}</Chip.Label>
-                      </Chip>
-                    ))}
+            <View className="rounded-2xl border border-white/5 bg-[#131418] p-5">
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center gap-2">
+                  <UserCheck size={18} color="#818CF8" />
+                  <Typography type="h5" className="font-semibold text-white">
+                    Assign to Agent
+                  </Typography>
+                </View>
+                {attached ? (
+                  <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5">
+                    <CheckCircle2 size={11} color="#34D399" />
+                    <Typography type="body-xs" className="text-emerald-400 font-semibold">
+                      Attached
+                    </Typography>
                   </View>
                 ) : null}
-                {attached ? (
-                  <View className="flex-row flex-wrap gap-2">
-                    <Button
-                      size="md"
-                      variant="secondary"
-                      onPress={() => void handleDetach()}
-                      isDisabled={busy === 'detach'}
-                    >
-                      <Button.Label>Remove from {selectedAgent?.name ?? 'agent'}</Button.Label>
-                    </Button>
-                    <Button
-                      size="md"
-                      variant="ghost"
-                      onPress={() => void handleRefresh()}
-                      isDisabled={busy === 'refresh'}
-                    >
-                      <Button.Label>
-                        {busy === 'refresh' ? 'Refreshing…' : 'Refresh tools'}
-                      </Button.Label>
-                    </Button>
-                  </View>
-                ) : (
-                  <Button
-                    onPress={() => void handleAttach()}
-                    isDisabled={
-                      busy === 'attach' || !selectedAgentId || !connectionId
-                    }
+              </View>
+
+              {agents.length > 1 ? (
+                <View className="flex-row flex-wrap gap-2 mb-4">
+                  {agents.map((agent) => {
+                    const isSelected = selectedAgentId === agent.id;
+                    return (
+                      <Pressable
+                        key={agent.id}
+                        onPress={() => setSelectedAgentId(agent.id)}
+                        className={`flex-row items-center gap-2 rounded-full px-3 py-1.5 border ${
+                          isSelected
+                            ? 'border-white bg-white'
+                            : 'border-white/10 bg-white/5 active:bg-white/10'
+                        }`}
+                      >
+                        <AgentAvatar avatar={agent.avatar} name={agent.name} size={18} />
+                        <Typography
+                          type="body-xs"
+                          className={`font-medium ${isSelected ? 'text-black font-semibold' : 'text-white/70'}`}
+                        >
+                          {agent.name}
+                        </Typography>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              {attached ? (
+                <View className="flex-row gap-2">
+                  <Pressable
+                    onPress={() => void handleDetach()}
+                    disabled={busy === 'detach'}
+                    className="flex-1 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 py-3 active:bg-red-500/20"
                   >
-                    {busy === 'attach' ? (
-                      <Spinner size="sm" />
-                    ) : (
-                      <Button.Label>Add to {selectedAgent?.name ?? 'agent'}</Button.Label>
-                    )}
-                  </Button>
-                )}
-              </Card.Body>
-            </Card>
+                    <Typography type="body-sm" className="font-semibold text-red-400">
+                      Remove from {selectedAgent?.name ?? 'Agent'}
+                    </Typography>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => void handleAttach()}
+                  disabled={busy === 'attach' || !selectedAgentId || !connectionId}
+                  className="items-center justify-center rounded-full bg-white py-3.5 active:opacity-90"
+                >
+                  {busy === 'attach' ? (
+                    <Spinner size="sm" color="default" />
+                  ) : (
+                    <Typography type="body-sm" className="font-semibold text-black">
+                      Add to {selectedAgent?.name ?? 'Agent'}
+                    </Typography>
+                  )}
+                </Pressable>
+              )}
+            </View>
           ) : null}
 
+          {/* Tools List */}
           {tools.length > 0 ? (
-            <View className="gap-2">
-              <Typography type="body-sm" color="muted">
-                {attached
-                  ? 'Tools this agent can use. High-risk tools always require your approval.'
-                  : 'Tools this integration offers:'}
-              </Typography>
-              {tools.map((tool) =>
-                attached ? (
-                  <Card key={tool.id} className="rounded-2xl">
-                    <Card.Body className="gap-2">
-                      <View className="flex-row flex-wrap items-center gap-2">
-                        <Typography type="body" weight="medium">
-                          {'name' in tool && tool.name ? tool.name : tool.externalToolId}
-                        </Typography>
-                        <RiskChip level={'riskLevel' in tool ? tool.riskLevel : 'medium'} />
-                      </View>
-                      <Typography type="body-sm" color="muted" numberOfLines={2}>
-                        {tool.description || 'No description provided.'}
+            <View className="gap-2.5">
+              <View className="px-1 flex-row items-center justify-between">
+                <Typography type="body-sm" className="font-medium text-white/70">
+                  {attached
+                    ? 'Tools Available to Agent'
+                    : 'Tools Offered by Integration'}
+                </Typography>
+                <Typography type="body-xs" className="text-white/40">
+                  {tools.length} total
+                </Typography>
+              </View>
+
+              {tools.map((tool) => (
+                <View
+                  key={tool.id}
+                  className="rounded-2xl border border-white/5 bg-[#131418] p-4"
+                >
+                  <View className="flex-row flex-wrap items-center justify-between gap-2">
+                    <View className="flex-row items-center gap-2">
+                      <Wrench size={15} color="#818CF8" />
+                      <Typography type="h5" className="font-semibold text-white">
+                        {'name' in tool && tool.name ? tool.name : tool.externalToolId}
                       </Typography>
+                    </View>
+                    <RiskBadge level={'riskLevel' in tool ? tool.riskLevel : 'medium'} />
+                  </View>
+
+                  <Typography type="body-xs" className="mt-1.5 text-white/50 leading-relaxed" numberOfLines={2}>
+                    {tool.description || 'No description provided.'}
+                  </Typography>
+
+                  {attached ? (
+                    <View className="mt-3.5 border-t border-white/5 pt-3 gap-2.5">
                       <View className="flex-row items-center justify-between">
-                        <Typography type="body-sm">Enabled</Typography>
+                        <Typography type="body-xs" className="text-white/70">
+                          Enabled
+                        </Typography>
                         <Switch
                           isSelected={'enabled' in tool ? tool.enabled : true}
                           onSelectedChange={(value) =>
@@ -667,7 +778,16 @@ export default function IntegrationDetailScreen() {
                         />
                       </View>
                       <View className="flex-row items-center justify-between">
-                        <Typography type="body-sm">Require approval</Typography>
+                        <View>
+                          <Typography type="body-xs" className="text-white/70">
+                            Require user approval
+                          </Typography>
+                          {'riskLevel' in tool && tool.riskLevel === 'high' ? (
+                            <Typography type="body-xs" className="text-red-400/80">
+                              Mandatory for high-risk tools
+                            </Typography>
+                          ) : null}
+                        </View>
                         <Switch
                           isSelected={
                             'approvalRequired' in tool ? tool.approvalRequired : false
@@ -681,38 +801,26 @@ export default function IntegrationDetailScreen() {
                           accessibilityLabel="Require your approval before this tool runs"
                         />
                       </View>
-                    </Card.Body>
-                  </Card>
-                ) : (
-                  <ListGroup key={tool.id} className="rounded-2xl">
-                    <ListGroup.Item>
-                      <ListGroup.ItemContent>
-                        <View className="flex-row flex-wrap items-center gap-2">
-                          <ListGroup.ItemTitle>{tool.externalToolId}</ListGroup.ItemTitle>
-                          <RiskChip level={'riskLevel' in tool ? tool.riskLevel : 'medium'} />
-                        </View>
-                        <ListGroup.ItemDescription numberOfLines={2}>
-                          {tool.description || 'No description provided.'}
-                        </ListGroup.ItemDescription>
-                      </ListGroup.ItemContent>
-                    </ListGroup.Item>
-                  </ListGroup>
-                ),
-              )}
+                    </View>
+                  ) : null}
+                </View>
+              ))}
             </View>
           ) : null}
 
+          {/* Disconnect Button */}
           {connected ? (
-            <Button
-              size="md"
-              variant="ghost"
-              onPress={() => void handleDisconnect()}
-              isDisabled={busy === 'disconnect'}
-            >
-              <Button.Label>
-                {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
-              </Button.Label>
-            </Button>
+            <View className="pt-2">
+              <Pressable
+                onPress={() => void handleDisconnect()}
+                disabled={busy === 'disconnect'}
+                className="items-center justify-center rounded-full border border-white/10 bg-white/5 py-3 active:bg-white/10"
+              >
+                <Typography type="body-sm" className="font-medium text-white/50">
+                  {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect Integration'}
+                </Typography>
+              </Pressable>
+            </View>
           ) : null}
         </ScrollView>
       )}

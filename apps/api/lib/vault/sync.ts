@@ -1,5 +1,11 @@
 import { embedTexts } from "@/lib/models/embeddings";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import {
+  isSkillVaultPath,
+  parseSkillFile,
+  removeMissingSkills,
+  upsertSkillIndex,
+} from "@/lib/skills/sync";
 import { fetchVaultFile, isVaultConfigured, listVaultFiles, vaultRepo } from "./github";
 import { contentHash, parseNote } from "./parse";
 
@@ -9,6 +15,8 @@ export type SyncResult = {
   skipped: number;
   removed: number;
   chunks: number;
+  /** Skill files indexed this pass (skills/<slug>/SKILL.md). */
+  skills: number;
   errors: string[];
 };
 
@@ -16,7 +24,9 @@ export type SyncResult = {
  * Pulls the vault from GitHub and refreshes the index.
  *
  * Notes are skipped when their git blob sha is unchanged, so a sync only
- * re-embeds what actually changed.
+ * re-embeds what actually changed. Files under skills/<slug>/SKILL.md are
+ * indexed into the `skills` table instead of being treated as notes (no
+ * chunking or embedding — the body is stored whole).
  */
 export async function syncVault(userId: string): Promise<SyncResult> {
   const result: SyncResult = {
@@ -25,6 +35,7 @@ export async function syncVault(userId: string): Promise<SyncResult> {
     skipped: 0,
     removed: 0,
     chunks: 0,
+    skills: 0,
     errors: [],
   };
 
@@ -45,9 +56,60 @@ export async function syncVault(userId: string): Promise<SyncResult> {
     ),
   );
 
+  const { data: skillRows } = await supabaseAdmin()
+    .from("skills")
+    .select("id, vault_path, git_sha")
+    .eq("user_id", userId)
+    .not("vault_path", "is", null);
+
+  const existingSkills = new Map(
+    ((skillRows ?? []) as Array<{ id: string; vault_path: string; git_sha: string | null }>).map(
+      (row) => [row.vault_path, row],
+    ),
+  );
+  const seenSkillPaths = new Set<string>();
+
   const seenPaths = new Set<string>();
 
   for (const file of files) {
+    // Skills are indexed separately; skill paths are deliberately NOT added
+    // to seenPaths so any note previously indexed at that path is removed.
+    if (isSkillVaultPath(file.path)) {
+      seenSkillPaths.add(file.path);
+      const previous = existingSkills.get(file.path);
+      if (previous && previous.git_sha === file.sha) {
+        result.skipped += 1;
+        continue;
+      }
+      try {
+        const vaultFile = await fetchVaultFile(file.path);
+        if (!vaultFile) {
+          result.errors.push(`Could not read ${file.path}`);
+          continue;
+        }
+        const parsed = parseSkillFile(file.path, vaultFile.content);
+        if (!parsed) {
+          result.errors.push(
+            `${file.path}: invalid skill frontmatter (name and description are required).`,
+          );
+          continue;
+        }
+        await upsertSkillIndex(userId, {
+          slug: parsed.slug,
+          name: parsed.name,
+          description: parsed.description,
+          tools: parsed.tools,
+          body: parsed.body,
+          vaultPath: file.path,
+          gitSha: file.sha,
+        });
+        result.skills += 1;
+      } catch (error) {
+        result.errors.push(`${file.path}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      continue;
+    }
+
     seenPaths.add(file.path);
     const previous = existing.get(file.path);
 
@@ -131,6 +193,9 @@ export async function syncVault(userId: string): Promise<SyncResult> {
     await supabaseAdmin().from("notes").delete().eq("id", row.id).eq("user_id", userId);
     result.removed += 1;
   }
+
+  // Skill files that vanished from the repo (cascades agent_skills).
+  result.removed += await removeMissingSkills(userId, seenSkillPaths);
 
   return result;
 }

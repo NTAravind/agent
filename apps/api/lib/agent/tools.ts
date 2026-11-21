@@ -11,7 +11,20 @@ import {
 } from "@/lib/knowledge/search";
 import { putVaultFile } from "@/lib/vault/github";
 import { createCanvas, updateCanvasSpec } from "@/lib/canvases";
+import { loadSkillBody, runAgentId } from "@/lib/skills/load";
+import { buildRRuleSet } from "@/lib/recurrence";
+import {
+  eventInsert,
+  eventUpdate,
+  rowToEvent,
+  rowToTask,
+  taskInsert,
+  taskUpdate,
+  type EventRow,
+  type TaskRow,
+} from "@/lib/productivity";
 import { validateCanvasSpec } from "@agent/shared";
+import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * The agent's tool layer, split in two halves:
@@ -93,6 +106,126 @@ export const declarations = {
     inputSchema: z.object({
       id: z.string().min(3).describe("Canvas id from render_canvas."),
       spec: z.record(z.string(), z.unknown()),
+    }),
+  },
+  load_skill: {
+    description:
+      "Load the full instructions of a skill assigned to this agent (slugs come from the skill index in your instructions). Use when the task needs the skill's detailed procedure. A skill may narrow your tool set — never expect it to add tools.",
+    inputSchema: z.object({
+      slug: z.string().min(1).max(80).describe("Skill slug from the index, e.g. 'research-brief'."),
+    }),
+  },
+  create_task: {
+    description:
+      "Create a task in the user's task list. Returns the new task id. No approval needed (reversible).",
+    inputSchema: z.object({
+      listId: z.string().uuid().describe("Task list UUID from the user's lists."),
+      title: z.string().min(1).max(200).describe("Task title."),
+      notes: z.string().optional().describe("Optional notes/description."),
+      dueAt: z.string().datetime({ offset: true }).optional().describe("Due date/time in ISO 8601."),
+      dueAllDay: z.boolean().optional().describe("If true, dueAt is treated as all-day."),
+      remindAt: z.string().datetime({ offset: true }).optional().describe("Reminder date/time in ISO 8601."),
+      rrule: z.string().optional().describe("RRULE string for recurrence, e.g. 'FREQ=WEEKLY;BYDAY=MO'."),
+      priority: z.number().int().min(0).max(3).optional().describe("Priority 0-3 (higher = more important)."),
+    }),
+  },
+  list_tasks: {
+    description:
+      "List the user's tasks, optionally filtered by list, status, or date range. Returns up to 50 tasks.",
+    inputSchema: z.object({
+      listId: z.string().uuid().optional().describe("Filter by task list."),
+      status: z.enum(["open", "done", "cancelled"]).optional().describe("Filter by status."),
+      from: z.string().datetime({ offset: true }).optional().describe("Due date from (inclusive)."),
+      to: z.string().datetime({ offset: true }).optional().describe("Due date to (inclusive)."),
+    }),
+  },
+  update_task: {
+    description:
+      "Update a task's fields (title, notes, status, due date, etc.). Editing a user-created task requires approval.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Task UUID."),
+      title: z.string().min(1).max(200).optional(),
+      notes: z.string().nullable().optional(),
+      status: z.enum(["open", "done", "cancelled"]).optional(),
+      dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+      dueAllDay: z.boolean().optional(),
+      remindAt: z.string().datetime({ offset: true }).nullable().optional(),
+      rrule: z.string().nullable().optional(),
+      priority: z.number().int().min(0).max(3).optional(),
+    }),
+  },
+  complete_task: {
+    description:
+      "Mark a task as done (sets status='done' and completed_at). No approval needed.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Task UUID."),
+    }),
+  },
+  create_event: {
+    description:
+      "Create a calendar event. Returns the new event id. No approval needed (reversible).",
+    inputSchema: z.object({
+      title: z.string().min(1).max(200).describe("Event title."),
+      description: z.string().optional().describe("Optional description."),
+      startsAt: z.string().datetime({ offset: true }).describe("Start date/time in ISO 8601."),
+      endsAt: z.string().datetime({ offset: true }).describe("End date/time in ISO 8601 (must be after startsAt)."),
+      allDay: z.boolean().optional().describe("All-day event flag."),
+      tz: z.string().optional().describe("Timezone, e.g. 'Asia/Kolkata' (default)."),
+      location: z.string().optional().describe("Location string."),
+      rrule: z.string().optional().describe("RRULE for recurrence."),
+      exdates: z.array(z.string()).optional().describe("Exception dates for recurrence."),
+      reminders: z
+        .array(z.object({ minutesBefore: z.number().int().min(0).max(10080), method: z.enum(["push", "email"]).default("push") }))
+        .optional()
+        .describe("Reminder array."),
+    }),
+  },
+  list_events: {
+    description:
+      "List the user's calendar events in a date range (recurring events are expanded). Returns up to 50 events.",
+    inputSchema: z.object({
+      from: z.string().datetime({ offset: true }).describe("Range start (inclusive)."),
+      to: z.string().datetime({ offset: true }).describe("Range end (inclusive)."),
+    }),
+  },
+  update_event: {
+    description:
+      "Update a calendar event's fields. Editing a user-created event requires approval.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Event UUID."),
+      title: z.string().min(1).max(200).optional(),
+      description: z.string().nullable().optional(),
+      startsAt: z.string().datetime({ offset: true }).optional(),
+      endsAt: z.string().datetime({ offset: true }).optional(),
+      allDay: z.boolean().optional(),
+      tz: z.string().optional(),
+      location: z.string().nullable().optional(),
+      rrule: z.string().nullable().optional(),
+      exdates: z.array(z.string()).optional(),
+      reminders: z.array(z.object({ minutesBefore: z.number().int().min(0).max(10080), method: z.enum(["push", "email"]).default("push") })).optional(),
+    }),
+  },
+  find_free_slots: {
+    description:
+      "Find free time slots in the user's calendar for a given duration within a date range. Returns up to 20 slot start times.",
+    inputSchema: z.object({
+      from: z.string().datetime({ offset: true }).describe("Range start."),
+      to: z.string().datetime({ offset: true }).describe("Range end."),
+      durationMinutes: z.number().int().min(15).max(480).describe("Desired slot length in minutes."),
+    }),
+  },
+  delete_task: {
+    description:
+      "Delete a task (soft delete). Requires approval.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Task UUID."),
+    }),
+  },
+  delete_event: {
+    description:
+      "Delete a calendar event (soft delete). Requires approval.",
+    inputSchema: z.object({
+      id: z.string().uuid().describe("Event UUID."),
     }),
   },
 } as const;
@@ -211,6 +344,388 @@ export async function executeToolCall(
       const canvas = await updateCanvasSpec(context.userId, parsed.id, validation.spec);
       if (!canvas) return { failed: true, error: "No such canvas (wrong id)." };
       return { canvasId: canvas.id, version: canvas.version };
+    }
+
+    case "load_skill": {
+      const parsed = z.object({ slug: z.string().min(1).max(80) }).parse(args);
+      // The agent comes from the run row (server context), never from args.
+      const agentId = await runAgentId(context.userId, context.runId);
+      if (!agentId) {
+        return { found: false, message: "This run has no agent, so no skills are assigned." };
+      }
+      const skill = await loadSkillBody(context.userId, agentId, parsed.slug);
+      if (!skill) {
+        return { found: false, message: `No skill "${parsed.slug}" is assigned to this agent.` };
+      }
+      return {
+        found: true,
+        slug: skill.slug,
+        name: skill.name,
+        description: skill.description,
+        tools: skill.tools ?? [],
+        body: skill.body.slice(0, 12_000),
+      };
+    }
+
+    case "create_task": {
+      const parsed = z
+        .object({
+          listId: z.string().uuid(),
+          title: z.string().min(1).max(200),
+          notes: z.string().optional(),
+          dueAt: z.string().datetime({ offset: true }).optional(),
+          dueAllDay: z.boolean().optional(),
+          remindAt: z.string().datetime({ offset: true }).optional(),
+          rrule: z.string().optional(),
+          priority: z.number().int().min(0).max(3).optional(),
+        })
+        .parse(args);
+      // Verify list ownership
+      const { data: list } = await supabaseAdmin()
+        .from("task_lists")
+        .select("id")
+        .eq("id", parsed.listId)
+        .eq("user_id", context.userId)
+        .maybeSingle();
+      if (!list) return { failed: true, error: "Task list not found." };
+      const { data, error } = await supabaseAdmin()
+        .from("tasks")
+        .insert(
+          taskInsert({
+            userId: context.userId,
+            listId: parsed.listId,
+            title: parsed.title,
+            notes: parsed.notes ?? null,
+            priority: parsed.priority ?? 0,
+            dueAt: parsed.dueAt ?? null,
+            dueAllDay: parsed.dueAllDay ?? false,
+            remindAt: parsed.remindAt ?? null,
+            rrule: parsed.rrule ?? null,
+            createdBy: "agent",
+            sourceRunId: context.runId,
+          }),
+        )
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      return { taskId: data.id, task: rowToTask(data as TaskRow) };
+    }
+
+    case "list_tasks": {
+      const parsed = z
+        .object({
+          listId: z.string().uuid().optional(),
+          status: z.enum(["open", "done", "cancelled"]).optional(),
+          from: z.string().datetime({ offset: true }).optional(),
+          to: z.string().datetime({ offset: true }).optional(),
+        })
+        .parse(args);
+      let queryBuilder = supabaseAdmin()
+        .from("tasks")
+        .select("*")
+        .eq("user_id", context.userId)
+        .is("deleted_at", null)
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .order("priority", { ascending: false })
+        .limit(50);
+      if (parsed.listId) queryBuilder = queryBuilder.eq("list_id", parsed.listId);
+      if (parsed.status) queryBuilder = queryBuilder.eq("status", parsed.status);
+      if (parsed.from) queryBuilder = queryBuilder.gte("due_at", parsed.from);
+      if (parsed.to) queryBuilder = queryBuilder.lte("due_at", parsed.to);
+      const { data, error } = await queryBuilder;
+      if (error) return { failed: true, error: error.message };
+      return {
+        tasks: ((data ?? []) as TaskRow[]).slice(0, 50).map(rowToTask),
+      };
+    }
+
+    case "update_task": {
+      const parsed = z
+        .object({
+          id: z.string().uuid(),
+          title: z.string().min(1).max(200).optional(),
+          notes: z.string().nullable().optional(),
+          status: z.enum(["open", "done", "cancelled"]).optional(),
+          dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+          dueAllDay: z.boolean().optional(),
+          remindAt: z.string().datetime({ offset: true }).nullable().optional(),
+          rrule: z.string().nullable().optional(),
+          priority: z.number().int().min(0).max(3).optional(),
+        })
+        .parse(args);
+      const { data: current } = await supabaseAdmin()
+        .from("tasks")
+        .select("*")
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .maybeSingle();
+      if (!current) return { failed: true, error: "Task not found." };
+      const patch = taskUpdate(parsed);
+      if (parsed.status === "done") patch.completed_at = new Date().toISOString();
+      if (parsed.status === "open") patch.completed_at = null;
+      const { data, error } = await supabaseAdmin()
+        .from("tasks")
+        .update(patch)
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      return { task: rowToTask(data as TaskRow) };
+    }
+
+    case "complete_task": {
+      const parsed = z.object({ id: z.string().uuid() }).parse(args);
+      const { data, error } = await supabaseAdmin()
+        .from("tasks")
+        .update({
+          status: "done",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      if (!data) return { failed: true, error: "Task not found." };
+      return { task: rowToTask(data as TaskRow) };
+    }
+
+    case "create_event": {
+      const parsed = z
+        .object({
+          title: z.string().min(1).max(200),
+          description: z.string().optional(),
+          startsAt: z.string().datetime({ offset: true }),
+          endsAt: z.string().datetime({ offset: true }),
+          allDay: z.boolean().optional(),
+          tz: z.string().optional(),
+          location: z.string().optional(),
+          rrule: z.string().optional(),
+          exdates: z.array(z.string()).optional(),
+          reminders: z
+            .array(z.object({ minutesBefore: z.number().int().min(0).max(10080), method: z.enum(["push", "email"]).default("push") }))
+            .optional(),
+        })
+        .parse(args);
+      if (new Date(parsed.startsAt) >= new Date(parsed.endsAt)) {
+        return { failed: true, error: "startsAt must be before endsAt." };
+      }
+      const { data, error } = await supabaseAdmin()
+        .from("calendar_events")
+        .insert(
+          eventInsert({
+            userId: context.userId,
+            title: parsed.title,
+            description: parsed.description ?? null,
+            startsAt: parsed.startsAt,
+            endsAt: parsed.endsAt,
+            allDay: parsed.allDay ?? false,
+            tz: parsed.tz ?? "Asia/Kolkata",
+            location: parsed.location ?? null,
+            rrule: parsed.rrule ?? null,
+            exdates: parsed.exdates ?? [],
+            reminders: parsed.reminders ?? [],
+            createdBy: "agent",
+            sourceRunId: context.runId,
+          }),
+        )
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      return { eventId: data.id, event: rowToEvent(data as EventRow) };
+    }
+
+    case "list_events": {
+      const parsed = z
+        .object({
+          from: z.string().datetime({ offset: true }),
+          to: z.string().datetime({ offset: true }),
+        })
+        .parse(args);
+      const rangeFrom = new Date(parsed.from);
+      const rangeTo = new Date(parsed.to);
+      const { data, error } = await supabaseAdmin()
+        .from("calendar_events")
+        .select("*")
+        .eq("user_id", context.userId)
+        .is("deleted_at", null)
+        .lte("starts_at", rangeTo.toISOString())
+        .gte("ends_at", rangeFrom.toISOString())
+        .order("starts_at", { ascending: true })
+        .limit(50);
+      if (error) return { failed: true, error: error.message };
+      // Expand recurring events (no LLM — plain DB read + RRULE expansion)
+      const result: EventRow[] = [];
+      for (const event of (data ?? []) as EventRow[]) {
+        if (!event.rrule) {
+          result.push(event);
+          continue;
+        }
+        try {
+          const ruleSet = buildRRuleSet(
+            event.rrule,
+            event.exdates,
+            new Date(event.starts_at),
+          );
+          if (!ruleSet) throw new Error("bad rrule");
+          const duration = new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime();
+          const occs = ruleSet.between(rangeFrom, rangeTo, true);
+          for (const occ of occs) {
+            const occStart = new Date(occ);
+            result.push({
+              ...event,
+              starts_at: occStart.toISOString(),
+              ends_at: new Date(occStart.getTime() + duration).toISOString(),
+            });
+          }
+        } catch {
+          result.push(event);
+        }
+      }
+      const sorted = result
+        .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+        .slice(0, 50);
+      return { events: sorted.map(rowToEvent) };
+    }
+
+    case "update_event": {
+      const parsed = z
+        .object({
+          id: z.string().uuid(),
+          title: z.string().min(1).max(200).optional(),
+          description: z.string().nullable().optional(),
+          startsAt: z.string().datetime({ offset: true }).optional(),
+          endsAt: z.string().datetime({ offset: true }).optional(),
+          allDay: z.boolean().optional(),
+          tz: z.string().optional(),
+          location: z.string().nullable().optional(),
+          rrule: z.string().nullable().optional(),
+          exdates: z.array(z.string()).optional(),
+          reminders: z
+            .array(z.object({ minutesBefore: z.number().int().min(0).max(10080), method: z.enum(["push", "email"]).default("push") }))
+            .optional(),
+        })
+        .parse(args);
+      const { data: current } = await supabaseAdmin()
+        .from("calendar_events")
+        .select("*")
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .maybeSingle();
+      if (!current) return { failed: true, error: "Event not found." };
+      if (parsed.startsAt && parsed.endsAt && new Date(parsed.startsAt) >= new Date(parsed.endsAt)) {
+        return { failed: true, error: "startsAt must be before endsAt." };
+      }
+      const { data, error } = await supabaseAdmin()
+        .from("calendar_events")
+        .update(eventUpdate(parsed))
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      return { event: rowToEvent(data as EventRow) };
+    }
+
+    case "find_free_slots": {
+      const parsed = z
+        .object({
+          from: z.string().datetime({ offset: true }),
+          to: z.string().datetime({ offset: true }),
+          durationMinutes: z.number().int().min(15).max(480),
+        })
+        .parse(args);
+      const rangeFrom = new Date(parsed.from);
+      const rangeTo = new Date(parsed.to);
+      // Fetch all events in range
+      const { data: events, error } = await supabaseAdmin()
+        .from("calendar_events")
+        .select("starts_at, ends_at, rrule, exdates")
+        .eq("user_id", context.userId)
+        .is("deleted_at", null)
+        .lte("starts_at", rangeTo.toISOString())
+        .gte("ends_at", rangeFrom.toISOString());
+      if (error) return { failed: true, error: error.message };
+      // Expand to busy intervals
+      const busy: Array<{ start: Date; end: Date }> = [];
+      for (const event of events ?? []) {
+        if (!event.rrule) {
+          busy.push({ start: new Date(event.starts_at), end: new Date(event.ends_at) });
+          continue;
+        }
+        try {
+          const ruleSet = buildRRuleSet(
+            event.rrule,
+            event.exdates,
+            new Date(event.starts_at),
+          );
+          if (!ruleSet) throw new Error("bad rrule");
+          const duration = new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime();
+          const occs = ruleSet.between(rangeFrom, rangeTo, true);
+          for (const occ of occs) {
+            const occStart = new Date(occ);
+            busy.push({ start: occStart, end: new Date(occStart.getTime() + duration) });
+          }
+        } catch {
+          busy.push({ start: new Date(event.starts_at), end: new Date(event.ends_at) });
+        }
+      }
+      // Merge overlapping intervals
+      busy.sort((a, b) => a.start.getTime() - b.start.getTime());
+      const merged: typeof busy = [];
+      for (const interval of busy) {
+        if (merged.length === 0 || interval.start >= merged[merged.length - 1].end) {
+          merged.push({ ...interval });
+        } else {
+          merged[merged.length - 1].end = new Date(Math.max(merged[merged.length - 1].end.getTime(), interval.end.getTime()));
+        }
+      }
+      // Find free slots
+      const durationMs = parsed.durationMinutes * 60 * 1000;
+      const slots: string[] = [];
+      let cursor = new Date(rangeFrom);
+      for (const interval of merged) {
+        if (cursor < interval.start && interval.start.getTime() - cursor.getTime() >= durationMs) {
+          slots.push(cursor.toISOString());
+          cursor = new Date(cursor.getTime() + durationMs);
+          if (slots.length >= 20) break;
+        }
+        if (cursor < interval.end) cursor = new Date(interval.end);
+      }
+      while (cursor.getTime() + durationMs <= rangeTo.getTime() && slots.length < 20) {
+        slots.push(cursor.toISOString());
+        cursor = new Date(cursor.getTime() + durationMs);
+      }
+      return { slots };
+    }
+
+    case "delete_task": {
+      const parsed = z.object({ id: z.string().uuid() }).parse(args);
+      const { data, error } = await supabaseAdmin()
+        .from("tasks")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      if (!data) return { failed: true, error: "Task not found." };
+      return { deleted: true, task: data };
+    }
+
+    case "delete_event": {
+      const parsed = z.object({ id: z.string().uuid() }).parse(args);
+      const { data, error } = await supabaseAdmin()
+        .from("calendar_events")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", parsed.id)
+        .eq("user_id", context.userId)
+        .select("*")
+        .single();
+      if (error) return { failed: true, error: error.message };
+      if (!data) return { failed: true, error: "Event not found." };
+      return { deleted: true, event: data };
     }
 
     default:

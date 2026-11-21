@@ -10,8 +10,7 @@ type Props = {
 };
 
 /**
- * Horizontal chip row for picking the agent a conversation or task belongs
- * to (the composer's agent selector). Renders nothing until agents load.
+ * Grok-inspired horizontal capsule row for picking the conversation agent.
  */
 export function AgentPicker({ agents, selectedId, onSelect }: Props) {
   if (agents.length === 0) return null;
@@ -32,14 +31,16 @@ export function AgentPicker({ agents, selectedId, onSelect }: Props) {
             accessibilityState={{ selected }}
             accessibilityLabel={`Chat as ${agent.name}`}
             onPress={() => onSelect(agent.id)}
-            className={`flex-row items-center gap-2 rounded-full border border-border px-3 py-1.5 active:opacity-60 ${
-              selected ? 'bg-surface' : 'bg-background'
+            className={`flex-row items-center gap-2 rounded-full border px-3 py-1.5 active:opacity-75 ${
+              selected
+                ? 'border-white/30 bg-white/15 shadow-sm'
+                : 'border-white/10 bg-white/5'
             }`}
           >
             <AgentAvatar avatar={agent.avatar} size={20} />
             <Text
               numberOfLines={1}
-              className={`max-w-32 text-sm ${selected ? 'font-semibold text-foreground' : 'text-muted'}`}
+              className={`max-w-32 text-xs ${selected ? 'font-semibold text-white' : 'text-zinc-400'}`}
             >
               {agent.name}
             </Text>

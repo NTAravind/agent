@@ -5,6 +5,7 @@ import {
   type CanvasSummary,
 } from "@agent/shared";
 
+import { buildRRuleSet } from "@/lib/recurrence";
 import { searchMemories, searchNotes } from "@/lib/knowledge/search";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { webSearch } from "@/lib/tools/web";
@@ -149,11 +150,51 @@ export async function refreshCanvas(userId: string, canvas: CanvasRow): Promise<
             excerpt: chunk.content.slice(0, 300),
           })),
         });
-      } else {
+      } else if (source.kind === "recall_memory") {
         const memories = await searchMemories({ userId, query: source.query, k: 8 });
         results.set(source.id, {
           kind: "recall_memory",
           matches: memories.map((memory) => ({ kind: memory.kind, content: memory.content })),
+        });
+      } else if (source.kind === "list_tasks") {
+        // No LLM: a plain DB read of the user's tasks.
+        const query = supabaseAdmin()
+          .from("tasks")
+          .select("id, title, status, due_at, priority, created_by")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .order("due_at", { ascending: true, nullsFirst: false })
+          .limit(50);
+        if (source.query.trim() && source.query.trim() !== "all") {
+          query.eq("status", source.query.trim());
+        }
+        const { data: tasks } = await query;
+        results.set(source.id, {
+          kind: "list_tasks",
+          matches: (tasks ?? []).map((task) => ({
+            id: task.id as string,
+            title: task.title as string,
+            status: task.status as string,
+            dueAt: task.due_at as string | null,
+            createdBy: task.created_by as string,
+          })),
+        });
+      } else {
+        // list_events — no LLM: plain DB read, recurring events expanded.
+        const now = new Date();
+        const rangeEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const { data: events } = await supabaseAdmin()
+          .from("calendar_events")
+          .select("id, title, starts_at, ends_at, all_day, rrule, exdates, created_by")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .lte("starts_at", rangeEnd.toISOString())
+          .gte("ends_at", now.toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(50);
+        results.set(source.id, {
+          kind: "list_events",
+          matches: expandEventOccurrences(events ?? [], now, rangeEnd),
         });
       }
     } catch (error) {
@@ -180,7 +221,66 @@ export async function refreshCanvas(userId: string, canvas: CanvasRow): Promise<
 type SourceResult =
   | { kind: "web_search"; answer: string; results: { title: string; url: string; snippet: string }[] }
   | { kind: "search_notes"; matches: { path: string; heading: string | null; excerpt: string }[] }
-  | { kind: "recall_memory"; matches: { kind: string; content: string }[] };
+  | { kind: "recall_memory"; matches: { kind: string; content: string }[] }
+  | { kind: "list_tasks"; matches: { id: string; title: string; status: string; dueAt: string | null; createdBy: string }[] }
+  | { kind: "list_events"; matches: { id: string; title: string; startsAt: string; endsAt: string; createdBy: string }[] };
+
+/**
+ * Expands recurring calendar events into the occurrences that fall in the
+ * window (no LLM involved).
+ */
+function expandEventOccurrences(
+  events: Array<{
+    id: string;
+    title: string;
+    starts_at: string;
+    ends_at: string;
+    all_day: boolean;
+    rrule: string | null;
+    exdates: string[] | null;
+    created_by: string;
+  }>,
+  rangeFrom: Date,
+  rangeTo: Date,
+): Array<{ id: string; title: string; startsAt: string; endsAt: string; createdBy: string }> {
+  const out: Array<{ id: string; title: string; startsAt: string; endsAt: string; createdBy: string }> = [];
+  for (const event of events) {
+    if (!event.rrule) {
+      out.push({
+        id: event.id,
+        title: event.title,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at,
+        createdBy: event.created_by,
+      });
+      continue;
+    }
+    try {
+      const set = buildRRuleSet(event.rrule, event.exdates ?? [], new Date(event.starts_at));
+      if (!set) throw new Error("bad rrule");
+      const duration = new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime();
+      for (const occ of set.between(rangeFrom, rangeTo, true)) {
+        const start = new Date(occ);
+        out.push({
+          id: event.id,
+          title: event.title,
+          startsAt: start.toISOString(),
+          endsAt: new Date(start.getTime() + duration).toISOString(),
+          createdBy: event.created_by,
+        });
+      }
+    } catch {
+      out.push({
+        id: event.id,
+        title: event.title,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at,
+        createdBy: event.created_by,
+      });
+    }
+  }
+  return out.slice(0, 50);
+}
 
 function rewriteBoundComponents(
   spec: CanvasSpec,
@@ -229,6 +329,29 @@ function renderSourceMarkdown(result: SourceResult): string {
       .map((match) => `- **${match.path}**${match.heading ? ` — ${match.heading}` : ""}: ${match.excerpt.slice(0, 200)}`)
       .join("\n") || "No note matches yet.";
   }
+  if (result.kind === "list_tasks") {
+    return (
+      result.matches
+        .slice(0, 20)
+        .map((task) => {
+          const due = task.dueAt ? ` — due ${new Date(task.dueAt).toLocaleDateString("en-IN")}` : "";
+          const done = task.status === "done" ? "✓ " : task.status === "cancelled" ? "✗ " : "• ";
+          return `${done}${task.title}${due}`;
+        })
+        .join("\n") || "No tasks yet."
+    );
+  }
+  if (result.kind === "list_events") {
+    return (
+      result.matches
+        .slice(0, 20)
+        .map((event) => {
+          const when = new Date(event.startsAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+          return `• **${event.title}** — ${when}`;
+        })
+        .join("\n") || "No upcoming events."
+    );
+  }
   return (
     result.matches
       .slice(0, 8)
@@ -243,6 +366,20 @@ function renderSourceItems(result: SourceResult): { title: string; subtitle?: st
   }
   if (result.kind === "search_notes") {
     return result.matches.map((match) => ({ title: match.path, subtitle: match.heading ?? match.excerpt.slice(0, 150) }));
+  }
+  if (result.kind === "list_tasks") {
+    return result.matches.map((task) => ({
+      title: task.title,
+      subtitle: task.dueAt
+        ? `Due ${new Date(task.dueAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`
+        : task.status,
+    }));
+  }
+  if (result.kind === "list_events") {
+    return result.matches.map((event) => ({
+      title: event.title,
+      subtitle: new Date(event.startsAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+    }));
   }
   return result.matches.map((match) => ({ title: match.content.slice(0, 120), subtitle: match.kind }));
 }

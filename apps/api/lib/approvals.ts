@@ -11,8 +11,60 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * so a forgotten card can never act silently.
  */
 
-/** Tools that require approval before execution. */
-export const SENSITIVE_TOOLS = new Set(["write_note"]);
+/** Tools that ALWAYS require approval before execution. */
+export const SENSITIVE_TOOLS = new Set(["write_note", "delete_task", "delete_event"]);
+
+/** Tools that require approval ONLY when targeting user-created items. */
+export const CONDITIONAL_APPROVAL_TOOLS = new Set(["update_task", "update_event"]);
+
+/**
+ * Pure approval decision (Phase 9).
+ *
+ * - Sensitive tools always require approval.
+ * - Conditional tools (edits) require approval only when the target item
+ *   was created by the user; agent-created items can be edited freely.
+ * - A target that cannot be verified (no id, or the row is gone) requires
+ *   approval — the gate never silently proceeds on an unknown target.
+ */
+export function needsApproval(
+  toolName: string,
+  args: Record<string, unknown>,
+  createdBy: string | null | undefined,
+): boolean {
+  if (SENSITIVE_TOOLS.has(toolName)) return true;
+  if (!CONDITIONAL_APPROVAL_TOOLS.has(toolName)) return false;
+
+  const id = args.id as string | undefined;
+  if (!id) return true; // malformed call — err on the side of caution
+  if (!createdBy) return true; // unknown target — err on the side of caution
+  return createdBy === "user";
+}
+
+/**
+ * Checks if a tool call requires approval, including conditional checks
+ * based on the target item's `created_by` field.
+ */
+export async function requiresApproval(
+  userId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<boolean> {
+  if (SENSITIVE_TOOLS.has(toolName)) return true;
+  if (!CONDITIONAL_APPROVAL_TOOLS.has(toolName)) return false;
+
+  const id = args.id as string | undefined;
+  if (!id) return true; // malformed, err on side of caution
+
+  const table = toolName === "update_task" ? "tasks" : "calendar_events";
+  const { data } = await supabaseAdmin()
+    .from(table)
+    .select("created_by")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return needsApproval(toolName, args, data?.created_by);
+}
 
 export const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 

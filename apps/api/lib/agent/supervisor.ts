@@ -5,12 +5,19 @@ import {
   FAST_MODELS,
   FINAL_MODELS,
   generateObjectWithFallback,
+  invokeGraph,
   makeUsageSink,
   runAgent,
   truncate,
   type RunAgentInput,
   type UsageSink,
 } from "@/lib/agent/graph";
+import {
+  RunCancelledError,
+  RunPausedError,
+  assertRunActive,
+  beginResume,
+} from "@/lib/agent/pause";
 import { getCheckpointer } from "@/lib/agent/checkpointer";
 import {
   appendRunEvent,
@@ -174,6 +181,15 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
     payload?: Record<string, unknown>,
   ) => appendRunEvent(runId, phase, { node, ...payload });
 
+  /** Same pause/cancel boundary as the single-agent graph (see graph.ts). */
+  const withPause = (
+    node: (state: SupervisorStateType) => Promise<Partial<SupervisorStateType>>,
+  ): ((state: SupervisorStateType) => Promise<Partial<SupervisorStateType>>) =>
+    async (state) => {
+      await assertRunActive(runId);
+      return node(state);
+    };
+
   const specialistById = (agentId: string) => specialists.find((s) => s.id === agentId);
   const modelFor = (agentId: string) => specialistById(agentId)?.model ?? preferredModel;
 
@@ -290,6 +306,18 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
         if (child.alreadyDone) {
           return { status: child.priorStatus, result: child.priorAnswer };
         }
+        if (child.priorStatus === "paused") {
+          // Paused by a sleep/row-pill while this fan_out was parked — continue
+          // the child from its own checkpoint instead of restarting it.
+          return await runAgent({
+            runId: child.runId,
+            userId,
+            goal: child.task,
+            preferredModel: modelFor(child.agentId),
+            approvalMode: "deny",
+            resume: true,
+          });
+        }
         return await runAgent({
           runId: child.runId,
           userId,
@@ -325,6 +353,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
       };
     });
 
+    const anyPaused = outcomes.some((child) => child.status === "paused");
     await nodeEvent("fan_out", "node_end", {
       children: outcomes.map((child) => ({
         runId: child.runId,
@@ -332,7 +361,12 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
         name: child.name,
         status: child.status,
       })),
+      ...(anyPaused ? { paused: true } : {}),
     });
+    // A paused child means this run was paused too (explicitly, or via the
+    // child's agent sleeping). Do NOT checkpoint fan_out — the resume re-runs
+    // it and picks each child up where it stopped.
+    if (anyPaused) throw new RunPausedError();
     return { children: outcomes };
   };
 
@@ -434,10 +468,10 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
   };
 
   return new StateGraph(SupervisorState)
-    .addNode("delegate", delegateNode)
-    .addNode("fan_out", fanOutNode)
-    .addNode("verify", verifyNode)
-    .addNode("merge", mergeNode)
+    .addNode("delegate", withPause(delegateNode))
+    .addNode("fan_out", withPause(fanOutNode))
+    .addNode("verify", withPause(verifyNode))
+    .addNode("merge", withPause(mergeNode))
     .addEdge(START, "delegate")
     .addEdge("delegate", "fan_out")
     .addEdge("fan_out", "verify")
@@ -480,6 +514,14 @@ export async function runSupervisor(
   input: RunAgentInput,
 ): Promise<{ status: string; result?: string }> {
   const { runId, userId, goal } = input;
+  if (input.resume && !(await beginResume(runId))) {
+    const { data } = await supabaseAdmin()
+      .from("agent_runs")
+      .select("status")
+      .eq("id", runId)
+      .maybeSingle();
+    return { status: (data as { status?: string } | null)?.status ?? "cancelled" };
+  }
 
   const checkpointer = await getCheckpointer();
   if (!checkpointer) {
@@ -497,7 +539,11 @@ export async function runSupervisor(
       node: "supervisor",
       message: "Supervisor needs at least 2 specialist agents — running as a single agent.",
     });
-    return runAgent(input);
+    // Deliberately not `resume`: the thread may hold a *supervisor* checkpoint
+    // with different channels, so the single graph re-enters with input (the
+    // same semantics an Inngest retry has always had here). beginResume above
+    // already moved the row out of `paused`.
+    return runAgent({ ...input, resume: false });
   }
 
   const usage = makeUsageSink();
@@ -511,8 +557,10 @@ export async function runSupervisor(
   }).compile({ checkpointer });
 
   try {
-    const finalState = (await compiled.invoke(
-      { userId, runId, goal },
+    const finalState = (await invokeGraph(
+      compiled,
+      { runId, userId, goal },
+      input.resume,
       { configurable: { thread_id: `agent-run-${runId}` }, recursionLimit: 60 },
     )) as SupervisorStateType;
 
@@ -536,6 +584,13 @@ export async function runSupervisor(
     await failRun(runId, failure);
     return { status: "failed" };
   } catch (error) {
+    if (error instanceof RunPausedError) {
+      await updateRun(runId, { status: "paused" });
+      return { status: "paused" };
+    }
+    if (error instanceof RunCancelledError) {
+      return { status: "cancelled" };
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.error("[supervisor] run failed:", message);
     await appendRunEvent(runId, "error", { message: truncate(message, 300) });

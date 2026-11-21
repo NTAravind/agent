@@ -40,7 +40,12 @@ export function parseFrontmatter(source: string): {
     if (!line.trim()) continue;
 
     if (/^\s*-\s+/.test(line) && currentKey) {
-      const list = (frontmatter[currentKey] as unknown[] | undefined) ?? [];
+      const existing = frontmatter[currentKey];
+      // `key:` with no inline value followed by "- item" lines is a YAML list.
+      // Only grow a list when the key is still empty/absent — a scalar value
+      // followed by a stray dash line is left untouched (never crash on it).
+      if (existing !== undefined && existing !== "" && !Array.isArray(existing)) continue;
+      const list = Array.isArray(existing) ? existing : [];
       list.push(unquote(line.replace(/^\s*-\s+/, "")));
       frontmatter[currentKey] = list;
       continue;

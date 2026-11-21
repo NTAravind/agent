@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Card, Chip, ListGroup, Spinner, Typography } from 'heroui-native';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Button, Spinner, Typography } from 'heroui-native';
+import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AlertTriangle, Check, CheckCircle2, ChevronRight, Wrench, XCircle } from 'lucide-react-native';
 import { DEFAULT_AGENT_AVATAR, type Approval, type RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { decideApproval, fetchRun, type RunDetail } from '@/lib/agents';
+import { cancelRun, decideApproval, fetchRun, pauseRun, resumeRun, type RunDetail } from '@/lib/agents';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
+/** Statuses that keep the detail view polling (paused included so a resume flips live). */
+const POLLING = new Set([...ACTIVE, 'paused']);
 
-const STATUS_COLOR: Record<string, 'default' | 'success' | 'danger' | 'warning'> = {
-  queued: 'default',
-  running: 'warning',
-  awaiting_approval: 'warning',
-  succeeded: 'success',
-  failed: 'danger',
-  cancelled: 'default',
+const STATUS_CONFIG: Record<string, { label: string; bg: string; border: string; text: string; dot: string }> = {
+  queued: { label: 'Queued', bg: 'bg-zinc-100 dark:bg-white/5', border: 'border-zinc-200 dark:border-white/10', text: 'text-zinc-600 dark:text-zinc-400', dot: 'bg-zinc-400' },
+  running: { label: 'Running', bg: 'bg-amber-500/15', border: 'border-amber-500/30', text: 'text-amber-500 dark:text-amber-300', dot: 'bg-amber-400' },
+  awaiting_approval: { label: 'Awaiting Approval', bg: 'bg-orange-500/15', border: 'border-orange-500/30', text: 'text-orange-500 dark:text-orange-300', dot: 'bg-orange-400' },
+  paused: { label: 'Paused', bg: 'bg-violet-500/15', border: 'border-violet-500/30', text: 'text-violet-500 dark:text-violet-300', dot: 'bg-violet-400' },
+  succeeded: { label: 'Completed', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', text: 'text-emerald-500 dark:text-emerald-300', dot: 'bg-emerald-400' },
+  failed: { label: 'Failed', bg: 'bg-red-500/15', border: 'border-red-500/30', text: 'text-red-500 dark:text-red-300', dot: 'bg-red-400' },
+  cancelled: { label: 'Cancelled', bg: 'bg-zinc-100 dark:bg-white/5', border: 'border-zinc-200 dark:border-white/10', text: 'text-zinc-600 dark:text-zinc-400', dot: 'bg-zinc-500' },
 };
 
 const NODE_LABEL: Record<string, string> = {
@@ -65,7 +69,7 @@ export default function RunScreen() {
   const status = detail?.run.status;
 
   useEffect(() => {
-    const active = status ? ACTIVE.has(status) : false;
+    const active = status ? POLLING.has(status) : false;
     if (active && !pollRef.current) {
       pollRef.current = setInterval(() => void load(), 2500);
     }
@@ -102,35 +106,76 @@ export default function RunScreen() {
     [load],
   );
 
+  /** Pause/resume this run via the real endpoints (see lib/agents). */
+  const handlePauseToggle = useCallback(async () => {
+    if (!run) return;
+    const resuming = run.status === 'paused';
+    try {
+      if (resuming) await resumeRun(run.id);
+      else await pauseRun(run.id);
+      setError(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [run, load]);
+
+  /** Cancels this run (and a supervisor's unfinished children). */
+  const handleCancel = useCallback(() => {
+    if (!run) return;
+    RNAlert.alert(
+      'Cancel this task?',
+      'The run stops at its next step and cannot be resumed afterwards.',
+      [
+        { text: 'Keep running', style: 'cancel' },
+        {
+          text: 'Cancel task',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await cancelRun(run.id);
+                setError(null);
+                await load();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [run, load]);
+
+  const statusConfig = STATUS_CONFIG[status ?? 'queued'] ?? STATUS_CONFIG.queued;
+
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-white dark:bg-[#09090b]">
       <AppHeader
         left={
-          <Button size="md" variant="ghost" onPress={() => router.back()}>
-            <Button.Label>Back</Button.Label>
-          </Button>
+          <Pressable
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            className="px-2 py-1 active:opacity-60"
+          >
+            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
+              Back
+            </Typography>
+          </Pressable>
         }
         center={
-          <Chip
-            variant="soft"
-            size="sm"
-            color={
-              status === 'succeeded'
-                ? 'success'
-                : status === 'failed'
-                  ? 'danger'
-                  : status === 'running' || status === 'queued'
-                    ? 'warning'
-                    : 'default'
-            }
-          >
-            <Chip.Label>{status ? status.replace('_', ' ') : '…'}</Chip.Label>
-          </Chip>
+          <View className={`flex-row items-center gap-1.5 rounded-full border px-3 py-1 ${statusConfig.bg} ${statusConfig.border}`}>
+            <View className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
+            <Text className={`text-xs font-semibold ${statusConfig.text}`}>
+              {statusConfig.label}
+            </Text>
+          </View>
         }
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 16 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -138,129 +183,240 @@ export default function RunScreen() {
               setRefreshing(true);
               void load();
             }}
-            tintColor="#208AEF"
+            tintColor="#8b5cf6"
           />
         }
       >
-        {run ? (
-          <View className="flex-row items-center gap-3">
-            {detail?.agent ? (
-              <AgentAvatar avatar={detail.agent.avatar} size={32} />
-            ) : null}
-            <Typography type="body" weight="semibold" className="flex-1">
-              {run.goal}
-            </Typography>
+        {/* Error banner (failed actions: pause/resume/cancel/approvals) */}
+        {error ? (
+          <View className="flex-row items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+            <AlertTriangle size={16} color="#ef4444" />
+            <Text className="flex-1 text-xs text-red-500 dark:text-red-300" numberOfLines={4}>
+              {error}
+            </Text>
+            <Pressable
+              onPress={() => setError(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss error"
+              className="px-1 py-1 active:opacity-60"
+            >
+              <XCircle size={16} color="#ef4444" />
+            </Pressable>
           </View>
         ) : null}
 
-        {/* Supervisor children nest under the run (Phase 7 nested timeline). */}
+        {/* Goal Hero Card */}
+        {run ? (
+          <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5 shadow-sm gap-3">
+            <View className="flex-row items-center gap-3">
+              {detail?.agent ? (
+                <AgentAvatar avatar={detail.agent.avatar} name={detail.agent.name} size={40} />
+              ) : null}
+              <View className="flex-1 min-w-0">
+                <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  {detail?.agent?.name ?? 'Autonomous Run'}
+                </Text>
+                <Text className="text-base font-bold text-zinc-900 dark:text-white leading-6 mt-0.5">
+                  {run.goal}
+                </Text>
+              </View>
+            </View>
+            <View className="border-t border-zinc-200 dark:border-white/10 pt-2 flex-row items-center justify-between">
+              <Text className="text-xs text-zinc-400">
+                Started {new Date(run.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+              {run.tokens_used > 0 ? (
+                <Text className="text-xs text-zinc-500 font-medium">
+                  {run.tokens_used} tokens
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        {/* Specialists (Supervisor Sub-runs) */}
         {children.length > 0 ? (
           <View className="gap-2">
-            <Typography type="body-sm" color="muted">
-              Specialists
-            </Typography>
-            <ListGroup className="rounded-2xl">
-              {children.map((child) => (
-                <ListGroup.Item
-                  key={child.id}
-                  onPress={() => router.push({ pathname: '/run', params: { id: child.id } })}
-                  accessibilityLabel={child.goal}
-                >
-                  <ListGroup.ItemPrefix>
-                    <AgentAvatar avatar={child.agent?.avatar ?? DEFAULT_AGENT_AVATAR} size={24} />
-                  </ListGroup.ItemPrefix>
-                  <ListGroup.ItemContent>
-                    <ListGroup.ItemTitle numberOfLines={1}>
-                      {child.agent?.name ?? 'Specialist'}
-                    </ListGroup.ItemTitle>
-                    <ListGroup.ItemDescription numberOfLines={2}>
-                      {child.goal}
-                    </ListGroup.ItemDescription>
-                  </ListGroup.ItemContent>
-                  <ListGroup.ItemSuffix>
-                    <Chip variant="soft" size="sm" color={STATUS_COLOR[child.status] ?? 'default'}>
-                      <Chip.Label>{child.status.replace('_', ' ')}</Chip.Label>
-                    </Chip>
-                  </ListGroup.ItemSuffix>
-                </ListGroup.Item>
-              ))}
-            </ListGroup>
+            <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 px-1">
+              Specialists Researching
+            </Text>
+            <View className="gap-2">
+              {children.map((child) => {
+                const childStatus = STATUS_CONFIG[child.status] ?? STATUS_CONFIG.queued;
+                return (
+                  <Pressable
+                    key={child.id}
+                    onPress={() => router.push({ pathname: '/run', params: { id: child.id } })}
+                    className="flex-row items-center justify-between rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-3.5 active:opacity-75"
+                  >
+                    <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
+                      <AgentAvatar
+                        avatar={child.agent?.avatar ?? DEFAULT_AGENT_AVATAR}
+                        name={child.agent?.name}
+                        size={32}
+                      />
+                      <View className="flex-1 min-w-0">
+                        <Text numberOfLines={1} className="text-sm font-semibold text-zinc-900 dark:text-white">
+                          {child.agent?.name ?? 'Specialist'}
+                        </Text>
+                        <Text numberOfLines={1} className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                          {child.goal}
+                        </Text>
+                      </View>
+                    </View>
+                    <View className={`flex-row items-center gap-1 rounded-full border px-2 py-0.5 ${childStatus.bg} ${childStatus.border}`}>
+                      <Text className={`text-[10px] font-medium ${childStatus.text}`}>
+                        {childStatus.label}
+                      </Text>
+                      <ChevronRight size={12} color="#71717a" />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         ) : null}
 
-        {error ? (
-          <Typography type="body-sm" className="text-danger">
-            {error}
-          </Typography>
-        ) : null}
-
-        {!detail ? (
-          <View className="items-center py-10">
-            <Spinner />
-          </View>
-        ) : null}
-
+        {/* Final Result Card */}
         {answer ? (
-          <Card className="rounded-2xl">
-            <Card.Body className="gap-2">
-              <Card.Title>Result</Card.Title>
-              <Typography type="body" className="leading-6">
-                {answer}
-              </Typography>
-            </Card.Body>
-          </Card>
+          <View className="rounded-3xl border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10 p-5 shadow-sm gap-2">
+            <View className="flex-row items-center gap-2">
+              <CheckCircle2 size={18} color="#10b981" />
+              <Text className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                Final Result
+              </Text>
+            </View>
+            <Text className="text-base text-zinc-900 dark:text-zinc-100 leading-6">
+              {answer}
+            </Text>
+          </View>
         ) : null}
 
-        {run?.status === 'failed' && run.error ? (
-          <Typography type="body-sm" className="text-danger">
-            {run.error}
-          </Typography>
-        ) : null}
-
+        {/* Pending Approvals */}
         {pendingApprovals.map((approval) => (
-          <Card key={approval.id} className="rounded-2xl border border-warning">
-            <Card.Body className="gap-2">
-              <View className="flex-row items-center gap-2">
-                {detail?.agent ? (
-                  <AgentAvatar avatar={detail.agent.avatar} size={24} />
-                ) : null}
-                <Card.Title>Approval needed</Card.Title>
+          <View
+            key={approval.id}
+            className="rounded-3xl border border-amber-500/30 bg-amber-500/10 p-5 shadow-sm gap-3"
+          >
+            <View className="flex-row items-center gap-2">
+              <AlertTriangle size={18} color="#f59e0b" />
+              <Text className="text-sm font-bold text-amber-500 dark:text-amber-300">
+                Approval Required
+              </Text>
+            </View>
+            <Text className="text-sm text-zinc-800 dark:text-zinc-200">
+              {`${detail?.agent?.name ?? 'The agent'} wants to execute "${approval.tool_name ?? 'a sensitive tool'}".`}
+            </Text>
+            {typeof approval.args === 'object' && approval.args !== null ? (
+              <View className="rounded-2xl border border-white/10 bg-black/40 p-3">
+                <Text className="font-mono text-xs text-zinc-300 leading-5">
+                  {JSON.stringify(approval.args, null, 2)}
+                </Text>
               </View>
-              <Typography type="body-sm">
-                {`${detail?.agent?.name ?? 'The agent'} wants to use "${approval.tool_name ?? 'a sensitive tool'}".`}
-              </Typography>
-              {typeof approval.args === 'object' && approval.args !== null ? (
-                <Typography type="body-xs" color="muted" numberOfLines={6}>
-                  {JSON.stringify(approval.args, null, 1).slice(0, 600)}
-                </Typography>
-              ) : null}
-              <View className="flex-row gap-2 pt-1">
-                <Button size="sm" onPress={() => void handleDecision(approval, 'approve')}>
-                  <Button.Label>Approve</Button.Label>
-                </Button>
-                <Button size="sm" variant="secondary" onPress={() => void handleDecision(approval, 'deny')}>
-                  <Button.Label>Deny</Button.Label>
-                </Button>
-              </View>
-              {approval.expires_at ? (
-                <Typography type="body-xs" color="muted">
-                  {`Expires ${new Date(approval.expires_at).toLocaleString()} — expired approvals count as a denial.`}
-                </Typography>
-              ) : null}
-            </Card.Body>
-          </Card>
+            ) : null}
+            <View className="flex-row gap-2.5 pt-1">
+              <Button
+                size="sm"
+                variant="primary"
+                className="rounded-full px-5"
+                onPress={() => void handleDecision(approval, 'approve')}
+              >
+                <Button.Label>Approve</Button.Label>
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="rounded-full px-5"
+                onPress={() => void handleDecision(approval, 'deny')}
+              >
+                <Button.Label>Deny</Button.Label>
+              </Button>
+            </View>
+          </View>
         ))}
 
-        <View className="gap-1.5">
-          {events.map((event: RunEvent) => (
-            <EventRow key={event.id} event={event} />
-          ))}
+        {/* Live Timeline Section */}
+        <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5 shadow-sm gap-3">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
+            Execution Timeline
+          </Text>
+
+          {events.length === 0 ? (
+            <View className="py-6 items-center justify-center">
+              <Spinner size="sm" color="default" />
+              <Text className="text-xs text-zinc-500 mt-2">Initializing task plan…</Text>
+            </View>
+          ) : (
+            <View className="gap-2.5">
+              {events.map((event: RunEvent) => (
+                <EventRow key={event.id} event={event} />
+              ))}
+            </View>
+          )}
+
           {status && ACTIVE.has(status) ? (
-            <View className="flex-row items-center gap-2 py-2">
-              <Spinner size="sm" />
-              <Typography type="body-xs" color="muted">
-                Working… you can close the app, it keeps going.
-              </Typography>
+            <View className="flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-white/10 pt-3">
+              <View className="flex-row items-center gap-2 flex-1">
+                <Spinner size="sm" color="default" />
+                <Text className="flex-1 text-xs text-zinc-500" numberOfLines={2}>
+                  Working in background… you can safely close the app.
+                </Text>
+              </View>
+              <View className="flex-row gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => void handlePauseToggle()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pause task"
+                  accessibilityHint="Stops the task at its next step; resume continues from there"
+                >
+                  <Button.Label>Pause</Button.Label>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onPress={handleCancel}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel task"
+                  accessibilityHint="Ends this task permanently"
+                >
+                  <Button.Label>Cancel</Button.Label>
+                </Button>
+              </View>
+            </View>
+          ) : status === 'paused' ? (
+            <View className="flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-white/10 pt-3">
+              <View className="flex-1">
+                <Text className="text-xs font-semibold text-violet-500 dark:text-violet-300">
+                  Paused
+                </Text>
+                <Text className="mt-0.5 text-xs text-zinc-500">
+                  Stopped at its last step — resume continues from there.
+                </Text>
+              </View>
+              <View className="flex-row gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => void handlePauseToggle()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Resume task"
+                  accessibilityHint="Continues the task from where it stopped"
+                >
+                  <Button.Label>Resume</Button.Label>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onPress={handleCancel}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel task"
+                  accessibilityHint="Ends this task permanently"
+                >
+                  <Button.Label>Cancel</Button.Label>
+                </Button>
+              </View>
             </View>
           ) : null}
         </View>
@@ -276,11 +432,11 @@ function EventRow({ event }: { event: RunEvent }) {
     const node = String(payload.node ?? '');
     const label = NODE_LABEL[node] ?? node;
     return (
-      <View className="flex-row items-center gap-2">
-        <View className="h-1.5 w-1.5 rounded-full bg-accent" />
-        <Typography type="body-sm" weight="semibold">
+      <View className="flex-row items-center gap-2.5">
+        <View className="h-2 w-2 rounded-full bg-purple-500" />
+        <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
           {label}
-        </Typography>
+        </Text>
       </View>
     );
   }
@@ -288,45 +444,44 @@ function EventRow({ event }: { event: RunEvent }) {
   if (event.type === 'node_end') {
     if (payload.failed) {
       return (
-        <Typography type="body-xs" className="text-danger">
-          {`↳ failed, will retry differently`}
-        </Typography>
+        <View className="ml-4 flex-row items-center gap-1.5">
+          <XCircle size={12} color="#ef4444" />
+          <Text className="text-xs text-red-400">
+            Step failed, adjusting strategy…
+          </Text>
+        </View>
       );
     }
     return (
-      <Typography type="body-xs" color="muted">
-        {`↳ ${String(payload.note ?? payload.summary ?? payload.action ?? 'done')}`}
-      </Typography>
+      <View className="ml-4 flex-row items-center gap-1.5">
+        <Check size={12} color="#10b981" />
+        <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+          {String(payload.note ?? payload.summary ?? payload.action ?? 'Step completed')}
+        </Text>
+      </View>
     );
   }
 
   if (event.type === 'tool_call') {
     return (
-      <Typography type="body-xs" color="muted">
-        {`🔧 ${String(payload.tool ?? 'tool')} ${typeof payload.args === 'string' ? truncate(payload.args, 90) : ''}`}
-      </Typography>
+      <View className="ml-4 flex-row items-center gap-2 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 px-3 py-1 self-start">
+        <Wrench size={11} color="#38bdf8" />
+        <Text className="text-xs text-zinc-700 dark:text-zinc-300">
+          {`Calling ${String(payload.tool ?? 'tool')}`}
+        </Text>
+      </View>
     );
   }
 
   if (event.type === 'tool_result') {
     return (
-      <Typography type="body-xs" color="muted">
-        {`✓ ${String(payload.tool ?? '')} ${typeof payload.result === 'string' ? truncate(payload.result, 90) : ''}`}
-      </Typography>
-    );
-  }
-
-  if (event.type === 'error') {
-    return (
-      <Typography type="body-xs" className="text-danger">
-        {`⚠ ${String(payload.message ?? 'error')}`}
-      </Typography>
+      <View className="ml-6 flex-row items-center gap-1.5">
+        <Text className="text-xs text-zinc-400">
+          {`↳ Result received`}
+        </Text>
+      </View>
     );
   }
 
   return null;
-}
-
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
 }

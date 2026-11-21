@@ -21,6 +21,11 @@ export type ApprovalDecided = {
   decision: "approve" | "deny";
 };
 
+export type RunResumed = {
+  runId: string;
+  userId: string;
+};
+
 export type ChatCompleted = {
   threadId: string;
   userId: string;
@@ -52,6 +57,10 @@ export const agentRunRequested = eventType("agent/run.requested", {
 
 export const approvalDecided = eventType("approval/decided", {
   schema: staticSchema<ApprovalDecided>(),
+});
+
+export const runResumed = eventType("run/resumed", {
+  schema: staticSchema<RunResumed>(),
 });
 
 export const chatCompleted = eventType("chat/completed", {

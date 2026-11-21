@@ -141,16 +141,88 @@ export async function listChildRuns(
   }));
 }
 
+/** Statuses a run can still be acted on (pause, cancel, sleep). */
+export const ACTIVE_RUN_STATUSES = ["queued", "running", "awaiting_approval"] as const;
+
+/** One run row for the action routes (ownership enforced by the caller). */
+export type RunActionRow = {
+  id: string;
+  status: string;
+  agent_id: string | null;
+  parent_run_id: string | null;
+};
+
+export async function loadRunForUser(
+  runId: string,
+  userId: string,
+): Promise<RunActionRow | null> {
+  const { data } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("id, status, agent_id, parent_run_id")
+    .eq("id", runId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data as RunActionRow | null) ?? null;
+}
+
+export const runError = (message: string, status: number, code: string): Error =>
+  Object.assign(new Error(message), { status, code });
+
 export async function cancelRun(userId: string, runId: string): Promise<void> {
   await supabaseAdmin()
     .from("agent_runs")
     .update({ status: "cancelled", finished_at: new Date().toISOString() })
     .eq("id", runId)
     .eq("user_id", userId)
-    .in("status", ["queued", "running", "awaiting_approval"]);
+    .in("status", [...ACTIVE_RUN_STATUSES, "paused"]);
+  // Supervisor children execute inline inside the parent's fan_out — cancelling
+  // the parent must stop them too (their wrappers throw RunCancelledError).
+  await supabaseAdmin()
+    .from("agent_runs")
+    .update({ status: "cancelled", finished_at: new Date().toISOString() })
+    .eq("parent_run_id", runId)
+    .eq("user_id", userId)
+    .in("status", [...ACTIVE_RUN_STATUSES, "paused"]);
 }
 
-/** Marks a run failed when the Inngest function exhausts its retries. */
+/**
+ * Pauses one run (and, for a supervisor, its unfinished children): the status
+ * flip is the whole change — the graph stops at its next node boundary.
+ * Idempotent when the run is already paused.
+ */
+export async function pauseRun(
+  userId: string,
+  runId: string,
+): Promise<{ status: string; pausedChildren: number }> {
+  const run = await loadRunForUser(runId, userId);
+  if (!run) throw runError("No such run.", 404, "not_found");
+  if (run.status === "paused") return { status: "paused", pausedChildren: 0 };
+  if (!ACTIVE_RUN_STATUSES.includes(run.status as (typeof ACTIVE_RUN_STATUSES)[number])) {
+    throw runError("This task has already finished.", 409, "conflict");
+  }
+
+  await supabaseAdmin()
+    .from("agent_runs")
+    .update({ status: "paused" })
+    .eq("id", runId)
+    .in("status", ACTIVE_RUN_STATUSES);
+
+  // Children run inline in the supervisor's fan_out — pause them too so the
+  // parent's fan_out returns quickly instead of waiting them out.
+  const { data: children } = await supabaseAdmin()
+    .from("agent_runs")
+    .update({ status: "paused" })
+    .eq("parent_run_id", runId)
+    .eq("user_id", userId)
+    .in("status", ACTIVE_RUN_STATUSES)
+    .select("id");
+
+  return { status: "paused", pausedChildren: children?.length ?? 0 };
+}
+
+/**
+ * Marks a run failed when the Inngest function exhausts its retries.
+ */
 export async function failRun(runId: string, error: string): Promise<void> {
   await updateRun(runId, {
     status: "failed",

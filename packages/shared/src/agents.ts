@@ -62,6 +62,8 @@ export const AgentSchema = z.object({
   fallbackModels: z.array(z.string()),
   avatar: AgentAvatarSchema,
   isSupervisor: z.boolean(),
+  /** Sleep state: asleep agents have all active runs paused and reject new tasks. */
+  isSleeping: z.boolean(),
   /** Enabled MCP tools the agent can currently call. */
   toolCount: z.number().int().nonnegative(),
   createdAt: z.string(),
@@ -83,6 +85,7 @@ export const RunStatusSchema = z.enum([
   "queued",
   "running",
   "awaiting_approval",
+  "paused",
   "succeeded",
   "failed",
   "cancelled",
