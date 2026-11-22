@@ -3,7 +3,7 @@ import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, Text, TextInpu
 import { Button, Spinner, Typography } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Search, Sparkles, Trash2, X } from 'lucide-react-native';
+import { Plus, Search, Sparkles, Trash2, Users, X } from 'lucide-react-native';
 import type { Thread } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
@@ -63,9 +63,24 @@ export default function ThreadsScreen() {
       (t) =>
         (t.title ?? '').toLowerCase().includes(q) ||
         (t.agent?.name ?? '').toLowerCase().includes(q) ||
+        (t.group?.name ?? '').toLowerCase().includes(q) ||
         (t.model ?? '').toLowerCase().includes(q),
     );
   }, [threads, query]);
+
+  // A group conversation is not an ordinary chat: it runs through the group
+  // pipeline, so it opens the group screen instead of the chat screen.
+  const openThread = useCallback(
+    (thread: Thread) => {
+      const groupId = thread.group_id ?? thread.group?.id;
+      if (groupId) {
+        router.push({ pathname: '/groups/[id]', params: { id: groupId } } as never);
+        return;
+      }
+      router.push({ pathname: '/chat', params: { threadId: thread.id } });
+    },
+    [router],
+  );
 
   const handleDelete = useCallback((thread: Thread) => {
     RNAlert.alert(
@@ -191,15 +206,17 @@ export default function ThreadsScreen() {
           {filteredThreads.map((thread) => (
             <Pressable
               key={thread.id}
-              onPress={() =>
-                router.push({ pathname: '/chat', params: { threadId: thread.id } })
-              }
+              onPress={() => openThread(thread)}
               accessibilityRole="button"
               accessibilityLabel={thread.title ?? 'Untitled thread'}
               className="flex-row items-center rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-3.5 active:bg-zinc-100 dark:active:bg-[#18181d]"
             >
               <View className="mr-3">
-                {thread.agent ? (
+                {thread.group ? (
+                  <View className="h-10 w-10 items-center justify-center rounded-2xl border border-purple-500/20 bg-purple-500/10">
+                    <Users size={18} color="#a855f7" />
+                  </View>
+                ) : thread.agent ? (
                   <AgentAvatar
                     avatar={thread.agent.avatar}
                     name={thread.agent.name}
@@ -223,7 +240,14 @@ export default function ThreadsScreen() {
                   <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                     {formatThreadDate(thread.updated_at)}
                   </Text>
-                  {thread.agent ? (
+                  {thread.group ? (
+                    <Text
+                      numberOfLines={1}
+                      className="text-xs font-medium text-purple-600 dark:text-purple-400"
+                    >
+                      · {thread.group.name}
+                    </Text>
+                  ) : thread.agent ? (
                     <Text
                       numberOfLines={1}
                       className="text-xs font-medium text-purple-600 dark:text-purple-400"

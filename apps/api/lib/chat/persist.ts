@@ -1,16 +1,39 @@
-import type { Thread, StoredMessage } from "@agent/shared";
+import type { GroupHandoffPayload, Thread, StoredMessage } from "@agent/shared";
 
 import { loadAgentSummaries } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 type MessagePart = Record<string, unknown>;
 
-const THREAD_COLUMNS = "id, title, model, agent_id, created_at, updated_at";
+const THREAD_COLUMNS = "id, title, model, agent_id, group_id, created_at, updated_at";
+
+type ThreadGroupSummary = { id: string; name: string; mode: "handoff" | "roundtable" };
+
+/** Attaches the minimal group summary to group threads. */
+async function withThreadGroups(rows: Thread[], userId: string): Promise<Thread[]> {
+  const ids = [...new Set(rows.map((row) => row.group_id).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return rows;
+  const { data } = await supabaseAdmin()
+    .from("agent_groups")
+    .select("id, name, mode")
+    .in("id", ids)
+    .eq("user_id", userId);
+  const groups = new Map(
+    ((data ?? []) as ThreadGroupSummary[]).map((group) => [group.id, group]),
+  );
+  return rows.map((row) => ({
+    ...row,
+    group: row.group_id ? (groups.get(row.group_id) ?? null) : null,
+  }));
+}
 
 /** Attaches each thread's agent (name + resolved avatar) for list/detail responses. */
-async function withThreadAgents(rows: Thread[]): Promise<Thread[]> {
-  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
-  return rows.map((row) => ({
+async function withThreadAgents(rows: Thread[], userId: string): Promise<Thread[]> {
+  const [summaries, grouped] = await Promise.all([
+    loadAgentSummaries(rows.map((row) => row.agent_id), userId),
+    withThreadGroups(rows, userId),
+  ]);
+  return grouped.map((row) => ({
     ...row,
     agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,
   }));
@@ -23,6 +46,8 @@ export async function createThread(
     title?: string | null;
     model?: string | null;
     agentId?: string | null;
+    /** Group this thread belongs to (group chat). */
+    groupId?: string | null;
   } = {},
 ): Promise<Thread> {
   const { data, error } = await supabaseAdmin()
@@ -33,6 +58,7 @@ export async function createThread(
       title: options.title ?? null,
       model: options.model ?? null,
       ...(options.agentId ? { agent_id: options.agentId } : {}),
+      ...(options.groupId ? { group_id: options.groupId } : {}),
     })
     .select(THREAD_COLUMNS)
     .single();
@@ -56,7 +82,7 @@ export async function createThread(
     }
   }
 
-  const [thread] = await withThreadAgents([data as Thread]);
+  const [thread] = await withThreadAgents([data as Thread], userId);
   return thread;
 }
 
@@ -72,7 +98,7 @@ export async function getThread(userId: string, threadId: string): Promise<Threa
     throw new Error(`Could not read thread: ${error.message}`);
   }
   if (!data) return null;
-  const [thread] = await withThreadAgents([data as Thread]);
+  const [thread] = await withThreadAgents([data as Thread], userId);
   return thread;
 }
 
@@ -87,13 +113,15 @@ export async function listThreads(userId: string, limit = 50): Promise<Thread[]>
   if (error) {
     throw new Error(`Could not list threads: ${error.message}`);
   }
-  return withThreadAgents((data as Thread[]) ?? []);
+  return withThreadAgents((data as Thread[]) ?? [], userId);
 }
 
 export async function listMessages(userId: string, threadId: string): Promise<StoredMessage[]> {
   const { data, error } = await supabaseAdmin()
     .from("messages")
-    .select("id, thread_id, role, model, parts, created_at")
+    .select(
+      "id, thread_id, role, model, parts, from_agent_id, to_agent_id, handoff, run_id, created_at",
+    )
     .eq("thread_id", threadId)
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
@@ -101,7 +129,18 @@ export async function listMessages(userId: string, threadId: string): Promise<St
   if (error) {
     throw new Error(`Could not list messages: ${error.message}`);
   }
-  return (data as StoredMessage[]) ?? [];
+  const messages = (data as StoredMessage[]) ?? [];
+  const summaries = await loadAgentSummaries(
+    messages.flatMap((message) => [message.from_agent_id, message.to_agent_id]),
+    userId,
+  );
+  return messages.map((message) => ({
+    ...message,
+    fromAgent: message.from_agent_id
+      ? (summaries.get(message.from_agent_id) ?? null)
+      : null,
+    toAgent: message.to_agent_id ? (summaries.get(message.to_agent_id) ?? null) : null,
+  }));
 }
 
 export async function insertMessage(
@@ -110,6 +149,12 @@ export async function insertMessage(
   role: "user" | "assistant" | "system" | "tool",
   parts: MessagePart[],
   model?: string | null,
+  options?: {
+    fromAgentId?: string | null;
+    toAgentId?: string | null;
+    handoff?: GroupHandoffPayload | null;
+    runId?: string | null;
+  },
 ): Promise<void> {
   const { error } = await supabaseAdmin().from("messages").insert({
     user_id: userId,
@@ -117,6 +162,10 @@ export async function insertMessage(
     role,
     model: model ?? null,
     parts,
+    ...(options?.fromAgentId ? { from_agent_id: options.fromAgentId } : {}),
+    ...(options?.toAgentId ? { to_agent_id: options.toAgentId } : {}),
+    ...(options?.handoff ? { handoff: options.handoff } : {}),
+    ...(options?.runId ? { run_id: options.runId } : {}),
   });
 
   if (error) {

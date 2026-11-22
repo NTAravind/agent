@@ -248,7 +248,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
   ): Promise<Partial<SupervisorStateType>> => {
     await nodeEvent("fan_out", "node_start", { count: state.briefs.length });
 
-    const existing = (await listChildRuns(runId)) as Array<{
+    const existing = (await listChildRuns(runId, userId)) as Array<{
       id: string;
       status: string;
       agent_id: string | null;

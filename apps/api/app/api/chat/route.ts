@@ -50,6 +50,27 @@ export async function POST(request: Request) {
     }
     const body = parsed.data;
 
+    // Group threads are durable group conversations: their messages are group
+    // runs (route → agent_turn → … → finalize), never an ordinary chat stream.
+    // Rejected before any model priming, tool building or message persisting.
+    let threadId = body.threadId ?? null;
+    let knownThread: Awaited<ReturnType<typeof getThread>> = null;
+    if (threadId) {
+      knownThread = await getThread(user.id, threadId);
+      if (knownThread?.group_id) {
+        return Response.json(
+          {
+            error: {
+              code: "group_thread",
+              message:
+                "This conversation belongs to an agent group. Send group messages through the group run endpoint instead.",
+            },
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // Model selection: request -> default. Unknown ids are rejected loudly.
     const requestedModel = body.model ?? await defaultMobileModel() ?? DEFAULT_MODEL_ID;
     if (!(await primeMobileModel(requestedModel))) {
@@ -62,19 +83,15 @@ export async function POST(request: Request) {
     // Thread: the client generates the id, so a new chat needs no round trip.
     // If the thread does not exist yet, create it with that id.
     const agentId = body.agentId ? await ownedAgentId(user.id, body.agentId) : null;
-    let threadId = body.threadId ?? null;
-    if (threadId) {
-      const thread = await getThread(user.id, threadId);
-      if (!thread) {
-        const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
-        const created = await createThread(user.id, {
-          id: threadId,
-          title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
-          model: requestedModel,
-          agentId,
-        });
-        threadId = created.id;
-      }
+    if (threadId && !knownThread) {
+      const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
+      const created = await createThread(user.id, {
+        id: threadId,
+        title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
+        model: requestedModel,
+        agentId,
+      });
+      threadId = created.id;
     }
 
     // Attachments are resolved to bytes before the model call.

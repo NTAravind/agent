@@ -196,7 +196,7 @@ export function computeNextRuns(
 
   // Walk the local calendar day by day, starting at the local date of `from`.
   const localStart = zonedParts(from, timeZone);
-  let cursor = Date.UTC(localStart.year, localStart.month - 1, localStart.day);
+  const cursor = Date.UTC(localStart.year, localStart.month - 1, localStart.day);
 
   for (let day = 0; day <= MAX_LOOKAHEAD_DAYS && results.length < count; day += 1) {
     const date = new Date(cursor + day * 86_400_000);

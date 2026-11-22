@@ -1,9 +1,9 @@
 # Master Spec: Personal AI Agent ("Grok-style" assistant + Second Brain)
 
-*Status: v0.1 draft · Owner: you (single user) · Last updated: 12 Nov 2026*
+*Status: v0.2 draft · Owner: you (single user) · Last updated: 21 Nov 2026*
 
 ## 1. Vision
-A personal, always-available AI assistant you can use from your phone (Expo) and web. It chats, researches, runs long tasks in the background, remembers you through an Obsidian-style second brain, can be extended with MCP servers in one click, and can show answers as live dashboards ("canvas").
+A personal, always-available AI assistant you can use from your phone (Expo) and web. It chats, researches, runs long tasks in the background, remembers you through an Obsidian-style second brain, can be extended with MCP servers in one click, can coordinate dynamic groups of agents, and can show answers as live dashboards ("canvas").
 
 ## 2. Goals
 - G1. One agent that plans and executes tasks from a single instruction, asking approval before sensitive actions.
@@ -12,6 +12,7 @@ A personal, always-available AI assistant you can use from your phone (Expo) and
 - G4. Canvas: agent renders dashboards/reports natively in the app from a JSON spec.
 - G5. Runs anywhere (cloud), **free**, single user.
 - G6. Provider-agnostic: Google, Groq, OpenRouter, Mistral, DeepSeek, Hugging Face and Cohere selectable per chat/agent via the AI SDK, with automatic fallback.
+- G7. Dynamic agent groups: several configured agents can hold a durable group chat, consult one another, and hand work forward with bounded routing, approvals, and privacy enforcement.
 
 ## 3. Non-goals (v1)
 - Multi-user, teams, billing, public sharing.
@@ -26,7 +27,7 @@ A personal, always-available AI assistant you can use from your phone (Expo) and
 | Free tiers only | Gemini free tier, Vercel Hobby, Supabase Free, Inngest Hobby. Design for quotas. |
 | Personal use | Vercel Hobby (non-commercial) is acceptable. Auth = your GitHub account only. |
 | Mobile-first | Expo app is the primary client; the server is a Next.js API. |
-| Privacy | Gemini free tier may use requests to improve Google products. Don't send sensitive notes through it by default. |
+| Privacy | Gemini free tier may use requests to improve Google products. Don't send sensitive notes through it by default. Group handoffs to a non-`private_ok` model must also omit note/memory-derived context and the tools that can retrieve it — and a member that *can* read private context may not hand that work to one that cannot, because the copy is indistinguishable from ordinary prose. |
 
 ## 5. Principles
 1. **Server owns intelligence, client owns pixels.** Keys and agents live on the server; Expo renders.
@@ -51,7 +52,8 @@ A personal, always-available AI assistant you can use from your phone (Expo) and
 - "Research X and put it on a dashboard" completes in the background and appears in the Canvas tab.
 - Agent finds a note you wrote months ago and links it in its answer.
 - Adding an MCP server takes ≤ 3 taps and its tools work in the next run.
+- A 3-agent group can complete a task through at least two visible handoffs, stop a ping-pong at the configured guard, and never send private note/memory context to a non-`private_ok` member.
 - Monthly cost: $0.
 
 ## 8. Glossary
-**Agent**: configured LLM + tools + instructions. **Run**: one execution of an agent graph. **Vault**: Obsidian folder in a private GitHub repo. **Canvas**: persisted JSON UI spec rendered natively. **MCP**: Model Context Protocol tool server.
+**Agent**: configured LLM + tools + instructions. **Run**: one execution of an agent graph. **Group**: user-owned collection of agents with a lead, routing mode, hop/token limits, and durable chat thread. **Handoff**: an explicit transfer from one group member to another. **Vault**: Obsidian folder in a private GitHub repo. **Canvas**: persisted JSON UI spec rendered natively. **MCP**: Model Context Protocol tool server.

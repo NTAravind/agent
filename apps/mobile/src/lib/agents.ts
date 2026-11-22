@@ -2,10 +2,9 @@ import type {
   Agent,
   AgentCreate,
   AgentPatch,
-  AgentRun,
-  AgentSummary,
-  Approval,
-  RunEvent,
+  RunChild,
+  RunDetail,
+  RunListItem,
   StartRunResponse,
 } from "@agent/shared";
 import * as ImagePicker from "expo-image-picker";
@@ -103,51 +102,25 @@ export async function uploadAgentAvatar(agentId: string): Promise<string | null>
   return signed.storagePath;
 }
 
-export type RunListItem = {
-  id: string;
-  goal: string;
-  status: string;
-  model: string | null;
-  tokens_used: number;
-  created_at: string;
-  finished_at: string | null;
-  /**
-   * The agent that owns the run. `GET /api/runs` already joins this — it was
-   * previously undeclared on the mobile side, which forced a goal-substring
-   * heuristic to match runs to agents. Null for runs started without an agent.
-   */
-  agent_id?: string | null;
-  /** Embedded agent summary (name + resolved avatar) from the same join. */
-  agent?: AgentSummary | null;
-};
+/**
+ * A row of `GET /api/runs`. The server already joins the owning agent, so the
+ * mobile side never has to guess which agent a run belongs to. Group runs
+ * also expose their `group_id`.
+ */
+export type { RunListItem };
 
 export async function fetchRuns(): Promise<RunListItem[]> {
   const response = await authedFetch<{ runs: RunListItem[] }>("/api/runs");
   return response.runs;
 }
 
-/** A supervisor's specialist child run (nests under the parent timeline). */
-export type RunChild = {
-  id: string;
-  goal: string;
-  status: string;
-  model: string | null;
-  tokens_used: number;
-  created_at: string;
-  finished_at: string | null;
-  /** The specialist that ran it (name + resolved avatar). */
-  agent?: AgentSummary | null;
-};
+/**
+ * A specialist child run (Supervisor delegation or a dynamic group member
+ * turn), nested under the parent timeline.
+ */
+export type { RunChild };
 
-export type RunDetail = {
-  run: AgentRun;
-  events: RunEvent[];
-  /** The run's agent (name + resolved avatar), when it has one. */
-  agent?: AgentSummary | null;
-  /** Supervisor children, oldest first (nesting order). */
-  children?: RunChild[];
-  pendingApprovals?: Approval[];
-};
+export type { RunDetail };
 
 export async function fetchRun(id: string): Promise<RunDetail> {
   return await authedFetch<RunDetail>(`/api/runs/${id}`);

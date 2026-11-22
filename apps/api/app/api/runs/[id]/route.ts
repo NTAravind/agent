@@ -1,7 +1,7 @@
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { getRunWithEvents, listChildRuns } from "@/lib/agent/runs";
 import { loadAgentSummaries } from "@/lib/agents";
-import { listPendingByRun } from "@/lib/approvals";
+import { listPendingByRunTree } from "@/lib/approvals";
 
 /**
  * GET /api/runs/:id — one run plus its timeline events, the run's agent
@@ -13,7 +13,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const user = await requireUser(request);
     const { id } = await context.params;
 
-    const data = await getRunWithEvents(id);
+    const data = await getRunWithEvents(id, user.id);
     if (!data || (data.run as { user_id?: string }).user_id !== user.id) {
       return Response.json(
         { error: { code: "not_found", message: "No such run." } },
@@ -23,9 +23,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const agentId = (data.run as { agent_id?: string | null }).agent_id ?? null;
     const [pendingApprovals, summaries, children] = await Promise.all([
-      listPendingByRun(id),
-      loadAgentSummaries([agentId]),
-      listChildRuns(id),
+      listPendingByRunTree(id, user.id),
+      loadAgentSummaries([agentId], user.id),
+      listChildRuns(id, user.id),
     ]);
     const agent = agentId ? (summaries.get(agentId) ?? null) : null;
 

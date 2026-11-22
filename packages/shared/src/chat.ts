@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AgentSummarySchema } from "./agents";
+import { GroupHandoffPayloadSchema, GroupModeSchema } from "./groups";
 
 /**
  * Chat contracts shared by the API and the mobile app so they cannot drift.
@@ -57,6 +58,17 @@ export const ThreadSchema = z.object({
   agent_id: z.string().uuid().nullable(),
   /** Embedded by list/detail responses: the thread's agent, name + resolved avatar. */
   agent: AgentSummarySchema.nullable().optional(),
+  /** Group this conversation belongs to, when it is a group chat. */
+  group_id: z.string().uuid().nullable().optional(),
+  /** Minimal group summary embedded by list/detail responses. */
+  group: z
+    .object({
+      id: z.string().uuid(),
+      name: z.string(),
+      mode: GroupModeSchema,
+    })
+    .nullable()
+    .optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -69,6 +81,17 @@ export const StoredMessageSchema = z.object({
   role: ChatRoleSchema,
   model: z.string().nullable(),
   parts: z.array(ChatMessagePartSchema),
+  /** Agent that authored the message, when it was produced by a group turn. */
+  from_agent_id: z.string().uuid().nullable().optional(),
+  /** Agent that received a handoff, when the message is a handoff. */
+  to_agent_id: z.string().uuid().nullable().optional(),
+  /** Structured handoff metadata, when the message represents a handoff. */
+  handoff: GroupHandoffPayloadSchema.nullable().optional(),
+  /** Run that produced the message, when known. */
+  run_id: z.string().uuid().nullable().optional(),
+  /** Embedded compact agent summaries used by group chat responses. */
+  fromAgent: AgentSummarySchema.nullable().optional(),
+  toAgent: AgentSummarySchema.nullable().optional(),
   created_at: z.string(),
 });
 

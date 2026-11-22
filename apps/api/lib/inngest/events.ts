@@ -16,6 +16,8 @@ export type AgentRunRequested = {
   tz?: string;
   /** Set when the run was fired by a routine (Phase 10). */
   routineId?: string;
+  /** Dynamic agent group (Phase 11). */
+  groupId?: string;
   /**
    * Sensitive-tool policy. "gate" (default) parks the run on an approval;
    * "deny" auto-denies sensitive calls. A routine with

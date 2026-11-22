@@ -107,6 +107,12 @@ export const AgentRunSchema = z.object({
   model: z.string().nullable(),
   tokens_used: z.number(),
   thread_id: z.string().uuid().nullable(),
+  /** Agent turn owner for ordinary runs. */
+  agent_id: z.string().uuid().nullable().optional(),
+  /** Parent group run for a member turn. */
+  parent_run_id: z.string().uuid().nullable().optional(),
+  /** Dynamic group for a parent run or member turn. */
+  group_id: z.string().uuid().nullable().optional(),
   created_at: z.string(),
   finished_at: z.string().nullable(),
 });
@@ -137,12 +143,57 @@ export type RunEvent = z.infer<typeof RunEventSchema>;
 export const StartRunResponseSchema = z.object({
   runId: z.string().uuid(),
   status: RunStatusSchema,
+  /** Present when the run belongs to a dynamic agent group. */
+  groupId: z.string().uuid().optional(),
 });
 
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>;
 
-export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired"]);
+/** Compact agent reference joined onto list rows and child runs. */
+const AgentRunSummarySchema = AgentSummarySchema.nullable().optional();
 
+/**
+ * A row of `GET /api/runs`. The server already joins the owning agent; group
+ * runs additionally expose their group id so a list can route them.
+ */
+export const RunListItemSchema = z.object({
+  id: z.string().uuid(),
+  goal: z.string(),
+  status: RunStatusSchema,
+  model: z.string().nullable(),
+  tokens_used: z.number(),
+  created_at: z.string(),
+  finished_at: z.string().nullable(),
+  agent_id: z.string().uuid().nullable().optional(),
+  agent: AgentRunSummarySchema,
+  group_id: z.string().uuid().nullable().optional(),
+});
+
+export type RunListItem = z.infer<typeof RunListItemSchema>;
+
+/**
+ * A specialist child run (Supervisor delegation or a dynamic group member
+ * turn), nested under the parent timeline.
+ */
+export const RunChildSchema = z.object({
+  id: z.string().uuid(),
+  goal: z.string(),
+  status: RunStatusSchema,
+  model: z.string().nullable(),
+  tokens_used: z.number(),
+  created_at: z.string(),
+  finished_at: z.string().nullable(),
+  result: z.unknown().nullable().optional(),
+  agent_id: z.string().uuid().nullable().optional(),
+  parent_run_id: z.string().uuid().nullable().optional(),
+  group_id: z.string().uuid().nullable().optional(),
+  group_depth: z.number().int().optional(),
+  agent: AgentRunSummarySchema,
+});
+
+export type RunChild = z.infer<typeof RunChildSchema>;
+
+export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired"]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 
 export const ApprovalSchema = z.object({
@@ -157,3 +208,14 @@ export const ApprovalSchema = z.object({
 });
 
 export type Approval = z.infer<typeof ApprovalSchema>;
+
+/** `GET /api/runs/:id` — one run, its timeline and its nested children. */
+export const RunDetailSchema = z.object({
+  run: AgentRunSchema,
+  events: z.array(RunEventSchema),
+  agent: AgentRunSummarySchema,
+  children: z.array(RunChildSchema).optional(),
+  pendingApprovals: z.array(ApprovalSchema).optional(),
+});
+
+export type RunDetail = z.infer<typeof RunDetailSchema>;

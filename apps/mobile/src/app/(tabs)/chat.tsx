@@ -206,7 +206,16 @@ export default function ChatScreen() {
     async (id: string) => {
       try {
         const thread = await fetchThread(id);
-        if (!thread || touchedRef.current) return;
+        if (!thread) return;
+        // A group conversation never runs through this chat screen: its
+        // messages are group runs. Hand it to the group screen instead of
+        // trying to stream it here.
+        const groupId = thread.thread.group_id ?? thread.thread.group?.id;
+        if (groupId) {
+          router.replace({ pathname: '/groups/[id]', params: { id: groupId } } as never);
+          return;
+        }
+        if (touchedRef.current) return;
         const history = thread.messages.map((message) => ({
           id: message.id,
           role: message.role,
@@ -227,7 +236,7 @@ export default function ChatScreen() {
         if (!pendingMessagesRef.current) setLoadingHistory(false);
       }
     },
-    [setMessages],
+    [router, setMessages],
   );
 
   // Apply stashed history once the Chat instance has swapped to the new id.

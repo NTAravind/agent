@@ -25,6 +25,12 @@ export async function createRun(input: {
   routineId?: string | null;
   /** The occurrence instant a routine run fired for. */
   scheduledFor?: string | null;
+  /** Group this run belongs to (Phase 11). */
+  groupId?: string | null;
+  /** Persisted, bounded context for a group member turn. */
+  groupContext?: Record<string, unknown> | null;
+  /** Nested-ask depth for a group member turn. */
+  groupDepth?: number;
 }): Promise<{ id: string; status: RunStatus }> {
   const { data, error } = await supabaseAdmin()
     .from("agent_runs")
@@ -39,6 +45,9 @@ export async function createRun(input: {
       tz: input.tz ?? "Asia/Kolkata",
       ...(input.routineId ? { routine_id: input.routineId } : {}),
       ...(input.scheduledFor ? { scheduled_for: input.scheduledFor } : {}),
+      ...(input.groupId ? { group_id: input.groupId } : {}),
+      group_context: input.groupContext ?? {},
+      group_depth: input.groupDepth ?? 0,
     })
     .select("id, status")
     .single();
@@ -90,7 +99,7 @@ export async function appendRunEvent(
   }
 }
 
-export async function getRunWithEvents(runId: string): Promise<{
+export async function getRunWithEvents(runId: string, userId: string): Promise<{
   run: Record<string, unknown> | null;
   events: Array<Record<string, unknown>>;
 } | null> {
@@ -98,6 +107,7 @@ export async function getRunWithEvents(runId: string): Promise<{
     .from("agent_runs")
     .select("*")
     .eq("id", runId)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (!run) return null;
@@ -114,7 +124,7 @@ export async function getRunWithEvents(runId: string): Promise<{
 export async function listRuns(userId: string, limit = 30): Promise<Record<string, unknown>[]> {
   const { data } = await supabaseAdmin()
     .from("agent_runs")
-    .select("id, goal, status, model, tokens_used, created_at, finished_at, agent_id")
+    .select("id, goal, status, model, tokens_used, created_at, finished_at, agent_id, group_id")
     .eq("user_id", userId)
     // Child runs nest under their supervisor's detail, never the top list.
     .is("parent_run_id", null)
@@ -122,7 +132,7 @@ export async function listRuns(userId: string, limit = 30): Promise<Record<strin
     .limit(limit);
 
   const rows = (data ?? []) as { agent_id: string | null }[];
-  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
+  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id), userId);
   return rows.map((row) => ({
     ...row,
     agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,
@@ -135,15 +145,17 @@ export async function listRuns(userId: string, limit = 30): Promise<Record<strin
  */
 export async function listChildRuns(
   parentRunId: string,
+  userId: string,
 ): Promise<Record<string, unknown>[]> {
   const { data } = await supabaseAdmin()
     .from("agent_runs")
-    .select("id, goal, status, model, tokens_used, created_at, finished_at, result, agent_id")
+    .select("id, goal, status, model, tokens_used, created_at, finished_at, result, agent_id, parent_run_id, group_id, group_depth")
     .eq("parent_run_id", parentRunId)
+    .eq("user_id", userId)
     .order("created_at", { ascending: true });
 
   const rows = (data ?? []) as { agent_id: string | null }[];
-  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id));
+  const summaries = await loadAgentSummaries(rows.map((row) => row.agent_id), userId);
   return rows.map((row) => ({
     ...row,
     agent: row.agent_id ? (summaries.get(row.agent_id) ?? null) : null,

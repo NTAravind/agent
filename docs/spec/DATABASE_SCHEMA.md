@@ -355,6 +355,76 @@ create unique index idx_agent_runs_routine_occurrence
 alter table agents add column primary_thread_id uuid references threads(id) on delete set null;
 ```
 
+## Agent groups and handoff (Phase 11)
+
+A group is a user-owned collection of agents and a durable chat context. The group parent run
+routes between members; each member turn is a child run of the existing single-agent graph.
+
+```sql
+create table agent_groups (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  description text,
+  lead_agent_id uuid references agents(id) on delete set null,
+  mode text not null default 'handoff' check (mode in ('handoff', 'roundtable')),
+  max_hops int not null default 8 check (max_hops > 0),
+  token_budget int not null default 50000 check (token_budget > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table group_members (
+  group_id uuid not null references agent_groups(id) on delete cascade,
+  agent_id uuid not null references agents(id) on delete cascade,
+  role text not null default 'member' check (role in ('lead', 'member')),
+  created_at timestamptz not null default now(),
+  primary key (group_id, agent_id)
+);
+
+alter table threads
+  add column group_id uuid references agent_groups(id) on delete set null;
+
+alter table messages
+  add column from_agent_id uuid references agents(id) on delete set null,
+  add column to_agent_id uuid references agents(id) on delete set null,
+  add column handoff jsonb,
+  add column run_id uuid references agent_runs(id) on delete set null;
+
+alter table agent_runs
+  add column group_id uuid references agent_groups(id) on delete set null,
+  add column group_context jsonb not null default '{}'::jsonb,
+  add column group_depth int not null default 0 check (group_depth >= 0);
+```
+
+`messages.handoff` stores `{ from, to, task }`. `agent_runs.group_context` stores the bounded
+handoff brief, rolling group summary, membership snapshot, and privacy policy needed to
+reconstruct a member turn after an approval resume. On the **parent** run it also stores the
+durable `summary` and `tokensUsed` of the group, so a follow-up run in the same conversation
+continues from it. The child relationship continues to use `agent_runs.parent_run_id`;
+`group_depth` distinguishes a normal member turn from a nested ask.
+
+The membership snapshot in `group_context` is a convenience, never a source of truth: an approval
+resume re-reads the live group and re-derives the acting member from the run row's `agent_id`.
+
+Indexes cover `(user_id, updated_at desc)` for groups, membership by agent and role,
+`threads.group_id`, message agent/run references, and `(group_id, group_depth)` for runs.
+
+**Atomic membership replacement.** Replacing a group's membership deletes and re-inserts every
+row, so it runs in one transaction through the `replace_group_members` RPC: it checks that the
+caller owns the group and every member agent, that the lead is one of the members, then swaps the
+rows and the `lead_agent_id` column together. A concurrent reader never observes a group with
+missing members or with a lead column that disagrees with the rows.
+
+```sql
+create or replace function replace_group_members(
+  p_group_id uuid,
+  p_user_id uuid,
+  p_lead_agent_id uuid,
+  p_members jsonb
+) returns void language plpgsql as $$ ... $$;
+```
+
 ## Search function (hybrid)
 Expose an RPC `search_notes(query_embedding, query_text, k)` that combines cosine distance on `note_chunks.embedding` with `ts_rank` on `tsv` (reciprocal-rank fusion) and returns chunk, note path, heading, score.
 
@@ -362,7 +432,7 @@ Expose an RPC `search_notes(query_embedding, query_text, k)` that combines cosin
 Created by the checkpointer's `setup()` on the same database; don't hand-write them.
 
 ## Row Level Security
-Enable RLS on every table above. Policy pattern: `using (user_id = auth.uid())`; for child tables join through the parent. `mcp_servers` is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by `user_id` explicitly in server queries.
+Enable RLS on every table above. The normal policy pattern is `using (user_id = auth.uid())`; child tables join through the parent. Phase 11 additionally replaces the `threads`, `messages`, and `agent_runs` insert/update policies with ownership-aware checks, so a direct authenticated database client cannot attach another user's group, agent, thread, or run. `group_members` joins through both the owned group and the owned agent. `mcp_servers` is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by `user_id` explicitly in server queries.
 
 ## Memory kinds (Phase 9)
 `memories.kind` still accepts `'task'` for historical rows, but extraction no longer writes it: a detected task becomes a row in `tasks` with `created_by = 'suggested'`, which the app shows as a suggestion to accept or dismiss. This keeps one todo store instead of two.
@@ -374,4 +444,4 @@ chip, not a normal user bubble, and memory extraction skips it — the routine's
 something the user said.
 
 ## Retention (protect the 500 MB cap)
-Prune `run_events` and `provider_usage` older than 30 days; keep `agent_runs` summaries. Truncate large tool outputs before storing. Store files only in Storage.
+Prune `run_events` and `provider_usage` older than 30 days; keep `agent_runs` summaries. Group context is bounded before persistence and group message/run rows follow the same run retention policy. Truncate large tool outputs before storing. Store files only in Storage.

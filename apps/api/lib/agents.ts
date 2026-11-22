@@ -112,15 +112,18 @@ export function storedAvatar(avatar: AgentAvatar): AgentAvatar {
  */
 export async function loadAgentSummaries(
   ids: Array<string | null | undefined>,
+  userId?: string,
 ): Promise<Map<string, AgentSummary>> {
   const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   const summaries = new Map<string, AgentSummary>();
   if (unique.length === 0) return summaries;
 
-  const { data, error } = await supabaseAdmin()
+  let query = supabaseAdmin()
     .from("agents")
     .select("id, name, avatar")
     .in("id", unique);
+  if (userId) query = query.eq("user_id", userId);
+  const { data, error } = await query;
   if (error) throw new Error(`Could not load agents: ${error.message}`);
 
   for (const row of (data ?? []) as { id: string; name: string; avatar: unknown }[]) {

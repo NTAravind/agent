@@ -30,6 +30,9 @@ const NODE_LABEL: Record<string, string> = {
   observe: 'Checking progress',
   self_correct: 'Adjusting approach',
   finalize: 'Writing the result',
+  // Group graph
+  route: 'Choosing the next member',
+  agent_turn: 'A member is working',
   // Supervisor graph
   delegate: 'Delegating to specialists',
   fan_out: 'Specialists researching',
@@ -86,6 +89,7 @@ export default function RunScreen() {
   }, [status, load]);
 
   const run = detail?.run;
+  const isGroupRun = Boolean(run?.group_id);
   const events = detail?.events ?? [];
   const children = detail?.children ?? [];
   const pendingApprovals = detail?.pendingApprovals ?? [];
@@ -214,7 +218,7 @@ export default function RunScreen() {
               ) : null}
               <View className="flex-1 min-w-0">
                 <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  {detail?.agent?.name ?? 'Autonomous Run'}
+                  {detail?.agent?.name ?? (isGroupRun ? 'Agent Group' : 'Autonomous Run')}
                 </Text>
                 <Text className="text-base font-bold text-zinc-900 dark:text-white leading-6 mt-0.5">
                   {run.goal}
@@ -238,7 +242,7 @@ export default function RunScreen() {
         {children.length > 0 ? (
           <View className="gap-2">
             <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 px-1">
-              Specialists Researching
+              {isGroupRun ? 'Member Turns' : 'Specialists Researching'}
             </Text>
             <View className="gap-2">
               {children.map((child) => {
@@ -305,7 +309,7 @@ export default function RunScreen() {
               </Text>
             </View>
             <Text className="text-sm text-zinc-800 dark:text-zinc-200">
-              {`${detail?.agent?.name ?? 'The agent'} wants to execute "${approval.tool_name ?? 'a sensitive tool'}".`}
+              {`${detail?.agent?.name ?? (isGroupRun ? 'A group member' : 'The agent')} wants to execute "${approval.tool_name ?? 'a sensitive tool'}".`}
             </Text>
             {typeof approval.args === 'object' && approval.args !== null ? (
               <View className="rounded-2xl border border-white/10 bg-black/40 p-3">

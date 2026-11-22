@@ -1,6 +1,7 @@
 import { Annotation } from "@langchain/langgraph";
 
 import type { ToolCallInfo } from "@/lib/agent/tools";
+import type { GroupHandoff } from "@/lib/groups/types";
 
 /**
  * Agent graph state (plan → act ⇄ tools → observe).
@@ -86,6 +87,15 @@ export const AgentState = Annotation.Root({
       return merged.slice(0, MAX_LOADED_SKILLS);
     },
     default: () => [],
+  }),
+
+  /**
+   * A group handoff requested by the current member. Set by the group tool
+   * executor and consumed by the turn's finalize node.
+   */
+  groupHandoff: Annotation<GroupHandoff | null>({
+    reducer: (_prev, next) => next ?? null,
+    default: () => null,
   }),
 
   /** The observe node's decision for what happens next. */

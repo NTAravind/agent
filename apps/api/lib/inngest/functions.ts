@@ -2,6 +2,7 @@ import { step } from "inngest";
 
 import { resumeAgentRun } from "@/lib/agent/graph";
 import { executeRun, resumeExecution } from "@/lib/agent/execute";
+import { resumeGroupParentForChild } from "@/lib/agent/group";
 import { failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, runResumed, vaultChanged } from "@/lib/inngest/events";
@@ -84,10 +85,18 @@ export const agentRunFunction = inngest.createFunction(
     },
   },
   async ({ event }) => {
-    const { runId, userId, goal, preferredModel, tz, routineId, approvalMode } = event.data;
+    const { runId, userId, goal, preferredModel, tz, routineId, groupId, approvalMode } = event.data;
 
     const result = await step.run("execute-agent-graph", () =>
-      executeRun({ runId, userId, goal, preferredModel, tz, approvalMode }),
+      executeRun({
+        runId,
+        userId,
+        goal,
+        preferredModel,
+        tz,
+        approvalMode,
+        ...(groupId ? { groupId } : {}),
+      }),
     );
 
     // A routine run books its own outcome (result posted in the thread,
@@ -121,7 +130,16 @@ export const approvalResumeFunction = inngest.createFunction(
   async ({ event }) => {
     const { runId, userId } = event.data;
 
-    return await step.run("resume-agent-graph", () => resumeAgentRun({ runId, userId }));
+    const result = await step.run("resume-agent-graph", () => resumeAgentRun({ runId, userId }));
+
+    // A group member's approval belongs to the child run. Once that child
+    // finishes, resume the parked parent group graph so it can route or
+    // finalize with the member's result.
+    if (result.status !== "awaiting_approval" && result.status !== "paused") {
+      await step.run("resume-group-parent", () => resumeGroupParentForChild(runId, userId));
+    }
+
+    return result;
   },
 );
 

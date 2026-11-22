@@ -142,6 +142,31 @@ export async function listPendingByRun(runId: string): Promise<Approval[]> {
 }
 
 /**
+ * Pending approvals for a run and its direct child turns. A group parent's
+ * approval is raised by the member child, so the parent timeline surfaces it
+ * too (the child timeline remains the canonical detail view).
+ */
+export async function listPendingByRunTree(
+  runId: string,
+  userId: string,
+): Promise<Approval[]> {
+  const { data: children } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("id")
+    .eq("parent_run_id", runId)
+    .eq("user_id", userId);
+  const ids = [runId, ...((children ?? []) as Array<{ id: string }>).map((row) => row.id)];
+  const { data } = await supabaseAdmin()
+    .from("approvals")
+    .select("id, run_id, tool_name, args, reason, status, created_at, expires_at")
+    .in("run_id", ids)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
+
+  return (data ?? []) as Approval[];
+}
+
+/**
  * The most recent approval for (run, tool) of any status.
  *
  * The tool gate uses this to stay idempotent across interrupt resumes: on

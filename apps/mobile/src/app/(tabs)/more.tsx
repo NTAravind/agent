@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Sparkles,
   Sun,
+  Users,
 } from 'lucide-react-native';
 
 import { apiFetchDebug, ApiRequestError } from '@/lib/api';
@@ -124,6 +125,13 @@ export default function HomeScreen() {
           icon: CalendarClock,
           color: '#8B5CF6',
           route: '/routines',
+        },
+        {
+          title: 'Groups',
+          subtitle: 'Multi-agent chats with handoffs and shared context',
+          icon: Users,
+          color: '#EC4899',
+          route: '/groups',
         },
         {
           title: 'Integrations (MCP)',

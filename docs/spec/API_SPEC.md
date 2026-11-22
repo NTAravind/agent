@@ -6,8 +6,9 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | Method | Route | Description |
 |---|---|---|
 | POST | `/api/chat` | Body `{ threadId?, messages, agentId?, model?, mode: "chat"\|"agent" }` (`model` = registry id like `groq:...`; falls back to agent/default). Streams AI SDK UI message stream. `mode:"agent"` creates a run and streams its progress parts. |
-| GET | `/api/threads` | List threads (cursor paging), including the selected agent's `avatar` object when set |
-| GET | `/api/threads/:id` | Thread + messages |
+| GET | `/api/threads` | List threads (cursor paging), including the selected agent's `avatar` object and group summary when set |
+| POST | `/api/threads` | Create an empty thread. Body `{ title?, model?, groupId? }`; `groupId` creates a durable group chat and is rejected if the group is not owned by the caller |
+| GET | `/api/threads/:id` | Thread + messages; group messages include agent identities, handoff metadata, and run links |
 | PATCH/DELETE | `/api/threads/:id` | Rename / delete |
 | GET | `/api/models` | Only mobile-enabled catalog models, capabilities, `available` (key configured), today's usage per provider |
 | PUT | `/api/settings/models` | `{ defaultModel, fallbackOrder[] }` |
@@ -82,6 +83,69 @@ All routes are `requireUser()`-guarded and Zod-validated. The API speaks **camel
 
 **Approval mode:** `approvalMode` is `queue` (default) or `deny`. A routine-fired run inherits it — `queue` parks a sensitive tool call in the normal approval gate (24 h expiry), `deny` auto-denies it (`approvalMode: "deny"`), so a routine can never block on a human decision. The policy survives a resume.
 
+## 3e. Agent groups and handoff (Phase 11)
+All routes are `requireUser()`-guarded and use the shared Zod contracts in `packages/shared/src/groups.ts`. The API is camelCase.
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/groups` | List the caller's groups with members → `{ groups }` |
+| POST | `/api/groups` | Create a group: `{ name, description?, leadAgentId, mode?, maxHops?, tokenBudget?, memberIds? }` → **201** `{ group }`. The lead is added exactly once |
+| GET | `/api/groups/:id` | One owned group; includes the latest durable group `threadId` and the live `activeParentRunId` / `activeParentRunStatus` (so the app can restore the "running" pill after it was killed) → `{ group }` |
+| PATCH | `/api/groups/:id` | Update metadata and optionally lead/membership. Body follows `GroupPatchSchema` → `{ group }` |
+| DELETE | `/api/groups/:id` | Delete the group. Existing thread history is preserved with the group link cleared. **409** while the group still has a run in flight |
+| PUT | `/api/groups/:id/members` | Replace membership: `{ leadAgentId, memberIds }` → `{ group }`. The lead is always included. The swap runs in one transaction (`replace_group_members`), so a reader never sees a half-replaced group |
+| POST | `/api/agents/run` | Start a group run with `{ groupId, goal, threadId?, inline?, tz? }` → **202** `{ runId, status: "queued", groupId }`. A thread already linked to a group routes to that group; an explicit mismatched `groupId` is rejected |
+
+`mode` is `handoff` or `roundtable`; `maxHops` is 1–20 and `tokenBudget` is 1,000–500,000.
+A group holds at most **12 members, counting the lead** (`MAX_GROUP_MEMBERS`); the server rejects
+a larger set. Unknown or foreign agents are rejected, and service-role queries always scope the
+group and membership by the authenticated `userId`.
+
+**Group runtime:** the parent follows `route → agent_turn → route → … → finalize`. Each turn is a
+sequential child run of the existing single-agent graph. `handoff_to` ends the current turn,
+`ask_agent` returns a consult answer, and `post_to_group` persists visible progress. The calling
+agent is resolved from run context, while handoff/consult targets are validated against the
+group's membership server-side.
+
+**Entry routing:** a user message in a group thread starts with an `@agent` mention when one is
+present; otherwise it starts with the group's lead. Hop, ping-pong, token-budget, and nested-ask
+guards stop further routing and let the lead finalize. Member context is a compact handoff brief
+plus a bounded rolling group summary, not the full transcript. Non-`private_ok` targets receive no
+note/memory-derived context and no note/memory retrieval tools.
+
+**Group run rejections** (`POST /api/agents/run`):
+- **400** `bad_request` — the body mixes a group run with an explicit `agentId` or `model`; each
+  member brings its own.
+- **409** `conflict` — a member (or the lead) is asleep; a second parent run is already in flight
+  for the group.
+- The user's message is linked to its run (`messages.run_id`) and the run row is created first, so
+  the timeline can always connect the two.
+
+**Privacy boundary:** the boundary is the *caller's* policy, not the prose it wrote. A member whose
+model may read notes/memories can copy that material into any `task` or `question` it authors, so a
+private-capable caller may only hand work to a private-capable target — a handoff or consult to a
+non-private target is refused instead of being sanitised after the fact. A caller that never sees
+private material may hand off anywhere.
+
+**Approval resume:** the parked child run's persisted `group_context` is never trusted. On resume the
+server re-reads the live group, resolves the acting member from the run row's `agent_id`, and
+recomputes the privacy policy from that member's current model. A member removed while the run was
+parked can no longer act, and the target set is the current membership.
+
+**Token accounting:** a run that parks on an approval keeps the tokens it already spent; the resume
+adds to them instead of replacing them, so the run row (and the group's cumulative budget) never
+under-reports. Consult tokens are charged to the member turn and therefore to the group budget.
+The group's finalization chain is the lead's model, the default model, the global fallback order,
+and the models the group's own members use — so a rate-limited lead provider does not strand the
+run. A group whose summary may contain private material keeps the Google-only chain.
+
+**Durable follow-ups:** the parent's rolling summary is persisted on `agent_runs.group_context`, so
+the next group run in the same conversation continues from it instead of starting cold.
+
+**The ordinary chat route refuses group conversations:** `POST /api/chat` returns **409**
+`group_thread` for a thread that belongs to a group. Group messages are group runs, never a chat
+stream.
+
 ## 4. Agents, runs, approvals
 | Method | Route | Description |
 |---|---|---|
@@ -90,9 +154,9 @@ All routes are `requireUser()`-guarded and Zod-validated. The API speaks **camel
 | POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
 | POST | `/api/agents/:id/sleep` | Sleep: sets `agents.sleeping` and pauses the agent's active runs (plus a supervisor's unfinished inline children); new tasks are rejected until wake |
 | POST | `/api/agents/:id/wake` | Wake: clears `agents.sleeping` and emits `run/resumed` for the agent's paused runs plus the paused supervisors waiting on them |
-| POST | `/api/agents/run` | `{ goal, threadId?, model?, agentId?, inline? }` → `{ runId }` (queues Inngest unless `inline: true`; `agentId` scopes the run to an agent, `model` is preferred for task nodes; **409 when the target agent is asleep**) |
-| GET | `/api/runs` | List recent top-level runs — supervisor child runs are excluded and live under their parent |
-| GET | `/api/runs/:id` | Status + result + the full `run_events` timeline (returned whole on each poll — there is no separate events/SSE route); includes the run agent's `avatar` object, `pendingApprovals`, and for supervisor runs `children` (child runs each embedded with their agent summary) |
+| POST | `/api/agents/run` | Ordinary run: `{ goal, threadId?, model?, agentId?, inline?, tz? }` → `{ runId }`; group run: `{ groupId, goal, threadId?, inline?, tz? }` → `{ runId, status, groupId }` (queues Inngest unless `inline: true`; `agentId` scopes an ordinary run to an agent, `model` is preferred for task nodes; **409 when the target agent is asleep**) |
+| GET | `/api/runs` | List recent top-level runs — supervisor children and group member turns are excluded and live under their parent |
+| GET | `/api/runs/:id` | Status + result + the full `run_events` timeline (returned whole on each poll — there is no separate events/SSE route); includes the run agent's `avatar` object, `pendingApprovals`, and `children` for Supervisor or group parent runs (each child embedded with its agent summary) |
 | POST | `/api/runs/:id/pause` | Pause an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
 | POST | `/api/runs/:id/resume` | Resume a paused run → **202** `{ ok }` (queued as `run/resumed`); **409** when not paused or the agent is asleep; a run paused while parked on an undecided approval restores `awaiting_approval` instead of invoking |
 | POST | `/api/runs/:id/cancel` | Cancel an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
@@ -171,12 +235,23 @@ Listing CRUD is validated by the shared zod schemas in `packages/shared/src/mcp.
 | `update_routine(id,...)` | no | A changed schedule re-derives the RRULE and the next run |
 | `pause_routine(id)` / `resume_routine(id)` | no | Pause / (re)activate a routine |
 | `delete_routine(id)` | **yes** | Always gated |
+| `handoff_to(agent, task, context?)` | no | Group-only: ends the current member turn and routes the task to an owned group member |
+| `ask_agent(agent, question)` | no | Group-only: quick consult; returns the answer to the caller without transferring control |
+| `post_to_group(message)` | no | Group-only: persists a visible progress update in the group chat |
 | `create_monitor(url,...)` | yes | |
 | MCP tools | per-tool flag | Default **yes** |
 
 **Conditional approvals:** the gate resolves the target row's `created_by` server-side (scoped to the run's user). `created_by='user'` → the call parks for approval; `agent`/`suggested` → it runs immediately; an unverifiable target (no id, row gone, wrong owner) → **requires** approval.
 
 Supervisor delegation is not a tool: `is_supervisor` agents execute the dedicated `delegate → fan_out → verify → merge` graph described in §4 (the former `delegate(agent,task)` row was removed 2026-11-18).
+
+Group collaboration is attached dynamically to a member's existing single-agent graph. The tool
+caller is taken from the child run's agent identity, never from model arguments. Membership and
+privacy checks happen before a handoff/consult executes; a breach stops routing rather than
+silently calling a foreign agent. The group tools stay attached for every round of the member
+turn — they are never narrowed away by the late-round heuristic or by a skill's `tools` list. A
+consult may ask one further member for help (nested consults run one level deeper, up to
+`maxDepth = 2`), and its tokens are charged to the group budget.
 
 ## 9. Streaming
 AI SDK UI message stream. Custom data parts: `data-run-event` (node/tool progress), `data-approval` (pending approval card), `data-canvas` (canvas id), `data-routine-proposal` (the Phase 10 routine confirmation card — `{ routineId, name, prompt, scheduleLabel, nextRuns, tz, status }`).

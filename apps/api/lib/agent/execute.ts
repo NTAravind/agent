@@ -1,6 +1,8 @@
 import { runAgent, type RunAgentInput } from "@/lib/agent/graph";
 import { runSupervisor } from "@/lib/agent/supervisor";
-import { listPendingByRun } from "@/lib/approvals";
+import { runGroup } from "@/lib/agent/group";
+import { selectRunDispatch } from "@/lib/agent/dispatch";
+import { listPendingByRunTree } from "@/lib/approvals";
 import { updateRun } from "@/lib/agent/runs";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -15,21 +17,49 @@ export async function executeRun(
 ): Promise<{ status: string; result?: string }> {
   const { data: run } = await supabaseAdmin()
     .from("agent_runs")
-    .select("agent_id")
+    .select("agent_id, group_id, parent_run_id")
     .eq("id", input.runId)
-    .maybeSingle();
-
-  const agentId = (run as { agent_id?: string | null } | null)?.agent_id ?? null;
-  if (!agentId) return runAgent(input);
-
-  const { data: agent } = await supabaseAdmin()
-    .from("agents")
-    .select("is_supervisor")
-    .eq("id", agentId)
     .eq("user_id", input.userId)
     .maybeSingle();
 
-  if (agent && (agent as { is_supervisor?: boolean }).is_supervisor) {
+  const runRow = run as {
+    agent_id?: string | null;
+    group_id?: string | null;
+    parent_run_id?: string | null;
+  } | null;
+  const groupId = runRow?.group_id ?? null;
+  const agentId = runRow?.agent_id ?? null;
+  const parentRunId = runRow?.parent_run_id ?? null;
+
+  let isSupervisor = false;
+  if (agentId) {
+    const { data: agent } = await supabaseAdmin()
+      .from("agents")
+      .select("is_supervisor")
+      .eq("id", agentId)
+      .eq("user_id", input.userId)
+      .maybeSingle();
+    isSupervisor = Boolean(
+      agent && (agent as { is_supervisor?: boolean }).is_supervisor,
+    );
+  }
+
+  const kind = selectRunDispatch({
+    groupId,
+    parentRunId,
+    agentId,
+    isSupervisor,
+  });
+  if (kind === "group" && groupId) {
+    return runGroup({ ...input, groupId });
+  }
+  if (kind === "group-member") {
+    // A member turn is always the existing single-agent graph, even when the
+    // member itself is a Supervisor agent. Approval-gated group turns must not
+    // silently switch to Supervisor's auto-deny child policy.
+    return runAgent({ ...input, approvalMode: input.approvalMode ?? "gate" });
+  }
+  if (kind === "supervisor") {
     return runSupervisor(input);
   }
   return runAgent(input);
@@ -66,7 +96,7 @@ export async function resumeExecution(input: {
   // `invoke(null)` would resume the interrupt with an undefined value and the
   // tool gate would read the still-pending row as denied. Restore the parked
   // status instead — the approval decision itself resumes the graph later.
-  const pending = await listPendingByRun(input.runId);
+  const pending = await listPendingByRunTree(input.runId, input.userId);
   const undecided = pending.filter(
     (approval) =>
       !approval.expires_at ||

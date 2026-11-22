@@ -14,11 +14,12 @@
 ```
 
 ## 2. Components
-- **Expo client:** chat, canvas renderer, notes, agents, MCP store, approvals. Holds only the user session.
+- **Expo client:** chat, canvas renderer, notes, agents, groups, MCP store, approvals. Holds only the user session.
 - **Next.js API:** authenticates JWT, runs short chats, enqueues Inngest events, serves data endpoints.
 - **Agent runtime:** LangGraph graph per agent; Postgres checkpointer; tools = built-in + MCP.
+- **Group runtime:** a separate checkpointed `route → agent_turn → route → … → finalize` graph that runs member turns as sequential child runs of the existing single-agent graph. It does not replace or modify the Supervisor graph.
 - **Inngest functions:** run graphs in durable steps, cron monitors, memory extraction, vault sync, canvas refresh.
-- **Supabase:** system of record for chats, runs, canvases, MCP config; index for notes.
+- **Supabase:** system of record for chats, runs, groups, canvases, MCP config; index for notes.
 - **Web provider dashboard:** Supabase-authenticated control surface; provider catalog fetches happen server-side and catalog availability is persisted in Supabase.
 - **Vault (GitHub):** source of truth for notes.
 
@@ -92,13 +93,25 @@ Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes
 5. Guardrails: overlapping runs are skipped (with a note in the thread), missed runs fire once (never backfilled), one-shot routines complete after firing, and three consecutive failures auto-pause the routine with an explanation in the chat.
 6. Approvals follow the routine's `approval_mode`: `queue` parks the run in the normal approval gate (24 h expiry), `deny` reuses `approvalMode: "deny"` (the policy also survives a resume).
 
+### 3.13 Agent groups and handoff (Phase 11)
+1. A group is a user-owned collection of agents with one required lead, a `handoff` or `roundtable` mode, and bounded hop/token/depth limits. A group thread is durable; a user message or `@agent` mention starts a group parent run, otherwise the lead starts. A group holds at most 12 members, counting the lead.
+2. The group parent graph routes between members. Each `agent_turn` creates one sequential child run of the existing single-agent graph, so the member keeps its own model, tools, skills, and approval policy. `handoff_to` persists a handoff marker and ends that child turn; `ask_agent` returns a consult answer; `post_to_group` writes visible progress. The group tools stay attached in every round of the member turn.
+3. Caller identity comes from the child run context, never from model arguments. The server resolves the requested target against the group's membership before executing a handoff or consult. Membership is replaced in one transaction, so a reader never sees a half-replaced group.
+4. The parent parks as `awaiting_approval` while a member child is parked. After approval, the child resumes from its checkpoint and the parent continues from its own checkpoint. On resume the server re-reads the live group and re-derives the acting member and its privacy policy from the run row — never from the persisted, editable `group_context`.
+5. Each member receives a compact handoff brief plus a bounded rolling group summary, never the full transcript. Guardrails stop routing on excessive hops, A→B→A→B ping-pong, token-budget exhaustion, or excessive nested-ask depth; the lead then finalizes from the evidence that exists. The rolling summary is persisted on the parent run, so a follow-up in the same conversation continues from it.
+6. If the target model's registry entry is not `private_ok`, the server removes note/memory-derived context and strips tools that can retrieve notes or memories. Private-safe group turns and consults use a Google-only fallback chain to prevent cross-provider leakage.
+7. The privacy boundary is the caller's policy, not the prose it wrote: a private-capable member may not hand work or a question to a non-private member, because a copied private fact is indistinguishable from ordinary text. Such a handoff or consult is refused rather than sanitised after the fact.
+8. One live parent run per group: a second one is refused (409), and a group with a live run cannot be deleted (409). The ordinary chat route refuses a group thread (409 `group_thread`) — group messages are group runs, never a chat stream.
+9. Token usage is cumulative: a run that parks on an approval keeps what it already spent, and the resume adds to it. Consult tokens are charged to the member turn and therefore to the group's cumulative budget.
+
 ## 4. Security model
 - Single allowed user; every API route verifies the Supabase JWT and `ALLOWED_USER_ID`. RLS on all tables as defense in depth.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.
 - **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list.
 - Canvas actions are a fixed enum; no eval, no model-supplied code. WebView HTML is sandboxed (no network, no native bridge).
-- Context derived from your notes/memories is sent only to models marked `private_ok`. Treat free tiers of any provider as possibly logged/trained on unless its terms say otherwise (verify).
-- Rate-limit endpoints; cap per-run steps and tokens to protect free quotas.
+- Context derived from your notes/memories is sent only to models marked `private_ok`. Treat free tiers of any provider as possibly logged/trained on unless its terms say otherwise (verify). The same rule applies to group handoffs and consults: a non-private target receives neither private context nor note/memory retrieval tools, and a private-capable member may not hand that work to a non-private member at all.
+- Group targets are validated against the group's membership on the server; the calling agent is read from run context, never trusted from model arguments. Membership and privacy are re-validated live when a parked run resumes. Service-role queries explicitly scope groups, memberships, threads, messages, and runs to the owning user.
+- Rate-limit endpoints; cap per-run steps and tokens to protect free quotas. Group runs also cap hops, ping-pong cycles, nested asks, and total group tokens.
 
 ## 5. Failure handling
 Retries with backoff (Inngest); model fallback on 429; run marked `failed` with error in `run_events`; idempotency keys on side-effecting tools; max-step guard in every graph.

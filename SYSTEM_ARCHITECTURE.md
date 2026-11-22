@@ -1,7 +1,7 @@
 # Autonomous AI Agent Platform — System Architecture & Implementation Guide
 
-> **Version:** 2.2  
-> **Status:** Development blueprint (Phases 0–9 complete, Phase 10 pending)  
+> **Version:** 2.3
+> **Status:** Development blueprint (Phases 0–11 implemented; Phase 11 live model acceptance pending provider quota)
 > **Audience:** Developers maintaining or extending the platform
 
 ---
@@ -14,6 +14,7 @@ This is a **personal, single-user autonomous AI agent platform** with a Next.js 
 - Search and write to a personal Obsidian-style vault (GitHub-backed)
 - Execute multi-step research tasks autonomously in the background
 - Delegate work to specialist sub-agents (supervisor pattern)
+- Coordinate dynamic groups of agents with sequential handoffs, visible group chat, and bounded routing
 - Use external MCP servers as dynamically discovered capabilities
 - Render native dashboards ("canvases") from structured specs
 - Remember facts, preferences, and decisions across conversations
@@ -67,7 +68,8 @@ autonomous-ai/
 │   ├── api/                    # Next.js 16 App Router (API routes, Inngest endpoint)
 │   │   ├── app/api/            # Route handlers (/chat, /agents, /runs, /mcp, /canvases, ...)
 │   │   ├── lib/
-│   │   │   ├── agent/          # LangGraph graphs, state, checkpointer, runs, supervisor
+│   │   │   ├── agent/          # LangGraph graphs, state, checkpointer, runs, supervisor, group
+│   │   │   ├── groups/         # Group store/runtime context, privacy policy, collaboration tools
 │   │   │   ├── models/         # Provider registry, resolver, fallback, capability gate, usage
 │   │   │   ├── mcp/            # Registry, connections, tools-loader, providers, security
 │   │   │   ├── chat/           # Streaming, persist, system-prompt, attachments
@@ -81,8 +83,8 @@ autonomous-ai/
 │   │   └── package.json
 │   │
 │   └── mobile/                 # Expo SDK 58 + Expo Router
-│       ├── src/app/            # File-based routing (tabs: chat, agents, canvas, notes, settings)
-│       ├── src/components/     # Reusable UI (MessageBubble, Composer, AgentAvatar, CanvasRenderer, ...)
+│       ├── src/app/            # File-based routing (tabs + groups, run, canvas, notes, settings)
+│       ├── src/components/     # Reusable UI (chat/group bubbles, composer, avatars, canvas renderer, ...)
 │       └── package.json
 │
 ├── packages/
@@ -92,12 +94,13 @@ autonomous-ai/
 │       │   ├── mcp.ts          # MCP server, connection, tool types
 │       │   ├── models.ts       # Model registry entry, capabilities
 │       │   ├── canvas.ts       # Canvas spec schema (Stat, Chart, Table, ...)
+│       │   ├── groups.ts       # Agent group, membership, handoff schemas
 │       │   └── approval.ts     # Approval status types
 │       └── package.json
 │
 ├── db/
-│   ├── apply.sql               # Full schema (run once)
-│   └── migrations/             # Numbered migrations (0001–0013+)
+│   ├── apply.sql               # Historical schema bundle (includes migration 0018)
+│   └── migrations/             # Numbered migrations (0001–0018+)
 │
 ├── docs/
 │   └── spec/                   # Source-of-truth specifications
@@ -129,8 +132,9 @@ All tables use UUID PKs, `timestamptz`, FKs, and **Row Level Security** (`user_i
 -- Core tables (see db/migrations for full DDL)
 
 -- Conversations
-threads (id, user_id, agent_id, title, created_at, updated_at)
-messages (id, thread_id, user_id, role, agent_id, model, parts jsonb, created_at)
+threads (id, user_id, agent_id, group_id, title, created_at, updated_at)
+messages (id, thread_id, user_id, role, agent_id, model, parts jsonb,
+          from_agent_id, to_agent_id, handoff jsonb, run_id, created_at)
 
 -- Memory (long-term, cross-thread)
 memories (id, user_id, kind[fact|preference|decision|task], content, source_thread_id, embedding vector(768), created_at)
@@ -153,7 +157,9 @@ skills (id, user_id, slug, name, description, body, tools text[], vault_path, gi
 agent_skills (agent_id, skill_id, enabled)  -- PK (agent_id, skill_id); RLS joins through agents
 
 -- Runs & Events
-agent_runs (id, user_id, agent_id, thread_id, parent_run_id, goal, status[queued|running|awaiting_approval|succeeded|failed|cancelled], result, error, model, tokens_used, created_at, finished_at)
+agent_runs (id, user_id, agent_id, thread_id, parent_run_id, group_id, group_context jsonb,
+            group_depth, goal, status[queued|running|awaiting_approval|paused|succeeded|failed|cancelled],
+            result, error, model, tokens_used, created_at, finished_at)
 run_events (id bigserial, run_id, type[node_start|node_end|tool_call|tool_result|message|error], payload jsonb, created_at)
 approvals (id, run_id, user_id, tool_name, args, reason, status[pending|approved|denied|expired], created_at, decided_at, expires_at)
 
@@ -178,6 +184,13 @@ routines (id, user_id, agent_id, thread_id, name, prompt, schedule jsonb, rrule,
           next_run_at, last_run_at, consecutive_failures, created_at, updated_at)
 -- agent_runs gains: routine_id, scheduled_for (unique(routine_id, scheduled_for)), tz
 -- agents gains: primary_thread_id   -- agents are chats: one persistent thread per agent
+
+-- Agent groups & handoff (Phase 11) — dynamic, separate from Supervisor
+agent_groups (id, user_id, name, description, lead_agent_id, mode[handoff|roundtable],
+              max_hops, token_budget, created_at, updated_at)
+group_members (group_id, agent_id, role[lead|member], created_at)
+-- threads.group_id links the durable group chat; agent_runs.group_id links a group parent/turn
+-- messages.from_agent_id/to_agent_id + handoff {from,to,task} + run_id preserve group history
 
 -- Provider Catalog & Usage
 provider_models (provider, model_id, app_id, label, capabilities, context_window, tier, metadata, mobile_enabled, fetched_at)
@@ -416,6 +429,9 @@ Declarations (schemas only) → executed by `tool_exec` after gate.
 | `pause_routine(id)` | no | Pauses a routine (keeps its schedule) |
 | `resume_routine(id)` | no | Resumes/activates a routine and schedules its next occurrence |
 | `delete_routine(id)` | **yes** | Deletes a routine (always needs approval) |
+| `handoff_to(agent, task, context?)` | no | Group-only: ends the current member turn and routes the task to an owned group member |
+| `ask_agent(agent, question)` | no | Group-only: consults an owned group member and returns the answer without transferring control |
+| `post_to_group(message)` | no | Group-only: persists a visible progress update in the group chat |
 
 **MCP Tools:** Loaded dynamically at run start via `loadMcpToolsForRun()` — namespaced as `mcp_<slug>_<tool>`, max 20 per run.
 
@@ -424,6 +440,8 @@ Declarations (schemas only) → executed by `tool_exec` after gate.
 **Productivity tools (Phase 9):** Task/event tools live in the same registry and run through the same gate. `create_*`/`list_*`/`complete_*`/`find_free_slots` never need approval; `update_*` needs approval **only** when the target row's `created_by='user'`; `delete_*` always needs approval. Tool-created rows carry `created_by='agent'` and the run's `source_run_id`; `extractMemories` writes detected tasks as `created_by='suggested'` rows (shown in the app as suggestions to accept/dismiss) instead of memories. Results are capped at 50 items.
 
 **Routine tools (Phase 10):** `create_routine` never schedules anything by itself — it saves a **draft** and emits a `data-routine-proposal` UI part; the app shows a confirmation card and the user activates it (`POST /api/routines/:id/activate`). The model supplies a *structured* schedule (`frequency`, `days_of_week`/`day_of_month`, local `HH:mm`); the server converts it to an RRULE and computes the concrete instants in the user's timezone (`apps/api/lib/routines/schedule.ts`) — model-supplied dates are never trusted. `userId`, `agentId`, `threadId` and the timezone always come from the request/run context, never from the model's arguments. A routine's `approval_mode` (`queue` | `deny`) becomes the run's `approvalMode`, so a recurring job can never park on a human decision — and the policy survives a resume.
+
+**Group tools (Phase 11):** these are attached dynamically only while a member turn is running. The caller is read from the child run's agent identity. `handoff_to` and `ask_agent` resolve the requested target against the owned group's membership before doing any work; a non-member target is rejected. `handoff_to` persists `{ from, to, task }`, ends the child turn, and lets the parent graph route onward. `ask_agent` returns a bounded consult answer to the caller. `post_to_group` writes visible progress. Note/memory retrieval tools are removed for a non-`private_ok` target.
 
 ### 6.3 Execution Entry Points
 
@@ -438,6 +456,64 @@ export async function resumeAgentRun(input: { runId, userId }): Promise<{ status
 - `runAgent`: Creates run row (`queued`), loads MCP runtime, compiles graph with checkpointer, invokes
 - `resumeAgentRun`: Reloads same MCP runtime, recompiles, invokes with `Command({ resume: true })`
 - Both called from Inngest `agent/run.requested` and `approval/decided` handlers
+- **Token accounting:** a run that parks on an approval keeps the tokens it already spent; the
+  resume adds to the persisted total instead of replacing it, so a run (and a group budget) never
+  under-reports. The group parent derives its total from the child rows for the same reason.
+
+### 6.4 Dynamic Agent Groups (`apps/api/lib/agent/group.ts`)
+
+Groups are a separate mechanism from Supervisor. Supervisor remains the fixed
+`delegate → fan_out → verify → merge` graph and keeps its parallel children with
+`approvalMode: "deny"`; groups do not modify or reuse that orchestration.
+
+```
+GROUP PARENT GRAPH (checkpointed)
+route → agent_turn → route → … → finalize
+             │
+             └─► sequential child run of the existing single-agent graph
+                 (member model + tools + skills; approvalMode: "gate")
+```
+
+- **Durable chat:** a group owns a thread. `POST /api/agents/run` with `groupId` creates the parent
+  run first, persists the user message linked to it (`messages.run_id`), and emits
+  `agent/run.requested`. An `@agent` mention chooses the first member; otherwise the required lead
+  starts. `POST /api/chat` refuses a group thread with **409 `group_thread`** — group messages are
+  group runs, never a chat stream.
+- **Turn execution:** `agent_turn` creates one child run at a time. The child runs the normal
+  single-agent graph with the member's own model, tools, skills, and persisted brief. The child and
+  parent each use the Postgres checkpointer. The group tools (`handoff_to`, `ask_agent`,
+  `post_to_group`) stay attached in every round of the member turn — the late-round heuristic and a
+  skill's `tools` list never narrow them away.
+- **Approval handoff:** while a child is parked, the parent is also `awaiting_approval`. Approval
+  resumes the child graph first; the parent then resumes from its own checkpoint. On resume the
+  server **re-reads the live group** and re-derives the acting member from the run row's `agent_id`;
+  the persisted `group_context` is never trusted for membership or privacy.
+- **Handoff marker:** `handoff_to` persists `{ from, to, task }` and ends the child turn. The parent
+  routes to the target. This marker boundary is a deliberate deviation from a LangGraph `Command`,
+  because the member work is an independently checkpointed child graph.
+- **Compact context:** each turn receives a bounded handoff brief plus a rolling, compacted group
+  summary — never the full transcript. `agent_runs.group_context` persists the brief, membership
+  snapshot, summary, and privacy policy. On the **parent** run it also stores the group's durable
+  `summary` and `tokensUsed`, so a follow-up run in the same conversation continues from it.
+- **Guardrails:** the parent stops routing when `max_hops` is reached, an A→B→A→B ping-pong is
+  detected, the per-group token budget is exhausted, or nested-ask depth is exceeded. The lead then
+  finalizes from the evidence that exists. The group run's token total includes child usage and
+  consult tokens; a run that parks on an approval keeps what it already spent, and the resume adds
+  to it instead of replacing it. Nested consults are reachable: a member may consult once, and the
+  consulted member may consult once more (`maxDepth = 2`). The finalization chain is the lead's
+  model, the default model, the global fallback order, and the models the group's own members
+  already use — a lead whose provider is rate-limited can still finalize with a model the group has
+  proven it can reach.
+- **Privacy:** if the target model is not `private_ok`, the server removes the prior rolling summary
+  and free-form private context, and strips note/memory retrieval tools. Private-safe group turns
+  and consults use a Google-only fallback chain so a private context cannot cross providers. The
+  boundary is the **caller's** policy, not the prose it wrote: a private-capable member may not hand
+  work or a question to a non-private member at all, because a copied private fact is
+  indistinguishable from ordinary text.
+- **Single writer:** a group has at most 12 members (the lead counts) and one live parent run. A
+  second parent is refused with 409, a sleeping member is refused with 409, and a group with a live
+  run cannot be deleted (409). Membership replacement runs in one transaction
+  (`replace_group_members`), so a reader never sees a half-replaced group.
 
 ---
 
@@ -743,8 +819,8 @@ Run with `approvalMode: "deny"` — sensitive calls **auto-denied** immediately,
 
 | Event | Function | Purpose |
 |-------|----------|---------|
-| `agent/run.requested` | `runAgent()` / `runSupervisor()` | Durable graph execution, writes `run_events` |
-| `approval/decided` | `resumeAgentRun()` | Resume parked run |
+| `agent/run.requested` | `runAgent()` / `runSupervisor()` / `runGroup()` | Durable graph execution, writes `run_events`; group runs execute sequential member child runs |
+| `approval/decided` | `resumeAgentRun()` | Resume parked ordinary/Supervisor/group child run; the group parent resumes after its child completes |
 | `chat/completed` | `extractMemories()` | Background memory extraction |
 | `vault/changed` | GitHub webhook handler | Parse, chunk, embed changed notes |
 | `document/uploaded` | Parse/uploaded files | Process uploads |
@@ -766,19 +842,19 @@ Run with `approvalMode: "deny"` — sensitive calls **auto-denied** immediately,
 Root Stack (_layout.tsx):
   (tabs)            → bottom tab group (session-guarded)
   threads, note, tasks, calendar, memories, skills, skills/[id], routines,
-  agents/[id], agents/[id]/edit, run, canvas, canvas/[id], mcp, mcp/[id],
-  sign-in, auth/callback
+  groups, groups/[id], groups/[id]/edit, agents/[id], agents/[id]/edit,
+  run, canvas, canvas/[id], mcp, mcp/[id], sign-in, auth/callback
 
 Tabs group (app/(tabs)/_layout.tsx, expo-router/ui <Tabs>):
   1. Chat       → (tabs)/chat.tsx      (free chat or agent chat via ?agentId=)
   2. Agents     → (tabs)/agents.tsx    (list + pinned creatures)
   3. Today      → (tabs)/index.tsx     (agenda: events + due/overdue tasks, quick-add)
   4. Notes      → (tabs)/notes.tsx     (folder tree + list) → /note (root stack)
-  5. More       → (tabs)/more.tsx      (Canvas, Routines, MCP, Skills, Memories, account)
+  5. More       → (tabs)/more.tsx      (Canvas, Routines, Groups, MCP, Skills, Memories, account)
 
 Deep links: chat?threadId=, chat?agentId=, agents/[id], agents/[id]/edit,
             note?path=, tasks, calendar, run/[id], skills, skills/[id] ('new' = create),
-            routines
+            routines, groups, groups/[id], groups/[id]/edit
 ```
 
 > Detail routes stay in the **root stack** (not inside the tab group): the headless tab
@@ -804,7 +880,15 @@ Deep links: chat?threadId=, chat?agentId=, agents/[id], agents/[id]/edit,
 | **Memories** | List extracted memories with delete |
 | **Skills** | List of `skills/<slug>/SKILL.md` bundles (tools chips, assignment count), editor with name/slug/description/tool-allowlist/body, delete; entry point is the More hub |
 | **Routines** (new, Phase 10) | List of routines (schedule label, next run, status), sheet with pause/resume/edit/run-now/past runs; entry point is the More hub |
+| **Groups** (new, Phase 11) | List of dynamic groups, group editor (members, lead, mode, hop cap, token budget), and durable group chat with avatars, handoff chips, `@agent` mentions, and child-run links; entry point is the More hub |
 | **Settings** | Account, default model/fallbacks, memory viewer, vault sync status, theme |
+
+**Group conversations in the app (Phase 11):** a group conversation is never opened in the ordinary
+chat screen. The Conversations list routes a group thread to the group screen (with a group badge
+and the group name), and `/chat?threadId=<group thread>` redirects to the group screen as soon as
+the thread loads. The group screen accepts an optional `threadId`, reads the group's live parent
+run on mount, and restores the amber **running · View run** pill, so a run that continued after the
+app was killed is still visible and cancellable.
 
 **Routines in the app (Phase 10):** the agent chat header has a **clock icon** that opens the
 routine sheet for that agent. A proposed routine renders as a **confirmation card** (name,
@@ -849,6 +933,7 @@ pages) becomes a readable `ApiRequestError` instead of a bare `SyntaxError`.
 | **Skills** | `load_skill` only returns skills assigned to the run's agent (agent id from run row, never a model arg). A skill's `tools` list can only **narrow** the offered set (`narrowToolSet` = intersection of current ∩ available ∩ declared) — skills can never add a tool. Skill files are untrusted content like notes. Skill writes skip approvals because they are user-initiated, not model-initiated. |
 | **Productivity (Phase 9)** | Tasks/events are soft-deleted (`deleted_at`) and scoped by `user_id` in every query. The agent can only act on rows owned by the run's user. Editing a user-created row needs approval; deleting always does. Recurrence is expanded on read (never materialised), and reminders are claimed in `reminder_log` (unique key) so a push fires at most once. |
 | **Routines (Phase 10)** | The model never supplies dates: it emits a *structured* schedule and the server computes the instants in the user's timezone. `userId`, `agentId`, `threadId` and the timezone come from the request/run context, never from the model's arguments. A routine only starts after the user confirms it (`activate`). Each occurrence creates at most one run (unique `(routine_id, scheduled_for)`), and deleting a routine is approval-gated. |
+| **Groups (Phase 11)** | Group membership and lead are validated server-side; the caller comes from run context. Membership targets are resolved only against the owned group, and membership is replaced in one transaction. Non-`private_ok` targets receive no prior rolling summary, private/free-form context, or note/memory tools, and private-safe fallbacks stay Google-only. A private-capable member may not hand work or a question to a non-private member at all. On an approval resume, membership and privacy are re-read live from the group — the persisted `group_context` is never trusted. Hop, ping-pong, token-budget, and nested-ask guards stop routing; service-role queries explicitly filter by owner. |
 | **Rate Limiting** | Endpoint rate limits; per-run step/token caps to protect free quotas. |
 | **MCP Security** | Validate all tool inputs; restrict server network access; isolate untrusted servers; enforce timeouts; limit output sizes; maintain execution logs; never expose secrets to descriptions/context. |
 
@@ -936,6 +1021,30 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
                                failure ⇒ streak++; after 3 ⇒ auto-pause + explain in the chat
 ```
 
+### 16.8 Agent Group Task (Phase 11)
+```
+User → group thread message or @agent mention
+      → POST /api/agents/run { groupId, goal, threadId? }
+          → 400 if the body carries agentId/model (the group owns both)
+          → 409 if a member is asleep, or a parent run is already in flight
+      → create group parent run → persist user message linked to it (run_id)
+      → agent/run.requested
+      → route: lead first unless an @agent mention selected another member
+      → agent_turn: create sequential child run of the existing single-agent graph
+          → member calls handoff_to / ask_agent / post_to_group
+          → privacy boundary: a private-capable member may not hand work to a non-private member
+          → sensitive tool? child parks for approval; parent also waits
+      → handoff marker {from,to,task} → parent routes to the next member
+      → guard breach (hops / A→B→A→B / token budget / ask depth) → stop routing
+      → lead finalizes from the compact rolling summary + existing evidence
+      → group parent + member children are visible in GET /api/runs/:id
+      → the parent's rolling summary + token total are persisted for the next follow-up
+```
+
+`POST /api/chat` refuses a group thread with **409 `group_thread`** — a group conversation is a
+group run, never a chat stream. The mobile app mirrors that rule: the Conversations list and the
+chat screen both route a group thread to the group screen.
+
 ---
 
 ## 17. Configuration & Environment
@@ -978,6 +1087,7 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
 - Skills: frontmatter parse/compose round-trip (incl. list-after-empty-key fix), path detection, slugify, `narrowToolSet` (never adds), `pickAssignedSkill` guard, `skillIndexSection` (body-free)
 - Productivity (Phase 9): RRULE expansion (weekly anchor keeps the time of day, EXDATEs exclude one occurrence, explicit DTSTART wins, unparseable rule falls back), snake_case↔camelCase row/insert/update mappers, approval decision (`needsApproval`: create/list/complete never gated, delete always gated, edit gated only for user-created items, unknown target gated), reminder scheduling (`computeDueReminders`)
 - Routines (Phase 10): timezone-aware wall-clock math (`zonedTimeToUtc` across a DST transition), `computeNextRuns` (weekly/daily/monthly/one-shot, strictly after the reference instant), RRULE derivation, schedule labels, trigger-message detection, schedule normalisation (one-shot derives its wall clock from `run_at`)
+- Groups (Phase 11): membership and `@agent` resolution, max-hop/A→B→A→B/token-budget/nested-ask guards, private-context stripping and note/memory-tool filtering, non-private consult privacy, the private-caller → non-private-target boundary, group-tool protection across rounds and skill narrowing, shared schemas (including the 12-member cap), and rolling-summary compaction
 
 ### Contract Tests (Manual, Consumes Quota)
 - One tool-call prompt per registry model
@@ -999,7 +1109,9 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
 - `check-tasks.ts` — productivity E2E: task/list CRUD + soft delete, agent tools (`create_task`/`list_tasks`/`create_event`/`list_events`), recurring expansion, approval gate matrix, reminder claim-once, notes write/delete, HTTP route checks (Phase 9)
 - `check-routines.ts` — routines E2E: agent tool proposes a draft with a structured schedule, the preview lands at 09:00 IST, the tick fires a due routine exactly once, an overlapping run is skipped, a missed occurrence is never backfilled, a one-shot completes, the approval gate covers `delete_routine`, HTTP route checks (Phase 10)
 - `check-routine-chat.ts` — the chat-first flow: the model calls `create_routine` and the stream carries a `data-routine-proposal` part with the right schedule (Phase 10, consumes quota)
-- `check-deployed.ts` — the same Phase 9 + Phase 10 route checks against a **deployed** API (`npx tsx --env-file=.env.local scripts/check-deployed.ts [base-url]`), so a deploy can be verified without touching the app
+- `check-groups.ts` — groups E2E: CRUD, transactional lead/membership replacement, durable group-thread creation, group run entry and the `run_id`-linked user message, the chat route's 409 `group_thread` refusal, the 400 for a mixed group/agent body, the 409 for a concurrent parent and for a sleeping member, the 409 delete guard, a deterministic member child turn with its `{from,to,task}` handoff, RLS visibility, and a cancel-then-delete cleanup that verifies zero remaining rows including the group and its membership (Phase 11)
+- `check-groups-live.ts` — the live Phase 11 acceptance: a real three-member group completes the task through **≥2 visible handoffs**, the markers name the next member, the group chat shows them, and the lead publishes a final answer (Phase 11, **consumes provider quota**)
+- `check-deployed.ts` — the Phase 9 + Phase 10 + Phase 11 route checks against a **deployed** API (`npx tsx --env-file=.env.local scripts/check-deployed.ts [base-url]`), so a deploy can be verified without touching the app
 - `check-supervisor.mjs` — 11 supervisor E2E checks *(claimed; not present in repo)*
 - `check-agent-crud.mjs`, `check-agent-avatars.mjs`, `check-chat-route.mjs`, etc. *(claimed; not present in repo)*
 
@@ -1021,9 +1133,10 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
 | 5.1 | Provider Dashboard + Task Model Chooser | Dashboard refreshes catalogs; toggle changes mobile models |
 | 6 | MCP Store | Add server in ≤3 taps, use tool in next run |
 | 7 | Multi-Agent | Supervisor delegates to 2+ agents, merges cross-checked results |
-| 8 | Extras | Monitors, image gen, voice, code sandbox, X data |
+| 8 | Skills | An assigned skill loads on demand and can only narrow the tool set |
 | 9 | Productivity | Tasks, calendar, note editing, reminders; agent adds tasks/events; user-created items protected by approvals |
 | 10 | Routines | "every Monday at 9 do X" yields a proposal card with correct IST dates; the result posts back into the same chat; 3 failures auto-pause |
+| 11 | Agent Groups | A 3-agent group completes ≥2 visible handoffs; guards stop ping-pong; non-private targets receive no private context |
 
 **Rule:** Work one phase at a time. Don't start next until current phase confirmed.
 
@@ -1059,6 +1172,11 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
 | Recurring event shows the wrong time | The rule must be anchored to the item's `starts_at` (DTSTART) — `expandStarts` in `lib/recurrence.ts` |
 | A routine fires at the wrong hour | The schedule's `time` is the user's **local** wall clock — check `routines.tz` and that the client sent its device timezone (`tz` in the chat body). `rrule@2.8` ignores `tzid` for `BYHOUR`, so the occurrences are computed by `lib/routines/schedule.ts`, not by the library. |
 | A routine never fires | `routines.status='active'`? `next_run_at` in the past? Is the `routine/tick` cron deployed in Inngest? Did the run fail 3 times (auto-paused)? Check `agent_runs` for the routine. |
+| A group never hands off | Is the target in `group_members`? Did the member call `handoff_to` (not `ask_agent`)? Check the parent `group_context`, hop count, ping-pong history, token budget, and child run result. |
+| A group member receives private context | Check the target model's `privateOk` flag and the persisted group privacy policy; non-private targets must have no prior summary and no note/memory tools. A private-capable member handing work to a non-private member is refused outright — check the caller's own `privateOk`. |
+| A group run returns 409 | Either a member is asleep, or a parent run for that group is still in flight (`agent_runs.group_id` + `parent_run_id is null` + an active status). Cancel the old run first. |
+| The chat screen opens a group conversation | A group thread is routed to the group screen by the Conversations list and by the chat screen's own redirect; the API answers 409 `group_thread` if a client posts to `/api/chat` with a group thread. |
+| Group routes return 404 after deploy | The deployed build predates Phase 11; redeploy the API, then rerun `check-deployed.ts`. |
 | Memory not retrieved | Model `privateOk = true`? `searchMemories` returning results? |
 | Supabase paused | Keepalive cron running? `SELECT 1` from Vercel? |
 
@@ -1070,11 +1188,12 @@ Inngest cron "routine/tick" (* * * * *) → runRoutineTick(now)
 apps/api/lib/
 ├── agent/
 │   ├── graph.ts           # Single-agent LangGraph (plan→act→gate→exec→observe→correct→finalize)
-│   ├── supervisor.ts      # Supervisor graph (delegate→fan_out→verify→merge)
+│   ├── supervisor.ts      # Supervisor graph (delegate→fan_out→verify→merge; unchanged by groups)
+│   ├── group.ts           # Group graph (route→agent_turn→route→finalize) + child-turn orchestration
 │   ├── state.ts           # AgentState, AgentFinding types
 │   ├── runs.ts            # CRUD for agent_runs, run_events
 │   ├── checkpointer.ts    # Postgres checkpointer (LangGraph)
-│   └── execute.ts         # runAgent, runSupervisor, executeRun dispatch
+│   └── execute.ts         # runAgent, runSupervisor, runGroup/execute dispatch
 ├── models/
 │   ├── registry.ts        # MODEL_REGISTRY, DEFAULT_MODEL_ID, FALLBACK_ORDER
 │   ├── resolver.ts        # getModel(), resolveModel(), providerInstances()
@@ -1103,6 +1222,11 @@ apps/api/lib/
 │   ├── load.ts            # listSkillsForAgent, pickAssignedSkill, loadSkillBody, narrowToolSet, buildSkillTools, skillIndexSection, API helpers (rowToSkill, setAgentSkills)
 │   ├── sync.ts            # parseSkillFile, composeSkillFile, upsertSkillIndex, removeMissingSkills, slugifyName
 │   └── index.ts           # re-exports
+├── groups/
+│   ├── store.ts           # Owned-group CRUD, membership, group/runtime loading, public mappers
+│   ├── privacy.ts         # Target-model privacy policy + note/memory tool filtering
+│   ├── tools.ts           # handoff_to, ask_agent, post_to_group runtime tools
+│   └── types.ts           # Persisted group context and handoff marker types
 ├── approvals.ts           # SENSITIVE_TOOLS, CONDITIONAL_APPROVAL_TOOLS, needsApproval, create/get/decide/expire approvals
 ├── canvases.ts            # CRUD, validateCanvasSpec, refresh
 ├── productivity.ts        # task/event row↔API mappers (rowToTask, taskInsert, eventUpdate, …)
@@ -1145,30 +1269,40 @@ apps/api/app/api/
 ├── routines/[id]/route.ts     # GET, PATCH (name/prompt/schedule/status), DELETE
 ├── routines/[id]/activate/route.ts  # POST — confirm the proposal (the gate)
 ├── routines/[id]/run-now/route.ts   # POST — run it immediately (the schedule is untouched)
-└── routines/[id]/runs/route.ts      # GET — the runs this routine produced
+├── routines/[id]/runs/route.ts      # GET — the runs this routine produced
+├── groups/route.ts            # GET (list), POST (create)
+├── groups/[id]/route.ts       # GET (+ latest threadId), PATCH, DELETE
+└── groups/[id]/members/route.ts # PUT (replace membership; lead always included)
 
 packages/shared/src/skill.ts   # SkillFrontmatterSchema, SkillCreate/Patch, AgentSkillsPut
 packages/shared/src/tasks.ts   # TaskList/Task/CalendarEvent/PushToken schemas + EventsRangeQuery
 packages/shared/src/routines.ts # RoutineSchedule/Routine/RoutineCreate/Patch + RoutineRun schemas
+packages/shared/src/groups.ts   # GroupCreate/Patch/Members, AgentGroup, handoff schemas
 apps/api/scripts/check-skills.ts  # live skills E2E check
 apps/api/scripts/check-tasks.ts   # live productivity E2E check (Phase 9)
 apps/api/scripts/check-routines.ts    # live routines E2E check (Phase 10)
 apps/api/scripts/check-routine-chat.ts # live chat-first proposal check (Phase 10)
-apps/api/scripts/check-deployed.ts # live productivity + routines E2E against a deployed API
+apps/api/scripts/check-groups.ts       # live group/RLS/persistence check (Phase 11)
+apps/api/scripts/check-deployed.ts # live productivity + routines + groups E2E against a deployed API
 
 apps/mobile/src/lib/
 ├── api.ts           # apiFetch (defensive JSON parsing), ApiRequestError
 ├── api-session.ts   # authedFetch: proactive session refresh + 401 retry (Phase 9)
 ├── productivity.ts  # tasks, task lists, events, push tokens (mobile client)
 ├── routines.ts      # routines: list, activate, pause, resume, update, delete, run-now, runs
+├── groups.ts        # groups: list/create/update/delete, membership, group chat/run entry
 ├── push.ts          # Expo push token registration on launch
 └── dates.ts         # IST date/day helpers for the agenda views
 
 apps/mobile/src/components/
 ├── routine-proposal-card.tsx # the confirmation card (name, schedule, next runs, Confirm)
-└── routine-sheet.tsx         # the routine list + detail sheets (pause/resume/edit/run-now/runs)
+├── routine-sheet.tsx         # the routine list + detail sheets (pause/resume/edit/run-now/runs)
+├── group-editor.tsx          # Group create/edit form (members, lead, mode, hop cap)
+└── group-message-bubble.tsx  # Group avatars, handoff chip, child-run link
+
+apps/mobile/src/app/groups/ # Groups list, group editor, group chat
 ```
 
 ---
 
-*Generated from live codebase audit (2026-11-20; updated 2026-11-21 for Phase 8 — Skills, Phase 9 — Tasks, Calendar, Notes editing, reminders, and Phase 10 — Routines). Phases 0–10 implemented and verified. This document reflects the actual implementation, not just the spec.*
+*Generated from live codebase audit (2026-11-20; updated 2026-11-21 for Phase 8 — Skills, Phase 9 — Tasks, Calendar, Notes editing, reminders, Phase 10 — Routines, and Phase 11 — Agent Groups & Handoff). Phases 0–11 are implemented; Phase 11's live ≥2-handoff model acceptance remains pending provider quota, and the deployed API still requires the Phase 11 redeploy. This document reflects the actual implementation, not just the spec.*

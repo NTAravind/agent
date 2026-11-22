@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import type { AgentSummary } from '@agent/shared';
 import { Spinner, Typography } from 'heroui-native';
-import { Alert, Pressable, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
 
+import { AgentAvatar } from '@/components/agent-avatar';
 import { COMPOSER_ICONS } from '@/constants/icons';
 import type { PendingAttachment } from '@/lib/attachments';
 
@@ -19,6 +21,10 @@ type Props = {
   onToggleDeepSearch?: () => void;
   thinkActive?: boolean;
   onToggleThink?: () => void;
+  /** Members that can be addressed with @mentions (group chats). */
+  mentionMembers?: AgentSummary[];
+  /** Hides the attachment button for specialized composers such as group chat. */
+  showAttachments?: boolean;
   placeholder?: string;
 };
 
@@ -41,6 +47,8 @@ export function Composer({
   onToggleDeepSearch,
   thinkActive = false,
   onToggleThink,
+  mentionMembers = [],
+  showAttachments = true,
   placeholder = 'Ask anything…',
 }: Props) {
   const [uploading, setUploading] = useState(false);
@@ -55,6 +63,22 @@ export function Composer({
     }
   };
 
+  /** A trailing @word is the active mention query. */
+  const mentionMatch = value.match(/@([^\s@]*)$/u);
+  const mentionQuery = mentionMatch ? mentionMatch[1].toLocaleLowerCase() : null;
+  const visibleMentionMembers = mentionMembers.filter((member) =>
+    mentionQuery === null
+      ? true
+      : member.name.toLocaleLowerCase().includes(mentionQuery),
+  );
+
+  /** Replaces a partial trailing mention with the selected member's name. */
+  const insertMention = (name: string) => {
+    const partial = value.match(/@([^\s@]*)$/u);
+    const base = partial ? value.slice(0, value.length - partial[0].length) : value;
+    onChangeText(`${base}@${name} `);
+  };
+
   const openAttachMenu = () => {
     Alert.alert('Add to chat', undefined, [
       { text: '📷 Photo', onPress: () => void withBusy(onAttachImage) },
@@ -65,6 +89,46 @@ export function Composer({
 
   return (
     <View className="rounded-[28px] border border-white/10 bg-[#121215] px-3.5 pb-2.5 pt-3 shadow-2xl">
+      {/* @mention picker: the visible member chips double as autocomplete when
+          the user has started typing an @mention. */}
+      {mentionMembers.length > 0 ? (
+        <View className="mb-2 gap-1.5">
+          <View className="flex-row items-center gap-1.5">
+            <Typography type="body-xs" className="font-semibold text-zinc-400">
+              @ Mention
+            </Typography>
+            {mentionQuery !== null ? (
+              <Typography type="body-xs" className="text-zinc-500">
+                {visibleMentionMembers.length > 0 ? 'Choose a member' : 'No matching member'}
+              </Typography>
+            ) : null}
+          </View>
+          {visibleMentionMembers.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: 6, paddingRight: 2 }}
+            >
+              {visibleMentionMembers.map((member) => (
+                <Pressable
+                  key={member.name}
+                  onPress={() => insertMention(member.name)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mention ${member.name}`}
+                  className="flex-row items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 active:opacity-70"
+                >
+                  <AgentAvatar avatar={member.avatar} name={member.name} size={18} />
+                  <Typography type="body-xs" weight="medium" className="max-w-32 text-violet-200">
+                    {member.name}
+                  </Typography>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Attachment Preview Row */}
       {attachments.length > 0 ? (
         <View className="mb-2 flex-row flex-wrap gap-1.5">
@@ -104,19 +168,21 @@ export function Composer({
         {/* Left Actions: Attach (+) + Mode Quick-Pills */}
         <View className="flex-row items-center gap-1.5">
           {/* Add media button */}
-          <Pressable
-            onPress={openAttachMenu}
-            disabled={uploading || disabled}
-            accessibilityRole="button"
-            accessibilityLabel="Add attachment"
-            className="h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 active:bg-white/10 active:opacity-70"
-          >
-            {uploading ? (
-              <Spinner size="sm" color="default" />
-            ) : (
-              <COMPOSER_ICONS.attach size={16} color="#a1a1aa" />
-            )}
-          </Pressable>
+          {showAttachments ? (
+            <Pressable
+              onPress={openAttachMenu}
+              disabled={uploading || disabled}
+              accessibilityRole="button"
+              accessibilityLabel="Add attachment"
+              className="h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 active:bg-white/10 active:opacity-70"
+            >
+              {uploading ? (
+                <Spinner size="sm" color="default" />
+              ) : (
+                <COMPOSER_ICONS.attach size={16} color="#a1a1aa" />
+              )}
+            </Pressable>
+          ) : null}
 
           {/* DeepSearch toggle pill */}
           {onToggleDeepSearch ? (
