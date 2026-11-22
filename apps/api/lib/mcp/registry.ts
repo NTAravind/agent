@@ -1,14 +1,12 @@
 import type { MCPAuthType, MCPServer, MCPTransport } from "@agent/shared";
 
-import { allowedUserId, AuthError } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * Marketplace catalog (`mcp_servers`) — Phase 6 plan §6.1.
  *
- * The catalog is shared and read-only for signed-in users (RLS). All writes
- * go through the service role and are gated on the configured admin identity
- * (`ALLOWED_USER_ID`) — a second line of defense beyond `requireUser`.
+ * The catalog is shared and read-only for signed-in users (RLS). Management
+ * writes use the service role after the route verifies the caller's session.
  */
 
 export type ServerRow = {
@@ -91,14 +89,6 @@ export function toPublicServer(row: ServerRow): PublicServer {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-/** Throws unless the caller is the configured admin. */
-export function assertAdmin(): void {
-  const admin = allowedUserId();
-  if (!admin) {
-    throw new AuthError("forbidden", "Catalog management is not configured.", 403);
-  }
 }
 
 export type CatalogFilter = {
@@ -218,8 +208,8 @@ export async function createServer(input: {
   isVerified?: boolean;
   isFreeTier?: boolean;
   enabled?: boolean;
+  createdBy?: string;
 }): Promise<ServerRow> {
-  assertAdmin();
   const { data, error } = await supabaseAdmin()
     .from("mcp_servers")
     .insert({
@@ -238,7 +228,7 @@ export async function createServer(input: {
       is_verified: input.isVerified ?? false,
       is_free_tier: input.isFreeTier ?? false,
       enabled: input.enabled ?? true,
-      created_by: allowedUserId() ?? null,
+      created_by: input.createdBy ?? null,
     })
     .select(SERVER_COLUMNS)
     .single();
@@ -275,7 +265,6 @@ export async function updateServer(
     enabled: boolean;
   }>,
 ): Promise<ServerRow | null> {
-  assertAdmin();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.slug !== undefined) update.slug = patch.slug;
   if (patch.name !== undefined) update.name = patch.name;
@@ -313,7 +302,6 @@ export async function updateServer(
 
 /** Admin-only: removes a catalog entry (cascades to tools + connections). */
 export async function deleteServer(serverId: string): Promise<boolean> {
-  assertAdmin();
   const { error } = await supabaseAdmin().from("mcp_servers").delete().eq("id", serverId);
   if (error) throw new Error(`Could not delete integration: ${error.message}`);
   return true;

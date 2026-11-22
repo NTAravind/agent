@@ -1,12 +1,14 @@
-import { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import React, { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BookMarked, Plus } from 'lucide-react-native';
+import { BookMarked, ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import type { Skill } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, HairlineDivider, RoundButton } from '@/components/design-system';
+import { colors, radius, space } from '@/theme';
 import { fetchSkills } from '@/lib/skills';
 
 /**
@@ -40,45 +42,51 @@ export default function SkillsScreen() {
     }, [load]),
   );
 
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/more');
+    }
+  }, [router]);
+
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Close
-            </Typography>
-          </Pressable>
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Close"
+          />
         }
         center={
-          <Typography type="body" weight="semibold" className="text-zinc-900 dark:text-white">
+          <Text style={styles.headerTitle}>
             Skills
-          </Typography>
+          </Text>
         }
         right={
-          <Pressable
+          <RoundButton
+            icon={Plus}
             onPress={() => router.push('/skills/new')}
-            accessibilityRole="button"
             accessibilityLabel="New skill"
-            className="h-8 px-3 flex-row items-center gap-1 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-          >
-            <Plus size={14} color="#8b5cf6" />
-            <Text className="text-xs font-medium text-zinc-600 dark:text-zinc-300">New</Text>
-          </Pressable>
+          />
         }
       />
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 12 }}
+          contentContainerStyle={{
+            paddingHorizontal: space.lg,
+            paddingTop: space.sm,
+            paddingBottom: insets.bottom + 32,
+            gap: space.md,
+          }}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -86,66 +94,210 @@ export default function SkillsScreen() {
                 setRefreshing(true);
                 void load();
               }}
-              tintColor="#8b5cf6"
+              tintColor={colors.textPrimary}
             />
           }
         >
           {error ? (
-            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
-              <Text className="text-sm text-red-500 text-center">{error}</Text>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
           {skills.length === 0 && !error ? (
-            <View className="mt-20 items-center justify-center px-6 gap-3">
-              <View className="h-16 w-16 items-center justify-center rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
-                <BookMarked size={28} color="#71717a" />
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <BookMarked size={32} color={colors.textSecondary} strokeWidth={1.5} />
               </View>
-              <Text className="text-base font-semibold text-zinc-900 dark:text-white">
+              <Text style={styles.emptyTitle}>
                 No skills yet
               </Text>
-              <Text className="text-xs text-zinc-500 text-center max-w-xs leading-4">
+              <Text style={styles.emptySubtitle}>
                 Skills are reusable instruction bundles (SKILL.md in your vault). Agents only see
                 their name and description until they load one.
               </Text>
             </View>
-          ) : null}
-
-          {skills.map((skill) => (
-            <Pressable
-              key={skill.id}
-              onPress={() => router.push({ pathname: '/skills/[id]', params: { id: skill.id } })}
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4 active:bg-zinc-100 dark:active:bg-[#18181e] shadow-sm gap-2"
-            >
-              <View className="flex-row items-center justify-between gap-2">
-                <Text numberOfLines={1} className="text-sm font-semibold text-zinc-900 dark:text-white flex-1">
-                  {skill.name}
-                </Text>
-                {!skill.enabled ? (
-                  <View className="rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-0.5">
-                    <Text className="text-[10px] font-semibold text-zinc-500">Off</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text numberOfLines={2} className="text-xs text-zinc-500 dark:text-zinc-400 leading-4">
-                {skill.description}
-              </Text>
-              <View className="flex-row items-center justify-between gap-2">
-                <Text numberOfLines={1} className="text-[11px] text-zinc-400 flex-1">
-                  {skill.slug}
-                  {skill.tools.length > 0 ? ` · ${skill.tools.length} tool limit` : ''}
-                </Text>
-                <View className="rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5">
-                  <Text className="text-[10px] font-semibold text-purple-500 dark:text-purple-300">
-                    {skill.assignedAgentIds.length} agent
-                    {skill.assignedAgentIds.length === 1 ? '' : 's'}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-          ))}
+          ) : (
+            <GroupedCard>
+              {skills.map((skill, index) => (
+                <React.Fragment key={skill.id}>
+                  {index > 0 && <HairlineDivider inset={56} />}
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/skills/[id]', params: { id: skill.id } })}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${skill.name}`}
+                    style={({ pressed }) => [
+                      styles.skillRow,
+                      { opacity: pressed ? 0.6 : 1 },
+                    ]}
+                  >
+                    <View style={styles.tileIcon}>
+                      <BookMarked size={18} color={colors.textSecondary} strokeWidth={1.75} />
+                    </View>
+                    <View style={styles.skillContent}>
+                      <View style={styles.titleRow}>
+                        <Text numberOfLines={1} style={styles.skillName}>
+                          {skill.name}
+                        </Text>
+                        {!skill.enabled ? (
+                          <View style={styles.disabledBadge}>
+                            <Text style={styles.disabledText}>Off</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text numberOfLines={2} style={styles.skillDescription}>
+                        {skill.description}
+                      </Text>
+                      <View style={styles.metaRow}>
+                        <Text numberOfLines={1} style={styles.slugText}>
+                          {skill.slug}
+                          {skill.tools.length > 0 ? ` · ${skill.tools.length} tool limit` : ''}
+                        </Text>
+                        <View style={styles.agentBadge}>
+                          <Text style={styles.agentBadgeText}>
+                            {skill.assignedAgentIds.length} agent
+                            {skill.assignedAgentIds.length === 1 ? '' : 's'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
+                  </Pressable>
+                </React.Fragment>
+              ))}
+            </GroupedCard>
+          )}
         </ScrollView>
       )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBox: {
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    padding: space.md,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.recording,
+    textAlign: 'center',
+  },
+  emptyContainer: {
+    marginTop: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.xs,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.sm,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  skillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 12,
+  },
+  tileIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.tile,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skillContent: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  skillName: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  disabledBadge: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  disabledText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  skillDescription: {
+    fontSize: 13,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.xs,
+    marginTop: 2,
+  },
+  slugText: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.textTertiary,
+    flex: 1,
+  },
+  agentBadge: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  agentBadgeText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+});

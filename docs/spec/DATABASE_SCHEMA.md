@@ -1,6 +1,6 @@
 # Database Schema (Supabase Postgres)
 
-Keep the DB small (free cap 500 MB): files go to Storage, notes live in GitHub, DB holds metadata, chunks and embeddings. Vector dimension below assumes 768; **set it to your embedding model's real dimension**.
+Keep the DB small (free cap 500 MB): files go to Storage, notes live in GitHub, DB holds metadata, chunks and embeddings. Vector dimension below assumes 768; **set it to your embedding model's real dimension**. Supabase Auth users are limited to one by `db/migrations/20261122132549_single_account_auth.sql`; the trigger serializes concurrent sign-ups and rejects later account creation.
 
 ```sql
 create extension if not exists vector;
@@ -185,7 +185,7 @@ create table provider_models (
   primary key (provider, model_id)
 );
 alter table provider_models enable row level security;
--- Service role only; dashboard API authenticates and allow-lists the user.
+-- Service role only; dashboard API authenticates the single app account.
 
 -- Provider usage (drives usage meter and fallback decisions)
 create table provider_usage (

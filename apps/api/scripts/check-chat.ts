@@ -15,7 +15,7 @@ async function main() {
   const chat = await createChatStream({
     messages: [{ role: "user", content: "Reply with exactly: ok" }],
     modelIds: models,
-    userId: process.env.ALLOWED_USER_ID ?? "00000000-0000-0000-0000-000000000000",
+    userId: process.env.CHECK_USER_ID ?? "00000000-0000-0000-0000-000000000000",
   });
 
   console.log("model:", chat.modelId, "provider:", chat.provider);

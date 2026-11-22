@@ -45,7 +45,7 @@ const PLATFORM_KEY = "ak_test_platform_key_not_real";
 process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_ANON_KEY = "anon-test-key";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
-process.env.ALLOWED_USER_ID = USER_ID;
+process.env.CHECK_USER_ID = USER_ID;
 process.env.COMPOSIO_API_KEY = PLATFORM_KEY;
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("hex");
 // Never inherit a developer's override — the derived localhost default keeps

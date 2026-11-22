@@ -1,27 +1,32 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import type { AgentSummary } from '@agent/shared';
 import { Image } from 'expo-image';
-import { Button, Typography } from 'heroui-native';
-import { Linking, Pressable, Share, View } from 'react-native';
-import { CalendarClock } from 'lucide-react-native';
+import { Button } from 'heroui-native';
+import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  CalendarClock,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  CornerDownLeft,
+  FileText,
+} from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
 import { RoutineProposalCard, type RoutineProposal } from '@/components/routine-proposal-card';
-import { MESSAGE_ICONS } from '@/constants/icons';
+import { colors, radius, space, typography } from '@/theme';
 
 type Props = {
   role: 'user' | 'assistant' | 'system' | 'tool';
   parts: { type: string; [key: string]: unknown }[];
-  /** Model that produced this reply (assistant only). */
   modelLabel?: string | null;
-  /** Authoring agent's identity (assistant only) — avatar shown alongside. */
   agent?: AgentSummary | null;
-  /** Run ID if this message is part of a background run. Shows "View task" button. */
   runId?: string | null;
-  /** Callback when "View task" is pressed. */
   onViewTask?: (runId: string) => void;
-  /** Called when the user taps "Edit" on a routine proposal. */
   onEditRoutine?: (routineId: string) => void;
+  replyQuote?: string | null;
+  onSelectOption?: (option: string) => void;
 };
 
 type ToolPart = {
@@ -33,11 +38,7 @@ type ToolPart = {
 };
 
 /**
- * Grok-inspired chat message layout:
- *  - User: sleek, dark graphite capsule bubble (`#1c1c22`) with smooth border
- *  - Assistant: clean full-width text flow directly on canvas (no enclosing box)
- *    with 24pt avatar, Grok-style collapsible "Thinking" accordion drawer,
- *    modern numbered citation capsules, and action toolbar.
+ * 6.3 Chat Bubbles & 6.4 Quick-reply options conforming to design.md
  */
 export function MessageBubble({
   role,
@@ -47,9 +48,12 @@ export function MessageBubble({
   runId,
   onViewTask,
   onEditRoutine,
+  replyQuote,
+  onSelectOption,
 }: Props) {
   const isUser = role === 'user';
   const [copied, setCopied] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
   const fullAssistantText = parts
     .filter((p) => p.type === 'text')
@@ -62,156 +66,261 @@ export function MessageBubble({
       setCopied(true);
       await Share.share({ message: fullAssistantText });
     } catch {
-      // User cancelled share
+      // User cancelled
     } finally {
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  const content = parts.map((part, index) => {
-    if (part.type === 'text') {
-      return (
-        <Typography key={index} type="body" className="text-base leading-6 text-white">
-          {String(part.text ?? '')}
-        </Typography>
-      );
-    }
-    if (part.type === 'reasoning') {
-      return <ReasoningPartView key={index} text={String(part.text ?? '')} />;
-    }
-    if (part.type === 'file') {
-      const url = part.url as string | undefined;
-      const mediaType = String(part.mediaType ?? '');
-      if (url && mediaType.startsWith('image/')) {
-        return (
-          <Image
-            key={index}
-            source={{ uri: url }}
-            style={{ width: 220, height: 220, borderRadius: 16 }}
-            contentFit="cover"
-          />
-        );
-      }
-      return (
-        <View key={index} className="self-start rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-          <Typography type="body-sm" className="text-zinc-200">
-            {`📎 ${String(part.filename ?? 'attachment')}`}
-          </Typography>
-        </View>
-      );
-    }
-    if (part.type === 'data-routine-proposal') {
-      const proposal = part.data as RoutineProposal | undefined;
-      if (!proposal?.routineId) return null;
-      return (
-        <RoutineProposalCard
-          key={index}
-          proposal={proposal}
-          {...(onEditRoutine ? { onEdit: onEditRoutine } : {})}
-        />
-      );
-    }
-    if (part.type === 'routine-trigger') {
-      // A routine fired — the message is a chip, not something the user typed.
-      return (
-        <View
-          key={index}
-          className="flex-row items-center gap-1.5 self-start rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1"
-        >
-          <CalendarClock size={11} color="#c084fc" />
-          <Typography type="body-xs" className="text-violet-300">
-            {`Routine · ${String(part.routine_name ?? 'scheduled run')}`}
-          </Typography>
-        </View>
-      );
-    }
-    if (part.type.startsWith('tool-')) {
-      return <ToolPartView key={index} part={part as ToolPart} />;
-    }
-    if (part.type === 'error') {
-      return (
-        <Typography key={index} type="body-sm" className="text-red-400">
-          {String(part.errorText ?? 'Something went wrong.')}
-        </Typography>
-      );
-    }
-    return null;
-  });
+  const handleOptionPress = (option: string) => {
+    setSelectedOption(option);
+    onSelectOption?.(option);
+  };
 
   // User Message
   if (isUser) {
-    // A routine-triggered message is rendered as a chip, not a bubble.
     const isRoutine = parts.some((part) => part.type === 'routine-trigger');
     if (isRoutine) {
-      return <View className="items-start my-1 gap-1.5">{content}</View>;
+      return (
+        <View style={{ alignItems: 'flex-start', marginVertical: space.xs }}>
+          {parts.map((part, index) => {
+            if (part.type === 'routine-trigger') {
+              return (
+                <View
+                  key={index}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surface,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <CalendarClock size={14} color={colors.textSecondary} strokeWidth={1.75} />
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                    {`Routine · ${String(part.routine_name ?? 'scheduled run')}`}
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          })}
+        </View>
+      );
     }
+
     return (
-      <View className="items-end my-1">
-        <View className="max-w-[85%] gap-2 rounded-[22px] rounded-br-sm border border-white/10 bg-[#1c1c22] px-4 py-3 shadow-sm">
-          {content}
+      <View style={{ alignItems: 'flex-end', marginVertical: 5 }}>
+        {replyQuote ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginRight: 8, opacity: 0.8 }}>
+            <CornerDownLeft size={13} color={colors.textSecondary} strokeWidth={1.75} />
+            <Text numberOfLines={1} style={{ fontSize: 15, color: colors.textSecondary, maxWidth: 260 }}>
+              {replyQuote}
+            </Text>
+          </View>
+        ) : null}
+
+        <View
+          style={{
+            maxWidth: '80%',
+            borderRadius: radius.card,
+            backgroundColor: colors.primary,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+          }}
+        >
+          {parts.map((part, index) => {
+            if (part.type === 'text') {
+              return (
+                <Text
+                  key={index}
+                  style={{
+                    fontSize: 17,
+                    lineHeight: 22,
+                    fontWeight: '400',
+                    color: colors.onPrimary,
+                  }}
+                >
+                  {String(part.text ?? '')}
+                </Text>
+              );
+            }
+            return null;
+          })}
         </View>
       </View>
     );
   }
 
-  // Assistant Message (Full Bleed on Pitch Black Canvas)
+  // Agent Message
   return (
-    <View className="my-2 flex-row items-start gap-3">
-      {/* Avatar or Grok-style glowing spark */}
-      <View className="mt-0.5">
-        {agent ? (
-          <AgentAvatar avatar={agent.avatar} size={26} />
-        ) : (
-          <View className="h-6.5 w-6.5 items-center justify-center rounded-full border border-white/15 bg-white/10">
-            <MESSAGE_ICONS.sparkles size={14} color="#ffffff" />
-          </View>
-        )}
-      </View>
+    <View style={{ alignItems: 'flex-start', marginVertical: 5 }}>
+      {replyQuote ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginLeft: 8, opacity: 0.8 }}>
+          <CornerDownLeft size={13} color={colors.textSecondary} strokeWidth={1.75} />
+          <Text numberOfLines={1} style={{ fontSize: 15, color: colors.textSecondary, maxWidth: 280 }}>
+            {replyQuote}
+          </Text>
+        </View>
+      ) : null}
 
-      <View className="flex-1 gap-2.5">
-        {content}
+      <View
+        style={{
+          maxWidth: '85%',
+          borderRadius: radius.card,
+          backgroundColor: colors.surface,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          gap: 12,
+        }}
+      >
+        {parts.map((part, index) => {
+          if (part.type === 'text') {
+            const textContent = String(part.text ?? '');
 
-        {/* Action bar under assistant reply */}
-        <View className="mt-1 flex-row flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2">
-          <View className="flex-row items-center gap-2">
-            {/* Copy / Share button */}
+            const isQuestion =
+              textContent.includes('Want me to tweak this') ||
+              textContent.includes('Which option') ||
+              textContent.includes('How would you like to proceed');
+
+            if (isQuestion) {
+              return (
+                <OptionListCard
+                  key={index}
+                  question={textContent}
+                  selectedOption={selectedOption}
+                  onSelect={handleOptionPress}
+                />
+              );
+            }
+
+            return (
+              <Text
+                key={index}
+                style={{
+                  fontSize: 17,
+                  lineHeight: 22,
+                  fontWeight: '400',
+                  color: colors.textPrimary,
+                }}
+              >
+                {textContent}
+              </Text>
+            );
+          }
+
+          if (part.type === 'reasoning') {
+            return <ReasoningView key={index} text={String(part.text ?? '')} />;
+          }
+
+          if (part.type === 'file') {
+            const url = part.url as string | undefined;
+            const filename = String(part.filename ?? 'artifact.md');
+            const size = String(part.size ?? '3.1 KB');
+            const mediaType = String(part.mediaType ?? '');
+
+            if (url && mediaType.startsWith('image/')) {
+              return (
+                <Image
+                  key={index}
+                  source={{ uri: url }}
+                  style={{ width: 220, height: 220, borderRadius: radius.card }}
+                  contentFit="cover"
+                />
+              );
+            }
+
+            return (
+              <ArtifactCard
+                key={index}
+                filename={filename}
+                size={size}
+                onPress={() => {
+                  if (url) void Linking.openURL(url);
+                }}
+              />
+            );
+          }
+
+          if (part.type === 'data-routine-proposal') {
+            const proposal = part.data as RoutineProposal | undefined;
+            if (!proposal?.routineId) return null;
+            return (
+              <RoutineProposalCard
+                key={index}
+                proposal={proposal}
+                {...(onEditRoutine ? { onEdit: onEditRoutine } : {})}
+              />
+            );
+          }
+
+          if (part.type.startsWith('tool-')) {
+            return <ToolPartView key={index} part={part as ToolPart} />;
+          }
+
+          return null;
+        })}
+
+        {/* Action Toolbar */}
+        <View
+          style={{
+            marginTop: 4,
+            paddingTop: 8,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.divider,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {fullAssistantText ? (
               <Pressable
                 onPress={() => void handleShareOrCopy()}
-                accessibilityRole="button"
-                accessibilityLabel="Share or copy response"
-                className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 active:bg-white/15"
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.surfaceRaised,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  opacity: pressed ? 0.6 : 1,
+                })}
               >
                 {copied ? (
-                  <MESSAGE_ICONS.check size={12} color="#4ade80" />
+                  <Check size={12} color={colors.success} strokeWidth={2} />
                 ) : (
-                  <MESSAGE_ICONS.copy size={12} color="#a1a1aa" />
+                  <Copy size={12} color={colors.textSecondary} strokeWidth={1.75} />
                 )}
-                <Typography type="body-xs" className="text-zinc-400">
-                  {copied ? 'Shared' : 'Copy'}
-                </Typography>
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                  {copied ? 'Copied' : 'Copy'}
+                </Text>
               </Pressable>
             ) : null}
 
-            {/* Subtext info (Agent name · Model label) */}
-            <Typography type="body-xs" className="text-zinc-500">
+            <Text style={{ fontSize: 13, color: colors.textSecondary }}>
               {[agent?.name, modelLabel].filter(Boolean).join(' · ')}
-            </Typography>
+            </Text>
           </View>
 
-          {/* View Task button if linked to an active run */}
           {runId && onViewTask ? (
-            <Button
-              size="sm"
-              variant="primary"
-              className="rounded-full px-3 py-1"
+            <Pressable
               onPress={() => onViewTask(runId)}
-              accessibilityRole="button"
-              accessibilityLabel="View task"
-              accessibilityHint="Opens the run detail screen"
+              style={({ pressed }) => ({
+                borderRadius: radius.pill,
+                backgroundColor: colors.primary,
+                paddingHorizontal: 12,
+                paddingVertical: 5,
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
-              <Button.Label>View task →</Button.Label>
-            </Button>
+              <Text style={{ fontSize: 12, fontWeight: '500', color: colors.onPrimary }}>
+                View task →
+              </Text>
+            </Pressable>
           ) : null}
         </View>
       </View>
@@ -220,131 +329,242 @@ export function MessageBubble({
 }
 
 /**
- * Grok-style collapsible "Thinking" trace accordion.
- * Displays a glowing pill indicator ("✦ Thought trace ▾") that expands to show
- * the model's step-by-step reasoning tokens.
+ * 6.3 File attachment card:
+ * surface fill, radius 24, padding 12 horizontal, 44x44 tile icon block
+ * file name 20/500 with extension in textTertiary, file size 15pt textSecondary
  */
-function ReasoningPartView({ text }: { text: string }) {
+export function ArtifactCard({
+  filename,
+  size = '3.1 KB',
+  onPress,
+}: {
+  filename: string;
+  size?: string;
+  onPress?: () => void;
+}) {
+  const parts = filename.split('.');
+  const ext = parts.length > 1 ? `.${parts.pop()}` : '';
+  const baseName = parts.join('.');
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: radius.card,
+        backgroundColor: colors.surfaceRaised,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: radius.tile,
+          backgroundColor: colors.surfaceRaised,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+          M↓
+        </Text>
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 20, lineHeight: 26, fontWeight: '500', color: colors.textPrimary }}>
+          {baseName}
+          <Text style={{ color: colors.textTertiary }}>{ext}</Text>
+        </Text>
+        <Text style={{ fontSize: 15, lineHeight: 20, color: colors.textSecondary }}>
+          {size}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * 6.4 Quick-reply options inside an agent bubble:
+ * White (surfaceRaised) list with radius 20, no shadow.
+ * Each row is 60 tall with a leading letter badge (A, B, C...) 32x32, radius 10,
+ * surface fill, textSecondary 15pt letter. Then option text 20/400.
+ * Rows separated by hairline divider inset from the left.
+ * After choice: collapses to only chosen row with success green check.
+ */
+export function OptionListCard({
+  question,
+  options = [
+    { key: 'A', label: 'This works' },
+    { key: 'B', label: 'Vegetarian' },
+    { key: 'C', label: 'No seafood' },
+    { key: 'D', label: 'Cooking for two' },
+    { key: 'E', label: 'Shorter Sunday cook' },
+  ],
+  selectedOption,
+  onSelect,
+}: {
+  question: string;
+  options?: Array<{ key: string; label: string }>;
+  selectedOption: string | null;
+  onSelect: (option: string) => void;
+}) {
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '400', color: colors.textPrimary }}>
+        {question}
+      </Text>
+
+      <View
+        style={{
+          backgroundColor: colors.surfaceRaised,
+          borderRadius: radius.inner,
+          overflow: 'hidden',
+        }}
+      >
+        {selectedOption ? (
+          <View
+            style={{
+              height: 60,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+            }}
+          >
+            <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '400', color: colors.textPrimary }}>
+              {selectedOption}
+            </Text>
+            <Check size={22} color={colors.success} strokeWidth={2.2} />
+          </View>
+        ) : (
+          options.map((opt, i) => (
+            <View key={opt.key}>
+              <Pressable
+                onPress={() => onSelect(opt.label)}
+                style={({ pressed }) => ({
+                  height: 60,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 16,
+                  gap: 14,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: radius.tile,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary }}>
+                    {opt.key}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '400', color: colors.textPrimary }}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+
+              {i < options.length - 1 && (
+                <View
+                  style={{
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: colors.divider,
+                    marginLeft: 62,
+                  }}
+                />
+              )}
+            </View>
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ReasoningView({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   if (!text.trim()) return null;
 
   return (
-    <View className="my-1">
+    <View style={{ marginVertical: 4 }}>
       <Pressable
         onPress={() => setExpanded((prev) => !prev)}
-        accessibilityRole="button"
-        accessibilityLabel="Toggle thought trace"
-        className="flex-row items-center gap-1.5 self-start rounded-full border border-purple-500/25 bg-purple-500/10 px-3 py-1 active:opacity-75"
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          alignSelf: 'flex-start',
+          borderRadius: radius.pill,
+          backgroundColor: colors.surfaceRaised,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          opacity: pressed ? 0.6 : 1,
+        })}
       >
-        <MESSAGE_ICONS.brain size={13} color="#c084fc" />
-        <Typography type="body-xs" weight="medium" className="text-purple-300">
-          Thought trace
-        </Typography>
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>Thought trace</Text>
         {expanded ? (
-          <MESSAGE_ICONS.chevronUp size={12} color="#c084fc" />
+          <ChevronUp size={14} color={colors.textSecondary} strokeWidth={1.75} />
         ) : (
-          <MESSAGE_ICONS.chevronDown size={12} color="#c084fc" />
+          <ChevronDown size={14} color={colors.textSecondary} strokeWidth={1.75} />
         )}
       </Pressable>
       {expanded ? (
-        <View className="mt-2 rounded-2xl border border-white/10 bg-[#121215] p-3.5">
-          <Typography type="body-xs" className="font-mono text-zinc-300 leading-5">
+        <View
+          style={{
+            marginTop: 8,
+            borderRadius: radius.card,
+            backgroundColor: colors.surfaceRaised,
+            padding: 12,
+          }}
+        >
+          <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
             {text}
-          </Typography>
+          </Text>
         </View>
       ) : null}
     </View>
   );
 }
 
-/** Renders a tool call with citations and status badge. */
 function ToolPartView({ part }: { part: ToolPart }) {
   const name = part.type.replace(/^tool-/, '');
   const state = part.state ?? 'input-available';
-  const label = TOOL_LABELS[name] ?? name;
   const failed = state === 'output-error';
 
-  const results = extractSearchResults(part.output);
-
   return (
-    <View className="gap-2 my-0.5">
-      {/* Status Pill */}
-      <View className="flex-row items-center gap-2 self-start rounded-full border border-white/10 bg-[#141418] px-3 py-1.5">
+    <View style={{ marginVertical: 2 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          alignSelf: 'flex-start',
+          borderRadius: radius.pill,
+          backgroundColor: colors.surfaceRaised,
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+        }}
+      >
         <View
-          className={`h-2 w-2 rounded-full ${
-            failed ? 'bg-red-400' : state === 'output-available' ? 'bg-emerald-400' : 'bg-sky-400'
-          }`}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: radius.pill,
+            backgroundColor: failed ? colors.recording : colors.success,
+          }}
         />
-        <Typography type="body-xs" className="text-zinc-300">
-          {`${label} · ${TOOL_STATES[state] ?? state}`}
-        </Typography>
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>{name}</Text>
       </View>
-
-      {/* Grok-style Citation Badges */}
-      {results.length > 0 ? (
-        <View className="flex-row flex-wrap gap-1.5">
-          {results.map((result, index) => {
-            const domain = cleanDomain(result.url);
-            return (
-              <Pressable
-                key={`${result.url}-${index}`}
-                onPress={() => void Linking.openURL(result.url)}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${result.title}`}
-                className="flex-row items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 active:bg-white/10"
-              >
-                <MESSAGE_ICONS.deepSearch size={11} color="#38bdf8" />
-                <Typography type="body-xs" numberOfLines={1} className="max-w-[150px] text-zinc-300">
-                  {`${index + 1} · ${domain || result.title}`}
-                </Typography>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
-
-      {part.errorText ? (
-        <Typography type="body-xs" className="text-red-400">
-          {part.errorText}
-        </Typography>
-      ) : null}
     </View>
   );
-}
-
-function cleanDomain(url: string): string {
-  try {
-    return url.replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
-  } catch {
-    return url;
-  }
-}
-
-const TOOL_LABELS: Record<string, string> = {
-  web_search: 'DeepSearch',
-  fetch_page: 'Read source',
-  search_notes: 'Search notes',
-  read_note: 'Read note',
-  recall_memory: 'Recall memory',
-  save_memory: 'Save memory',
-  list_memories: 'List memories',
-};
-
-const TOOL_STATES: Record<string, string> = {
-  'input-streaming': 'running',
-  'input-available': 'running',
-  'output-available': 'done',
-  'output-error': 'failed',
-};
-
-function extractSearchResults(output: unknown): { title: string; url: string }[] {
-  if (!output || typeof output !== 'object') return [];
-  const results = (output as { results?: unknown }).results;
-  if (!Array.isArray(results)) return [];
-
-  return results
-    .filter((item): item is { title: string; url: string } =>
-      Boolean(item && typeof item === 'object' && typeof (item as { url?: string }).url === 'string'),
-    )
-    .map((item) => ({ title: item.title ?? item.url, url: item.url }));
 }

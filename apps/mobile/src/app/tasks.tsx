@@ -1,23 +1,26 @@
-import { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FolderPlus, ListTodo, Plus, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, FolderPlus, ListTodo, Plus, Trash2, X } from 'lucide-react-native';
 import type { Task, TaskList } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, HairlineDivider, PillButton, RoundButton } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
-import { fetchTaskLists, fetchTasks, createTask, createTaskList, deleteTask, updateTask } from '@/lib/productivity';
+import { colors, radius, shadow, space } from '@/theme';
+import { createTask, createTaskList, deleteTask, fetchTaskLists, fetchTasks, updateTask } from '@/lib/productivity';
 
 export default function TasksScreen() {
   const router = useRouter();
@@ -36,6 +39,14 @@ export default function TasksScreen() {
   const [saving, setSaving] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [draftListName, setDraftListName] = useState('');
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/' as never);
+    }
+  }, [router]);
 
   const load = useCallback(async () => {
     try {
@@ -58,8 +69,8 @@ export default function TasksScreen() {
   );
 
   const listTasks = useMemo(
-    () => (activeListId ? tasks.filter((task) => task.listId === activeListId) : tasks),
-    [tasks, activeListId],
+    () => tasks.filter((task) => !activeListId || task.listId === activeListId),
+    [activeListId, tasks],
   );
 
   const roots = useMemo(
@@ -74,40 +85,38 @@ export default function TasksScreen() {
 
   const handleToggle = useCallback(
     async (task: Task) => {
+      const nextStatus: Task['status'] = task.status === 'done' ? 'open' : 'done';
       setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id
-            ? { ...item, status: task.status === 'done' ? 'open' : 'done' }
-            : item,
-        ),
+        current.map((item) => (item.id === task.id ? { ...item, status: nextStatus } : item)),
       );
       try {
-        await updateTask(task.id, { status: task.status === 'done' ? 'open' : 'done' });
+        await updateTask(task.id, { status: nextStatus });
       } catch (error) {
         setNotice(error instanceof Error ? error.message : String(error));
-        void load();
+        setTasks((current) =>
+          current.map((item) => (item.id === task.id ? { ...item, status: task.status } : item)),
+        );
       }
     },
-    [load],
+    [],
   );
 
   const handleAdd = useCallback(async () => {
     const title = draftTitle.trim();
-    if (!title || saving) return;
+    if (!title) return;
+    const targetListId = activeListId ?? lists[0]?.id;
+    if (!targetListId) {
+      setNotice('Please create a list first.');
+      return;
+    }
     setSaving(true);
     try {
-      let listId = activeListId ?? lists[0]?.id;
-      if (!listId) {
-        const created = await createTaskList({ name: 'Inbox' });
-        setLists((current) => [...current, created]);
-        listId = created.id;
-      }
-      const task = await createTask({
-        listId,
+      const created = await createTask({
         title,
-        ...(draftParentId ? { parentId: draftParentId } : {}),
+        listId: targetListId,
+        parentId: draftParentId ?? undefined,
       });
-      setTasks((current) => [task, ...current]);
+      setTasks((current) => [created, ...current]);
       setDraftTitle('');
       setDraftParentId(null);
       setComposerOpen(false);
@@ -116,7 +125,7 @@ export default function TasksScreen() {
     } finally {
       setSaving(false);
     }
-  }, [activeListId, draftParentId, draftTitle, lists, saving]);
+  }, [activeListId, draftParentId, draftTitle]);
 
   const handleDelete = useCallback(
     (task: Task) => {
@@ -164,73 +173,72 @@ export default function TasksScreen() {
     const children = childrenOf(task.id);
     return (
       <View key={task.id}>
-        <View
-          className={
-            depth > 0 ? 'border-t border-zinc-100 dark:border-white/5 pl-6' : undefined
-          }
-        >
+        <View style={depth > 0 ? { paddingLeft: 24 } : undefined}>
           <TaskRow
             task={task}
             onToggle={(t) => void handleToggle(t)}
-            listName={depth === 0 ? undefined : undefined}
+            listName={undefined}
           />
         </View>
-        <View className="flex-row items-center gap-3 pl-12 -mt-1 pb-1">
+        <View style={styles.subtaskActionsRow}>
           <Pressable
             onPress={() => {
               setDraftParentId(task.id);
               setComposerOpen(true);
             }}
-            className="flex-row items-center gap-1 active:opacity-60"
+            accessibilityRole="button"
+            accessibilityLabel="Add subtask"
+            style={styles.subtaskAction}
           >
-            <Plus size={12} color="#71717a" />
-            <Text className="text-[11px] text-zinc-500">Subtask</Text>
+            <Plus size={14} color={colors.textSecondary} />
+            <Text style={styles.subtaskActionText}>Subtask</Text>
           </Pressable>
-          <Pressable onPress={() => handleDelete(task)} className="active:opacity-60">
-            <Trash2 size={12} color="#ef4444" />
+          <Pressable
+            onPress={() => handleDelete(task)}
+            accessibilityRole="button"
+            accessibilityLabel="Delete task"
+            style={styles.subtaskAction}
+          >
+            <Trash2 size={14} color={colors.recording} />
           </Pressable>
         </View>
-        {children.map((child) => renderTask(child, depth + 1))}
+        {children.map((child) => (
+          <React.Fragment key={child.id}>
+            <HairlineDivider inset={48} />
+            {renderTask(child, depth + 1)}
+          </React.Fragment>
+        ))}
       </View>
     );
   };
 
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Back
-            </Typography>
-          </Pressable>
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Go back"
+          />
         }
         center={
-          <Typography type="body-sm" weight="semibold" className="text-zinc-900 dark:text-white">
-            Tasks
-          </Typography>
+          <Text style={styles.headerTitle}>Tasks</Text>
         }
         right={
-          <Pressable
+          <RoundButton
+            icon={Plus}
             onPress={() => {
               setDraftParentId(null);
               setComposerOpen(true);
             }}
-            accessibilityRole="button"
             accessibilityLabel="New task"
-            className="h-8.5 w-8.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-          >
-            <Plus size={15} color="#71717a" />
-          </Pressable>
+          />
         }
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 14 }}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.md }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -239,29 +247,31 @@ export default function TasksScreen() {
               setRefreshing(true);
               void load();
             }}
-            tintColor="#8b5cf6"
+            tintColor={colors.textPrimary}
           />
         }
       >
         {/* List chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View className="flex-row items-center gap-2 pr-2">
+          <View style={styles.chipsRow}>
             {lists.map((list) => {
               const active = list.id === activeListId;
               return (
                 <Pressable
                   key={list.id}
                   onPress={() => setActiveListId(list.id)}
-                  className={`rounded-full px-3.5 py-1.5 border ${
-                    active
-                      ? 'bg-zinc-900 dark:bg-white border-zinc-900 dark:border-white'
-                      : 'border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5'
-                  }`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Filter ${list.name}`}
+                  style={[
+                    styles.chip,
+                    active && styles.chipActive,
+                  ]}
                 >
                   <Text
-                    className={`text-xs font-semibold ${
-                      active ? 'text-white dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-400'
-                    }`}
+                    style={[
+                      styles.chipText,
+                      active && styles.chipTextActive,
+                    ]}
                   >
                     {list.name}
                   </Text>
@@ -272,116 +282,261 @@ export default function TasksScreen() {
               onPress={handleAddList}
               accessibilityRole="button"
               accessibilityLabel="New list"
-              className="flex-row items-center gap-1 rounded-full border border-dashed border-zinc-300 dark:border-white/20 px-3 py-1.5 active:opacity-70"
+              style={styles.addListChip}
             >
-              <FolderPlus size={13} color="#71717a" />
-              <Text className="text-xs font-semibold text-zinc-500">List</Text>
+              <FolderPlus size={14} color={colors.textSecondary} />
+              <Text style={styles.addListChipText}>List</Text>
             </Pressable>
           </View>
         </ScrollView>
 
         {notice ? (
-          <View className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3.5 py-2.5">
-            <Text className="text-xs text-sky-500 dark:text-sky-400">{notice}</Text>
+          <View style={styles.noticeBox}>
+            <Text style={styles.noticeText}>{notice}</Text>
           </View>
         ) : null}
 
         {loading ? (
-          <View className="py-16 items-center justify-center">
+          <View style={styles.center}>
             <Spinner size="lg" color="default" />
           </View>
         ) : roots.length === 0 ? (
-          <View className="mt-16 items-center justify-center px-6 gap-3">
-            <View className="h-16 w-16 items-center justify-center rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
-              <ListTodo size={28} color="#71717a" />
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconBox}>
+              <ListTodo size={32} color={colors.textSecondary} strokeWidth={1.5} />
             </View>
-            <Text className="text-base font-semibold text-zinc-900 dark:text-white">No tasks yet</Text>
-            <Text className="text-xs text-zinc-500 text-center max-w-xs">
+            <Text style={styles.emptyTitle}>No tasks yet</Text>
+            <Text style={styles.emptySubtitle}>
               Tap + to add your first task, or ask an agent to create one for you.
             </Text>
           </View>
         ) : (
-          <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] overflow-hidden">
+          <GroupedCard style={{ paddingVertical: space.sm }}>
             {roots.map((task, index) => (
-              <View key={task.id} className={index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''}>
+              <React.Fragment key={task.id}>
+                {index > 0 && <HairlineDivider />}
                 {renderTask(task)}
-              </View>
+              </React.Fragment>
             ))}
-          </View>
+          </GroupedCard>
         )}
       </ScrollView>
 
-      {/* Composer */}
+      {/* Composer Modal */}
       <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => setComposerOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full max-w-md rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#121215] p-5 gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-base font-bold text-zinc-900 dark:text-white">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalCardHeader}>
+              <Text style={styles.modalCardTitle}>
                 {draftParentId ? 'New subtask' : 'New task'}
               </Text>
-              <Pressable onPress={() => setComposerOpen(false)} accessibilityRole="button">
-                <X size={18} color="#71717a" />
+              <Pressable
+                onPress={() => setComposerOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <X size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
               autoFocus
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
+              style={styles.modalInput}
               placeholder="What needs doing?"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textSecondary}
               value={draftTitle}
               onChangeText={setDraftTitle}
               onSubmitEditing={() => void handleAdd()}
               returnKeyType="done"
             />
-            <Pressable
+            <PillButton
+              label={saving ? 'Adding…' : 'Add task'}
               onPress={() => void handleAdd()}
               disabled={saving || !draftTitle.trim()}
-              className="rounded-2xl bg-zinc-900 dark:bg-white py-3 items-center active:opacity-80 disabled:opacity-40"
-            >
-              {saving ? (
-                <Spinner size="sm" color="default" />
-              ) : (
-                <Text className="text-sm font-bold text-white dark:text-zinc-900">Add task</Text>
-              )}
-            </Pressable>
+              variant="primary"
+            />
           </View>
         </View>
       </Modal>
 
-      {/* New list */}
+      {/* New list Modal */}
       <Modal visible={listModalOpen} transparent animationType="fade" onRequestClose={() => setListModalOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full max-w-md rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#121215] p-5 gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-base font-bold text-zinc-900 dark:text-white">New list</Text>
-              <Pressable onPress={() => setListModalOpen(false)} accessibilityRole="button">
-                <X size={18} color="#71717a" />
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalCardHeader}>
+              <Text style={styles.modalCardTitle}>New list</Text>
+              <Pressable
+                onPress={() => setListModalOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <X size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
               autoFocus
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
+              style={styles.modalInput}
               placeholder="List name"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textSecondary}
               value={draftListName}
               onChangeText={setDraftListName}
               onSubmitEditing={() => void handleSaveList()}
               returnKeyType="done"
             />
-            <Pressable
+            <PillButton
+              label={saving ? 'Creating…' : 'Create list'}
               onPress={() => void handleSaveList()}
               disabled={saving || !draftListName.trim()}
-              className="rounded-2xl bg-zinc-900 dark:bg-white py-3 items-center active:opacity-80 disabled:opacity-40"
-            >
-              {saving ? (
-                <Spinner size="sm" color="default" />
-              ) : (
-                <Text className="text-sm font-bold text-white dark:text-zinc-900">Create list</Text>
-              )}
-            </Pressable>
+              variant="primary"
+            />
           </View>
         </View>
       </Modal>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingRight: space.sm,
+  },
+  chip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  chipTextActive: {
+    color: colors.onPrimary,
+  },
+  addListChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  addListChipText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  noticeBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  noticeText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  center: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    marginTop: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.xs,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.sm,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  subtaskActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingLeft: 48,
+    paddingBottom: 8,
+  },
+  subtaskAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  subtaskActionText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlay,
+    paddingHorizontal: space.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: radius.sheet,
+    backgroundColor: colors.surfaceRaised,
+    padding: space.xl,
+    gap: space.md,
+    ...shadow.floating,
+  },
+  modalCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalCardTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalInput: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: 12,
+    fontSize: 17,
+    color: colors.textPrimary,
+  },
+});

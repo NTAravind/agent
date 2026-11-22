@@ -5,17 +5,26 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Button, Spinner, Switch, Typography } from 'heroui-native';
+import { Spinner, Switch } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Trash2 } from 'lucide-react-native';
 import type { Skill } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import {
+  GroupedCard,
+  HairlineDivider,
+  PillButton,
+  RoundButton,
+  SectionLabel,
+} from '@/components/design-system';
+import { colors, radius, space } from '@/theme';
 import { createSkill, deleteSkill, fetchSkills, updateSkill } from '@/lib/skills';
 
 const DEFAULT_BODY = '# Instructions\n\n';
@@ -134,89 +143,87 @@ export default function SkillEditorScreen() {
     );
   }, [id, router]);
 
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/skills' as never);
+    }
+  }, [router]);
+
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-white dark:bg-[#09090b]"
+      style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Cancel
-            </Typography>
-          </Pressable>
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Cancel"
+          />
         }
         center={
-          <Typography type="body" weight="semibold" className="text-zinc-900 dark:text-white">
+          <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '600', color: colors.textPrimary }}>
             {isNew ? 'New Skill' : 'Edit Skill'}
-          </Typography>
+          </Text>
         }
         right={
-          <Button
-            size="sm"
-            variant="primary"
-            className="rounded-full px-4"
-            isDisabled={saving || loading}
+          <PillButton
+            label={saving ? 'Saving…' : 'Save'}
             onPress={() => void handleSave()}
-            accessibilityRole="button"
-            accessibilityLabel="Save skill"
-          >
-            {saving ? <Spinner size="sm" color="default" /> : <Button.Label>Save</Button.Label>}
-          </Button>
+            disabled={saving || loading}
+            variant="primary"
+          />
         }
       />
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 20 }}
+          contentContainerStyle={{
+            padding: space.lg,
+            paddingBottom: insets.bottom + space.xxl,
+            gap: space.xl,
+          }}
           keyboardShouldPersistTaps="handled"
         >
           {error ? (
-            <Typography type="body-sm" className="text-red-500 text-center">
-              {error}
-            </Typography>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
           ) : null}
 
-          <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4 gap-1">
-            <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Vault path
-            </Text>
-            <Text className="text-sm text-zinc-600 dark:text-zinc-300">
+          {/* Vault path Card */}
+          <GroupedCard style={{ padding: space.lg, gap: space.xs }}>
+            <Text style={styles.metaLabel}>Vault path</Text>
+            <Text style={styles.metaValue}>
               skills/{(slug || 'your-slug') + '/SKILL.md'}
             </Text>
-            <Text className="text-xs text-zinc-400 leading-4">
+            <Text style={styles.metaDescription}>
               Committed to your GitHub vault on save. Agents only see the name and description until
               they call load_skill.
             </Text>
-          </View>
+          </GroupedCard>
 
-          <View className="gap-4">
-            <View>
-              <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                Name
-              </Text>
+          <View style={{ gap: space.lg }}>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Name" />
               <TextInput
                 value={name}
                 onChangeText={setName}
                 placeholder="e.g. Research Brief"
-                placeholderTextColor="#71717a"
-                className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-base text-zinc-900 dark:text-white"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.input}
               />
             </View>
 
-            <View>
-              <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                Slug {isNew ? '' : '(fixed)'}
-              </Text>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text={`Slug ${isNew ? '' : '(fixed)'}`} />
               <TextInput
                 value={slug}
                 onChangeText={(next) => setSlug(next.toLowerCase())}
@@ -224,66 +231,58 @@ export default function SkillEditorScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder="research-brief"
-                placeholderTextColor="#71717a"
-                className={`rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-base text-zinc-900 dark:text-white ${isNew ? '' : 'opacity-60'}`}
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.input, !isNew && { opacity: 0.6 }]}
               />
             </View>
 
-            <View>
-              <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                Description (shown in the agent&apos;s prompt)
-              </Text>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Description (shown in the agent's prompt)" />
               <TextInput
                 value={description}
                 onChangeText={setDescription}
                 placeholder="One line: when should the agent use this skill?"
-                placeholderTextColor="#71717a"
+                placeholderTextColor={colors.textSecondary}
                 multiline
-                className="min-h-[60px] rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-base text-zinc-900 dark:text-white leading-5"
+                style={[styles.input, styles.multilineInput]}
               />
             </View>
 
-            <View>
-              <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                Tool allowlist (optional, narrows only)
-              </Text>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Tool allowlist (optional, narrows only)" />
               <TextInput
                 value={toolsText}
                 onChangeText={setToolsText}
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder="web_search, fetch_page"
-                placeholderTextColor="#71717a"
-                className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-sm text-zinc-900 dark:text-white"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.input}
               />
-              <Text className="mt-1.5 text-xs text-zinc-400 leading-4">
+              <Text style={styles.fieldHelp}>
                 Comma-separated. When the skill is loaded, the agent only keeps these tools (it can
                 never gain tools it does not already have).
               </Text>
             </View>
 
-            <View>
-              <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                Instructions (markdown)
-              </Text>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Instructions (markdown)" />
               <TextInput
                 value={body}
                 onChangeText={setBody}
                 placeholder={DEFAULT_BODY}
-                placeholderTextColor="#71717a"
+                placeholderTextColor={colors.textSecondary}
                 multiline
                 textAlignVertical="top"
-                className="min-h-[220px] rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-sm text-zinc-900 dark:text-white leading-5"
+                style={[styles.input, styles.codeAreaInput]}
               />
             </View>
 
             {!isNew ? (
-              <View className="flex-row items-center justify-between rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4">
-                <View className="flex-1 pr-4">
-                  <Text className="text-base font-semibold text-zinc-900 dark:text-white">
-                    Enabled
-                  </Text>
-                  <Text className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <GroupedCard style={{ padding: space.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1, paddingRight: space.lg }}>
+                  <Text style={styles.toggleTitle}>Enabled</Text>
+                  <Text style={styles.toggleSubtitle}>
                     Disabled skills stay in the vault but are hidden from agents.
                   </Text>
                 </View>
@@ -292,20 +291,20 @@ export default function SkillEditorScreen() {
                   onSelectedChange={setEnabled}
                   accessibilityLabel="Toggle skill enabled"
                 />
-              </View>
+              </GroupedCard>
             ) : null}
           </View>
 
           {!isNew ? (
-            <View className="pt-1">
+            <View style={{ paddingTop: space.xs }}>
               <Pressable
                 onPress={handleDelete}
                 accessibilityRole="button"
                 accessibilityLabel="Delete skill"
-                className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 py-3 active:opacity-75"
+                style={styles.deleteButton}
               >
-                <Trash2 size={16} color="#ef4444" />
-                <Text className="text-sm font-semibold text-red-500">Delete Skill</Text>
+                <Trash2 size={16} color={colors.recording} />
+                <Text style={styles.deleteButtonText}>Delete Skill</Text>
               </Pressable>
             </View>
           ) : null}
@@ -314,3 +313,89 @@ export default function SkillEditorScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBox: {
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    padding: space.lg,
+  },
+  errorText: {
+    color: colors.recording,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  metaLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  metaValue: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  metaDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginTop: space.xs,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    fontSize: 17,
+    color: colors.textPrimary,
+  },
+  multilineInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+    lineHeight: 22,
+  },
+  codeAreaInput: {
+    minHeight: 220,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  fieldHelp: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    paddingHorizontal: space.xs,
+  },
+  toggleTitle: {
+    fontSize: 17,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  toggleSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.sm,
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    paddingVertical: space.md,
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.recording,
+  },
+});

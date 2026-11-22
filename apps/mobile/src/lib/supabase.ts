@@ -20,6 +20,7 @@ const secureStoreAdapter = {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: secureStoreAdapter,
+    flowType: 'pkce',
     autoRefreshToken: true,
     persistSession: true,
     // Deep links are handled manually in the auth callback screen.

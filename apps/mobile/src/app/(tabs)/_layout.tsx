@@ -1,52 +1,71 @@
 import { useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
+import { useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
 import { Tabs, TabList, TabSlot, TabTrigger } from 'expo-router/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bot, FileText, MessageSquare, MoreHorizontal, Sun } from 'lucide-react-native';
+import { FileText, MessageSquare, MoreHorizontal, Sun, Users } from 'lucide-react-native';
 
 import { TabButton } from '@/components/tab-button';
 import { useSession } from '@/lib/session';
+import { colors, radius, shadow } from '@/theme';
 
 /**
- * The app's bottom tab bar (Phase 9).
- *
- * Five tabs replace the old home-hub sprawl:
- *   Chat · Agents · Today · Notes · More
- *
- * Detail screens (agent detail, note editor, tasks, calendar) stay in the
- * root stack so deep links such as /agents/:id keep working.
+ * Pill-Shaped Floating Navigation Dock conforming to design.md:
+ * - Direct child of <Tabs> so Expo Router's trigger discovery parses all tabs.
+ * - Exactly centered on all device screen widths.
+ * - 5 core tabs: Chat, Agents, Today, Notes, More.
+ * - Seamlessly hidden when inside deep chat threads or sub-screens.
  */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useGlobalSearchParams<{ agentId?: string; threadId?: string }>();
   const { session, isLoading } = useSession();
 
-  // One guard for every tab: an unauthenticated user never sees the app.
+  // One guard for every tab: unauthenticated user redirected to sign-in
   useEffect(() => {
     if (!isLoading && !session) {
       router.replace('/sign-in');
     }
   }, [isLoading, session, router]);
 
+  // Is this an active conversation inside chat?
+  const isAgentChat =
+    (pathname === '/chat' || pathname.startsWith('/chat')) &&
+    Boolean(searchParams.agentId || searchParams.threadId);
+
+  // Nav dock appears exclusively on the 5 main root screens
+  const isMainScreen =
+    !isAgentChat &&
+    (pathname === '/' ||
+      pathname === '/chat' ||
+      pathname === '/agents' ||
+      pathname === '/notes' ||
+      pathname === '/more');
+
+  const screenWidth = Dimensions.get('window').width;
+  const dockWidth = Math.min(screenWidth - 32, 380);
+
   return (
     <Tabs>
       <TabSlot />
       <TabList
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingTop: 6,
-          paddingBottom: Math.max(insets.bottom, 6),
-          borderTopWidth: 1,
-          borderTopColor: 'rgba(113,113,122,0.18)',
-          backgroundColor: '#ffffff',
-        }}
+        style={[
+          styles.dock,
+          {
+            bottom: Math.max(insets.bottom + 12, 16),
+            left: (screenWidth - dockWidth) / 2,
+            width: dockWidth,
+          },
+          !isMainScreen && styles.dockHidden,
+        ]}
       >
         <TabTrigger name="chat" href="/chat" asChild>
           <TabButton icon={MessageSquare} label="Chat" />
         </TabTrigger>
         <TabTrigger name="agents" href="/agents" asChild>
-          <TabButton icon={Bot} label="Agents" />
+          <TabButton icon={Users} label="Agents" />
         </TabTrigger>
         <TabTrigger name="today" href="/" asChild>
           <TabButton icon={Sun} label="Today" />
@@ -61,3 +80,22 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  dock: {
+    position: 'absolute',
+    height: 58,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    zIndex: 999,
+    ...shadow.floating,
+    elevation: Platform.OS === 'android' ? 8 : 0,
+  },
+  dockHidden: {
+    display: 'none',
+  },
+});

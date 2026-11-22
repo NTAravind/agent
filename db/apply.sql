@@ -3,6 +3,42 @@
 
 create extension if not exists pgcrypto;
 
+-- Single-account email/password authentication. This is also maintained as
+-- db/migrations/20261122132549_single_account_auth.sql.
+do $$
+begin
+  if (select count(*) from auth.users) > 1 then
+    raise exception 'Multiple Supabase Auth users already exist. Remove extra accounts before enabling single-account auth.';
+  end if;
+end;
+$$;
+
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
+create or replace function private.enforce_single_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+begin
+  perform pg_advisory_xact_lock(764223190246::bigint);
+  if exists (select 1 from auth.users limit 1) then
+    raise exception 'Only one account is supported. Sign in with the existing account.'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.enforce_single_auth_user() from public, anon, authenticated;
+drop trigger if exists enforce_single_auth_user on auth.users;
+create trigger enforce_single_auth_user
+  before insert on auth.users
+  for each row execute function private.enforce_single_auth_user();
+
+
 create table if not exists provider_usage (
   id bigint generated always as identity primary key,
   user_id uuid not null,

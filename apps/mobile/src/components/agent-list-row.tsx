@@ -1,9 +1,11 @@
+import React from 'react';
 import type { Agent } from '@agent/shared';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Pressable, Text, View } from 'react-native';
 import { runOnJS } from 'react-native-reanimated';
 
-import { AgentAvatar } from '@/components/agent-avatar';
+import { AgentAvatar, ClusterAvatar, type ClusterAvatarMember } from '@/components/agent-avatar';
+import { colors, radius, space, typography } from '@/theme';
 import type { RunListItem } from '@/lib/agents';
 import { AgentRowActions } from './agent-row-actions';
 
@@ -20,6 +22,12 @@ type Props = {
   /** Whether this row's action pill is open (only one row at a time). */
   isActionsOpen: boolean;
   onActionsToggle: (open: boolean) => void;
+  /** Group members if this is a group conversation row */
+  isGroup?: boolean;
+  groupMembers?: ClusterAvatarMember[];
+  tag?: string | null;
+  lastMessage?: string | null;
+  timestamp?: string | null;
 };
 
 function formatTimestamp(dateStr?: string | null): string {
@@ -48,16 +56,20 @@ function formatTimestamp(dateStr?: string | null): string {
 
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'long' });
+    return date.toLocaleDateString([], { weekday: 'short' });
   }
 
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 /**
- * Clean contact list row inspired by the reference design:
- * Creature avatar on the left, agent name over real activity subtitle in the middle,
- * and real timestamp on the right.
+ * 6.10 Feed / chat list screen row conforming to design.md:
+ * - 64pt avatar (or 2-bubble cluster for groups)
+ * - Name 20/500, optional tag pill (surface fill, 15pt textSecondary)
+ * - Timestamp in 15pt textSecondary
+ * - Single-line preview in 17/400 textSecondary
+ * - Calm copy (no emoji badges, no AI decorations)
+ * - No card background around rows, no borders
  */
 export function AgentListRow({
   agent,
@@ -68,28 +80,34 @@ export function AgentListRow({
   onActionPress,
   isActionsOpen,
   onActionsToggle,
+  isGroup = false,
+  groupMembers,
+  tag,
+  lastMessage,
+  timestamp,
 }: Props) {
-  // Real dynamic activity / preview text
-  let subtitle = 'Ready for tasks';
-  if (activeRun) {
+  // Calm copy preview (no emoji icons per Section 2 & 5)
+  let subtitle = lastMessage ?? 'Ready for tasks';
+  if (!lastMessage && activeRun) {
     if (activeRun.status === 'running') {
-      subtitle = `⚡ ${activeRun.goal}`;
+      subtitle = activeRun.goal;
     } else if (activeRun.status === 'awaiting_approval') {
-      subtitle = `⚠️ Approval: ${activeRun.goal}`;
+      subtitle = `Approval required: ${activeRun.goal}`;
     } else if (activeRun.status === 'paused') {
-      subtitle = `⏸ Paused: ${activeRun.goal}`;
+      subtitle = `Paused: ${activeRun.goal}`;
     } else if (activeRun.status === 'succeeded') {
-      subtitle = `✓ ${activeRun.goal}`;
+      subtitle = activeRun.goal;
     } else {
       subtitle = activeRun.goal;
     }
-  } else if (agent.role) {
+  } else if (!lastMessage && agent.role) {
     subtitle = agent.role;
-  } else if (agent.instructions) {
+  } else if (!lastMessage && agent.instructions) {
     subtitle = agent.instructions.slice(0, 60);
   }
 
-  const timeDisplay = formatTimestamp(activeRun?.created_at ?? agent.createdAt);
+  const roleTag = tag ?? (agent.role && agent.role.length <= 24 ? agent.role : null);
+  const timeDisplay = formatTimestamp(timestamp ?? activeRun?.created_at ?? agent.createdAt);
 
   const swipeGesture = Gesture.Pan()
     .activeOffsetX([-1000, -20])
@@ -100,12 +118,9 @@ export function AgentListRow({
     });
 
   return (
-    <View className="relative">
-      {/* Action pill docked on the right */}
-      <View
-        className="absolute right-3 top-0 bottom-px justify-center"
-        style={{ zIndex: 20 }}
-      >
+    <View style={styles.container}>
+      {/* Action pill docked on right */}
+      <View style={styles.actionsDock}>
         <AgentRowActions
           isOpen={isActionsOpen}
           onClose={() => onActionsToggle(false)}
@@ -125,38 +140,48 @@ export function AgentListRow({
           onLongPress={() => onActionsToggle(!isActionsOpen)}
           accessibilityRole="button"
           accessibilityLabel={`${agent.name}, ${subtitle}`}
-          accessibilityHint="Double tap to open chat. Long press or swipe left for actions."
-          className="flex-row items-center px-4 py-3.5 active:opacity-60"
-          style={{ zIndex: 1 }}
+          accessibilityHint="Tap to open chat. Long press or swipe left for actions."
+          style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
         >
-          {/* Left Creature Avatar */}
-          <View className="mr-3.5">
-            <AgentAvatar
-              avatar={agent.avatar}
-              name={agent.name}
-              size={48}
-            />
+          {/* 44pt avatar (or cluster for groups) */}
+          <View style={styles.avatarWrapper}>
+            {isGroup ? (
+              <ClusterAvatar size={44} members={groupMembers} />
+            ) : (
+              <AgentAvatar
+                avatar={agent.avatar}
+                name={agent.name}
+                size={44}
+                showStatusDot={Boolean(activeRun && activeRun.status === 'running')}
+              />
+            )}
           </View>
 
-          {/* Middle Info */}
-          <View className="flex-1 min-w-0 pr-2">
-            <Text numberOfLines={1} className="text-[16px] font-semibold text-zinc-900 dark:text-white">
-              {agent.name}
-            </Text>
-            <Text
-              numberOfLines={1}
-              className="mt-0.5 text-[14px] text-zinc-500 dark:text-zinc-400"
-            >
+          {/* Middle info */}
+          <View style={styles.content}>
+            <View style={styles.titleRow}>
+              <Text numberOfLines={1} style={styles.name}>
+                {agent.name}
+              </Text>
+              {roleTag ? (
+                <View style={styles.tagPill}>
+                  <Text numberOfLines={1} style={styles.tagText}>
+                    {roleTag}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Single-line preview in 14/18 textSecondary */}
+            <Text numberOfLines={1} style={styles.preview}>
               {subtitle}
             </Text>
           </View>
 
-          {/* Right Timestamp */}
+          {/* Right timestamp in 13pt textSecondary */}
           {timeDisplay ? (
-            <View className="items-end justify-center">
-              <Text className="text-xs font-medium text-zinc-400 dark:text-zinc-500">
-                {timeDisplay}
-              </Text>
+            <View style={styles.timeWrapper}>
+              <Text style={styles.timeText}>{timeDisplay}</Text>
             </View>
           ) : null}
         </Pressable>
@@ -164,3 +189,80 @@ export function AgentListRow({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'relative',
+    width: '100%',
+  },
+  actionsDock: {
+    position: 'absolute',
+    right: space.md,
+    top: 0,
+    bottom: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    zIndex: 1,
+  },
+  avatarWrapper: {
+    marginRight: space.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: space.sm,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  name: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  tagPill: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    flexShrink: 0,
+  },
+  tagText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  preview: {
+    marginTop: 2,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  timeWrapper: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: space.xs,
+  },
+  timeText: {
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+});

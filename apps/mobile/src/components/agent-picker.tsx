@@ -1,7 +1,9 @@
+import React from 'react';
 import type { Agent } from '@agent/shared';
-import { Pressable, ScrollView, Text } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { colors, radius, shadow, space } from '@/theme';
 
 type Props = {
   agents: Agent[];
@@ -10,7 +12,8 @@ type Props = {
 };
 
 /**
- * Grok-inspired horizontal capsule row for picking the conversation agent.
+ * Clean monochrome horizontal capsule row for picking the conversation agent.
+ * Conforms to design.md (monochrome, fill only, no dark gradients or borders).
  */
 export function AgentPicker({ agents, selectedId, onSelect }: Props) {
   if (agents.length === 0) return null;
@@ -20,7 +23,7 @@ export function AgentPicker({ agents, selectedId, onSelect }: Props) {
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ gap: 8, paddingHorizontal: 4, paddingVertical: 6 }}
+      contentContainerStyle={styles.container}
     >
       {agents.map((agent) => {
         const selected = agent.id === selectedId;
@@ -29,18 +32,24 @@ export function AgentPicker({ agents, selectedId, onSelect }: Props) {
             key={agent.id}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            accessibilityLabel={`Chat as ${agent.name}`}
+            accessibilityLabel={`Chat with ${agent.name}`}
             onPress={() => onSelect(agent.id)}
-            className={`flex-row items-center gap-2 rounded-full border px-3 py-1.5 active:opacity-75 ${
-              selected
-                ? 'border-white/30 bg-white/15 shadow-sm'
-                : 'border-white/10 bg-white/5'
-            }`}
+            style={({ pressed }) => [
+              styles.capsule,
+              selected ? styles.capsuleSelected : styles.capsuleUnselected,
+              selected && shadow.floating,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
           >
-            <AgentAvatar avatar={agent.avatar} size={20} />
+            <View style={{ width: 20, height: 20 }}>
+              <AgentAvatar avatar={agent.avatar} size={20} />
+            </View>
             <Text
               numberOfLines={1}
-              className={`max-w-32 text-xs ${selected ? 'font-semibold text-white' : 'text-zinc-400'}`}
+              style={[
+                styles.label,
+                selected ? styles.labelSelected : styles.labelUnselected,
+              ]}
             >
               {agent.name}
             </Text>
@@ -50,3 +59,38 @@ export function AgentPicker({ agents, selectedId, onSelect }: Props) {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    gap: space.xs,
+    paddingHorizontal: space.xs,
+    paddingVertical: space.xs,
+  },
+  capsule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  capsuleSelected: {
+    backgroundColor: colors.primary,
+  },
+  capsuleUnselected: {
+    backgroundColor: colors.surface,
+  },
+  label: {
+    fontSize: 13,
+    lineHeight: 16,
+    maxWidth: 120,
+  },
+  labelSelected: {
+    fontWeight: '600',
+    color: colors.onPrimary,
+  },
+  labelUnselected: {
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+});

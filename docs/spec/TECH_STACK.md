@@ -11,7 +11,7 @@ Limits below were checked Nov 2026 and change often. **Re-verify before relying 
 | Agent framework | LangGraph.js | Open source |
 | Durable jobs | Inngest Hobby | 50k executions/mo, 5 concurrent steps |
 | Database + vectors | Supabase Free (Postgres + pgvector) | 500 MB DB, 1 GB files, 5 GB egress, 2 projects, **pauses after 1 week inactivity**, no backups |
-| Auth | Supabase Auth (GitHub OAuth), single allowed account | Free |
+| Auth | Supabase Auth (email/password), one account enforced by an `auth.users` trigger | Free |
 | File storage | Supabase Storage (private buckets) | 1 GB |
 | LLM: Google | `@ai-sdk/google`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, Gemini API free tier (Flash-class) | Rate-limited; per-model limits only in AI Studio; free-tier data may be used by Google; Pro models reportedly paid-only |
 | LLM: Groq | `@ai-sdk/groq` | Fast open models. *Verify free-tier limits and which models support tools/vision.* |
@@ -25,6 +25,8 @@ Limits below were checked Nov 2026 and change often. **Re-verify before relying 
 | Notes source of truth | Private GitHub repo (Obsidian vault) + Obsidian Git plugin | Free |
 | Web search | Provider TBD *(verify free tier: Tavily/Exa/Brave etc.)* | |
 | Tracing (optional) | Langfuse cloud *(verify)* | |
+
+GitHub OAuth is not an app sign-in method. The GitHub vault continues to use the server-configured token and repository independently of the user's email/password session.
 | Charts (Expo) | One RN chart lib *(pick after checking Expo Go vs dev build)* | |
 
 ## 2. Ownership rules
@@ -42,7 +44,7 @@ Limits below were checked Nov 2026 and change often. **Re-verify before relying 
 `ai`, `@ai-sdk/react`, `@ai-sdk/google`, `@ai-sdk/groq`, `@openrouter/ai-sdk-provider`, `@ai-sdk/mistral`, `@ai-sdk/deepseek`, `@ai-sdk/huggingface`, `@ai-sdk/cohere`, `@langchain/langgraph`, `@langchain/langgraph-checkpoint-postgres`, `@langchain/mcp-adapters` (or AI SDK MCP client), `inngest`, `@supabase/supabase-js`, `drizzle-orm` + `postgres`, `zod`, `react-native-webview`, `expo-secure-store`. Verify package names/versions at install time.
 
 ## 4. Environment variables
-Server (Vercel env, never in the app bundle): `GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `HUGGINGFACE_API_KEY`, `COHERE_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (pooled), `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `ENCRYPTION_KEY` (32-byte, for MCP credentials), `GITHUB_VAULT_TOKEN`, `GITHUB_VAULT_REPO`, `SEARCH_API_KEY`, `ALLOWED_USER_ID`.
+Server (Vercel env, never in the app bundle): `GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `HUGGINGFACE_API_KEY`, `COHERE_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (pooled), `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `ENCRYPTION_KEY` (32-byte, for MCP credentials), `GITHUB_VAULT_TOKEN`, `GITHUB_VAULT_REPO`, `SEARCH_API_KEY`. No `ALLOWED_USER_ID` is needed.
 Client (public by design): `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The web dashboard receives the public Supabase URL and anon key from its server page; no extra public env vars are needed. Never put model or service keys in public variables.
 
 ## 5. Known constraints

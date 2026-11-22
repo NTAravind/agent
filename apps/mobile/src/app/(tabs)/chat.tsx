@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { AgentSummary } from '@agent/shared';
-import { Alert, Button, Spinner, Typography, useThemeColor } from 'heroui-native';
+import { Alert, Button, Spinner } from 'heroui-native';
 import type { UIMessage } from 'ai';
 import {
   Alert as RNAlert,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
   type NativeScrollEvent,
@@ -16,6 +17,16 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  CalendarClock,
+  ChevronLeft,
+  FileText,
+  Globe,
+  Menu,
+  Plus,
+  Search,
+  SlidersHorizontal,
+} from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -25,6 +36,7 @@ import { MessageBubble } from '@/components/message-bubble';
 import { RoutineListSheet } from '@/components/routine-sheet';
 import { ModelPicker } from '@/components/model-picker';
 import { RunTaskBubble } from '@/components/run-task-bubble';
+import { colors, radius, shadow } from '@/theme';
 import {
   pickAndUploadDocument,
   pickAndUploadImages,
@@ -34,6 +46,7 @@ import {
   fetchAgents,
   fetchRun,
   fetchRuns,
+  pauseRun,
   type Agent,
   type RunDetail,
   type RunListItem,
@@ -47,7 +60,6 @@ import {
 } from '@/lib/models';
 import { supabase } from '@/lib/supabase';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
-import { CHAT_HEADER_ICONS, MESSAGE_ICONS, SCREEN_ICONS } from '@/constants/icons';
 
 /** Run statuses that no longer need live updates. */
 const FINISHED = new Set(['succeeded', 'failed', 'cancelled']);
@@ -85,12 +97,58 @@ const SUGGESTIONS = [
   },
 ];
 
+type RawChatRouteParams = {
+  threadId?: string | string[];
+  agentId?: string | string[];
+  prompt?: string | string[];
+};
+
+type ChatRouteParams = {
+  threadId?: string;
+  agentId?: string;
+  prompt?: string;
+};
+
+type ThreadLoadResult =
+  | { kind: 'loaded' }
+  | { kind: 'not_found' }
+  | { kind: 'group' }
+  | { kind: 'ignored' }
+  | { kind: 'error' }
+  | { kind: 'agent_mismatch'; agentId: string | null };
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * Chat state is intentionally isolated per route context.
+ *
+ * Expo Router can reuse this screen while its query parameters change (for
+ * example, agent A -> agent B). Keying the session by that context remounts
+ * the chat instance, so messages, loaded thread state and the "user already
+ * typed" guard from one agent can never leak into another.
+ */
 export default function ChatScreen() {
+  const rawParams = useLocalSearchParams<RawChatRouteParams>();
+  const params: ChatRouteParams = {
+    threadId: firstParam(rawParams.threadId),
+    agentId: firstParam(rawParams.agentId),
+    prompt: firstParam(rawParams.prompt),
+  };
+  const conversationKey = JSON.stringify([
+    params.threadId ?? null,
+    params.agentId ?? null,
+    params.prompt ?? null,
+  ]);
+
+  return <ChatSession key={conversationKey} params={params} />;
+}
+
+function ChatSession({ params }: { params: ChatRouteParams }) {
   const router = useRouter();
-  const params = useLocalSearchParams<{ threadId?: string; agentId?: string; prompt?: string }>();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
-  const iconColor = useThemeColor('foreground');
 
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelId, setModelId] = useState<string | null>(null);
@@ -114,6 +172,8 @@ export default function ChatScreen() {
   const [activeRunDetail, setActiveRunDetail] = useState<RunDetail | null>(null);
   /** Set once the user types/sends — blocks thread resumption from clobbering. */
   const touchedRef = useRef(false);
+  /** Prevents a request from an unmounted agent session changing the new one. */
+  const mountedRef = useRef(true);
   /** The routine sheet (clock icon in the agent chat header). */
   const [routineSheetOpen, setRoutineSheetOpen] = useState(false);
   /** Mirror of the `threadId` state for async comparisons. */
@@ -130,6 +190,13 @@ export default function ChatScreen() {
     threadIdRef.current = threadId;
   }, [threadId]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const transport = useMemo(
     () =>
       new ResilientChatTransport({
@@ -143,7 +210,7 @@ export default function ChatScreen() {
     [threadId, modelId],
   );
 
-  const { messages, setMessages, sendMessage, regenerate, error, status } = useChat<UIMessage>({
+  const { messages, setMessages, sendMessage, regenerate, error, status, stop } = useChat<UIMessage>({
     transport,
     id: threadId,
   });
@@ -203,19 +270,29 @@ export default function ChatScreen() {
    * is stashed and applied by the effect below — after the new Chat exists.
    */
   const loadThread = useCallback(
-    async (id: string) => {
+    async (id: string, expectedAgentId?: string): Promise<ThreadLoadResult> => {
       try {
         const thread = await fetchThread(id);
-        if (!thread) return;
+        if (!mountedRef.current) return { kind: 'ignored' };
+        if (!thread) return { kind: 'not_found' };
         // A group conversation never runs through this chat screen: its
         // messages are group runs. Hand it to the group screen instead of
         // trying to stream it here.
         const groupId = thread.thread.group_id ?? thread.thread.group?.id;
         if (groupId) {
           router.replace({ pathname: '/groups/[id]', params: { id: groupId } } as never);
-          return;
+          return { kind: 'group' };
         }
-        if (touchedRef.current) return;
+
+        // Never display one agent's transcript under another agent. The
+        // caller either corrects the route or falls back to a thread whose
+        // persisted owner matches the requested agent.
+        const actualAgentId = thread.thread.agent_id ?? null;
+        if (expectedAgentId && actualAgentId !== expectedAgentId) {
+          return { kind: 'agent_mismatch', agentId: actualAgentId };
+        }
+
+        if (touchedRef.current) return { kind: 'ignored' };
         const history = thread.messages.map((message) => ({
           id: message.id,
           role: message.role,
@@ -231,9 +308,12 @@ export default function ChatScreen() {
         setModelId((current) => current ?? thread.thread.model ?? null);
         if (thread.thread.agent_id) setAgentId(thread.thread.agent_id);
         setThreadAgent(thread.thread.agent ?? null);
+        return { kind: 'loaded' };
+      } catch {
+        return { kind: 'error' };
       } finally {
         // In the id-swap path loading ends when the stashed history applies.
-        if (!pendingMessagesRef.current) setLoadingHistory(false);
+        if (mountedRef.current && !pendingMessagesRef.current) setLoadingHistory(false);
       }
     },
     [router, setMessages],
@@ -251,8 +331,21 @@ export default function ChatScreen() {
   // Existing thread history (deep link: chat?threadId=…).
   useEffect(() => {
     if (!params.threadId) return;
-    void loadThread(params.threadId);
-  }, [params.threadId, loadThread]);
+    void (async () => {
+      const result = await loadThread(params.threadId!, params.agentId);
+      if (result.kind !== 'agent_mismatch') return;
+
+      // The URL and the persisted thread disagree. Replace the stale agent
+      // parameter with the thread's real owner before rendering its history.
+      router.replace({
+        pathname: '/chat',
+        params: {
+          threadId: params.threadId,
+          ...(result.agentId ? { agentId: result.agentId } : {}),
+        },
+      } as never);
+    })();
+  }, [params.agentId, params.threadId, loadThread, router]);
 
   // Agent contact thread resumption: /chat?agentId=<id> picks up the agent's
   // primary (persistent) thread — agents are chats — and falls back to the
@@ -264,20 +357,36 @@ export default function ChatScreen() {
     // Wait for the agent list so the primary thread is known.
     if (agents.length === 0) return;
     let active = true;
-    void fetchThreads()
-      .then((threads) => {
+    void (async () => {
+      try {
+        const threads = await fetchThreads();
         if (!active || touchedRef.current) return;
+
         const primaryThreadId = agents.find(
           (agent) => agent.id === params.agentId,
         )?.primaryThreadId;
-        if (primaryThreadId) return loadThread(primaryThreadId);
+        if (primaryThreadId) {
+          const primaryResult = await loadThread(primaryThreadId, params.agentId);
+          if (!active || touchedRef.current) return;
+          if (primaryResult.kind === 'loaded' || primaryResult.kind === 'group') {
+            return;
+          }
+        }
+
+        // The primary pointer can be stale (or the thread can be unscoped).
+        // Only resume a thread whose persisted owner is this agent.
         const latest = threads
           .filter((thread) => thread.agent_id === params.agentId)
           .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-        if (latest) return loadThread(latest.id);
+        if (latest) {
+          await loadThread(latest.id, params.agentId);
+          return;
+        }
         setLoadingHistory(false); // no history yet — greet on first send
-      })
-      .catch(() => setLoadingHistory(false));
+      } catch {
+        setLoadingHistory(false);
+      }
+    })();
     return () => {
       active = false;
     };
@@ -294,6 +403,9 @@ export default function ChatScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, []);
 
+  /** The agent this conversation belongs to (route wins over loaded thread). */
+  const contextAgentId = params.agentId ?? agentId;
+
   const handleSend = useCallback(
     async (override?: string) => {
       const text = (override ?? input).trim();
@@ -307,7 +419,7 @@ export default function ChatScreen() {
       // state here, then cleared once the send has been handed off.
       const pending = sendMessage({ text }, {
         body: {
-          ...(agentId ? { agentId } : {}),
+          ...(contextAgentId ? { agentId: contextAgentId } : {}),
           deepSearch: deepSearchActive,
           attachments: attachments.map((attachment) => ({
             documentId: attachment.documentId,
@@ -319,7 +431,7 @@ export default function ChatScreen() {
       setAttachments([]);
       await pending;
     },
-    [agentId, attachments, deepSearchActive, input, sendMessage],
+    [attachments, contextAgentId, deepSearchActive, input, sendMessage],
   );
 
   const toggleDeepSearch = useCallback(() => {
@@ -353,18 +465,20 @@ export default function ChatScreen() {
     return selected ? { name: selected.name, avatar: selected.avatar } : null;
   }, [agents, agentId, threadAgent]);
 
-  const composerBottomPadding = keyboardHeight > 0 ? 8 : insets.bottom + 8;
-
   // Agent context: opened from the Agents list (agentId param) or a thread
   // that belongs to an agent (threadAgent). The pickers move out of the
   // header in this context — the agent is fixed by the context.
   const isAgentContext = Boolean(params.agentId) || Boolean(threadAgent);
+
+  const composerBottomPadding =
+    keyboardHeight > 0
+      ? 8
+      : isAgentContext
+      ? insets.bottom + 8
+      : insets.bottom + 88;
   const currentAgent = useMemo(() => {
     return agents.find((a) => a.id === agentId) ?? null;
   }, [agents, agentId]);
-
-  /** The agent this conversation belongs to (param wins over loaded thread). */
-  const contextAgentId = params.agentId ?? agentId;
 
   // Poll the agent's runs while an agent chat is open so task bubbles update
   // in place (Plan → Act → tool calls → completion) without leaving the chat.
@@ -441,31 +555,88 @@ export default function ChatScreen() {
       ? activeRunDetail
       : null;
 
+  // Active task running for this agent or in this conversation
+  const activeTaskRun = useMemo(() => {
+    return (
+      agentRuns.find((run) => LIVE.has(run.status)) ??
+      (activeRunId ? agentRuns.find((r) => r.id === activeRunId && LIVE.has(r.status)) : null)
+    );
+  }, [agentRuns, activeRunId]);
+
+  const isTaskActive = isStreaming || Boolean(activeTaskRun || primaryActiveRunId);
+
+  const handlePauseTask = useCallback(async () => {
+    // 1. Stop streaming if chat response is in flight
+    if (isStreaming) {
+      try {
+        stop();
+      } catch (err) {
+        console.warn('Error stopping chat stream:', err);
+      }
+    }
+
+    // 2. Pause autonomous agent run if in flight
+    const targetRunId = activeTaskRun?.id ?? primaryActiveRunId ?? activeRunId;
+    if (targetRunId) {
+      try {
+        await pauseRun(targetRunId);
+        // Refresh runs immediately so UI updates
+        const all = await fetchRuns();
+        if (contextAgentId) {
+          setAgentRuns(all.filter((run) => run.agent_id === contextAgentId));
+        }
+        setActiveRunId(
+          all.find(
+            (run) =>
+              (contextAgentId ? run.agent_id === contextAgentId : true) &&
+              !FINISHED.has(run.status),
+          )?.id ?? null,
+        );
+      } catch (err) {
+        console.warn('Error pausing agent run:', err);
+      }
+    }
+  }, [isStreaming, stop, activeTaskRun, primaryActiveRunId, activeRunId, contextAgentId]);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/agents' as never);
+    }
+  }, [router]);
+
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-[#09090b]"
+      style={{ flex: 1, backgroundColor: colors.background }}
       behavior="padding"
-      // The avoiding view begins at the window edge, so it has no header offset.
       keyboardVerticalOffset={0}
     >
-      {/* Header: 
-          - Agent context: back + tappable avatar/name (→ contact card) · search · details
-          - Normal: menu · model picker · new chat */}
+      {/* Top Header conforming to old design & design.md */}
       <AppHeader
         left={
           isAgentContext ? (
-            <View className="flex-row items-center gap-1">
-              <Button
-                size="md"
-                variant="ghost"
-                isIconOnly
-                onPress={() => router.back()}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable
+                onPress={handleBack}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
-                accessibilityHint="Returns to the previous screen"
+                style={({ pressed }) => [
+                  {
+                    width: 40,
+                    height: 40,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surfaceRaised,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                  shadow.floating,
+                ]}
               >
-                <CHAT_HEADER_ICONS.back size={22} color={iconColor} />
-              </Button>
+                <ChevronLeft size={22} color={colors.textPrimary} strokeWidth={1.75} />
+              </Pressable>
+
               <Pressable
                 onPress={() => {
                   const target = params.agentId ?? agentId;
@@ -475,68 +646,112 @@ export default function ChatScreen() {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${currentAgent?.name ?? threadAgent?.name ?? 'agent'} profile`}
-                accessibilityHint="Opens the agent contact card"
-                className="flex-row items-center gap-2 rounded-xl py-1 pr-2 active:opacity-70"
-                style={{ maxWidth: 180 }}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surfaceRaised,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    maxWidth: 180,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                  shadow.floating,
+                ]}
               >
-                <View className="rounded-xl overflow-hidden" style={{ width: 32, height: 32 }}>
-                  <AgentAvatar avatar={currentAgent?.avatar ?? threadAgent?.avatar} size={32} />
+                <View style={{ width: 28, height: 28 }}>
+                  <AgentAvatar
+                    avatar={currentAgent?.avatar ?? threadAgent?.avatar}
+                    name={currentAgent?.name ?? threadAgent?.name}
+                    size={28}
+                  />
                 </View>
-                <Typography type="body" weight="semibold" truncate>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: colors.textPrimary,
+                  }}
+                >
                   {currentAgent?.name ?? threadAgent?.name ?? 'Agent'}
-                </Typography>
+                </Text>
               </Pressable>
             </View>
           ) : (
-            <Button
-              size="md"
-              variant="ghost"
-              isIconOnly
+            <Pressable
               onPress={() => router.push('/threads')}
               accessibilityRole="button"
               accessibilityLabel="Open threads"
-              accessibilityHint="Opens the thread list"
+              style={({ pressed }) => [
+                {
+                  width: 40,
+                  height: 40,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.surfaceRaised,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                },
+                shadow.floating,
+              ]}
             >
-              <CHAT_HEADER_ICONS.menu size={20} color={iconColor} />
-            </Button>
+              <Menu size={20} color={colors.textPrimary} strokeWidth={1.75} />
+            </Pressable>
           )
         }
         center={isAgentContext ? null : <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />}
         right={
           isAgentContext ? (
-            <View className="flex-row items-center gap-1">
-              <Button
-                size="md"
-                variant="ghost"
-                isIconOnly
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable
                 onPress={() => setRoutineSheetOpen(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Routines for this agent"
-                accessibilityHint="Opens the routines bound to this agent"
+                style={({ pressed }) => [
+                  {
+                    width: 40,
+                    height: 40,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surfaceRaised,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                  shadow.floating,
+                ]}
               >
-                <CHAT_HEADER_ICONS.routine size={20} color={iconColor} />
-              </Button>
-              <Button
-                size="md"
-                variant="ghost"
-                isIconOnly
+                <CalendarClock size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              </Pressable>
+
+              <Pressable
                 onPress={() => {
-                  // TODO(backend): Implement in-thread message search.
                   RNAlert.alert(
                     'Search in conversation',
-                    'In-thread search is not wired up yet (TODO(backend)).',
+                    'In-thread search is not wired up yet.',
                   );
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Search in this conversation"
-                accessibilityHint="Searches messages in this thread"
+                style={({ pressed }) => [
+                  {
+                    width: 40,
+                    height: 40,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surfaceRaised,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                  shadow.floating,
+                ]}
               >
-                <CHAT_HEADER_ICONS.search size={20} color={iconColor} />
-              </Button>
-              <Button
-                size="md"
-                variant="ghost"
-                isIconOnly
+                <Search size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              </Pressable>
+
+              <Pressable
                 onPress={() => {
                   if (agentId) {
                     router.push({ pathname: '/agents/[id]', params: { id: agentId } });
@@ -544,16 +759,24 @@ export default function ChatScreen() {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="View agent details"
-                accessibilityHint="Opens the agent overview screen"
+                style={({ pressed }) => [
+                  {
+                    width: 40,
+                    height: 40,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surfaceRaised,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                  shadow.floating,
+                ]}
               >
-                <CHAT_HEADER_ICONS.details size={20} color={iconColor} />
-              </Button>
+                <SlidersHorizontal size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              </Pressable>
             </View>
           ) : (
-            <Button
-              size="md"
-              variant="ghost"
-              isIconOnly
+            <Pressable
               onPress={() => {
                 setMessages([]);
                 setAttachments([]);
@@ -563,45 +786,101 @@ export default function ChatScreen() {
               }}
               accessibilityRole="button"
               accessibilityLabel="New chat"
-              accessibilityHint="Starts a fresh conversation"
+              style={({ pressed }) => [
+                {
+                  width: 40,
+                  height: 40,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.surfaceRaised,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                },
+                shadow.floating,
+              ]}
             >
-              <CHAT_HEADER_ICONS.create size={20} color={iconColor} />
-            </Button>
+              <Plus size={20} color={colors.textPrimary} strokeWidth={1.75} />
+            </Pressable>
           )
         }
       />
 
       {/* Model picker pill under header when in agent context */}
       {isAgentContext && (
-        <View className="px-3.5 py-1.5 bg-[#09090b] border-b border-white/10">
-          <View className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5">
-            <Text className="text-xs text-zinc-400">Model</Text>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            backgroundColor: colors.background,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.divider,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: colors.surface,
+              borderRadius: radius.card,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ fontSize: 15, color: colors.textSecondary }}>Model</Text>
             <ModelPicker models={models} selectedId={modelId} onSelect={setModelId} />
           </View>
         </View>
       )}
 
       {loadingHistory ? (
-        <View className="flex-1 items-center justify-center bg-[#09090b]">
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
           <Spinner color="default" />
         </View>
       ) : isEmpty && visibleRuns.length === 0 ? (
-        /* Grok-style Minimalist Hero with glowing emblem and capability pills */
-        <View className="flex-1 items-center justify-center px-6">
-          {/* Glowing Geometric Emblem */}
-          <View className="h-16 w-16 items-center justify-center rounded-3xl border border-white/15 bg-white/5 shadow-2xl">
-            <MESSAGE_ICONS.sparkles size={32} color="#ffffff" />
+        /* Calm Monochrome Hero conforming to design.md */
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <View
+            style={[
+              {
+                width: 64,
+                height: 64,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: radius.card,
+                backgroundColor: colors.surface,
+              },
+            ]}
+          >
+            <AgentAvatar size={48} name="SLMob" />
           </View>
 
-          <Text className="mt-5 text-center text-3xl font-bold tracking-tight text-white">
-            What do you want to explore?
+          <Text
+            style={{
+              marginTop: 20,
+              textAlign: 'center',
+              fontSize: 24,
+              lineHeight: 30,
+              fontWeight: '600',
+              color: colors.textPrimary,
+            }}
+          >
+            What would you like to explore?
           </Text>
-          <Text className="mt-2 text-center text-sm text-zinc-400">
-            Powered by multi-provider intelligence & autonomous agents
+          <Text
+            style={{
+              marginTop: 8,
+              textAlign: 'center',
+              fontSize: 17,
+              lineHeight: 22,
+              color: colors.textSecondary,
+            }}
+          >
+            Multi-provider intelligence & autonomous workflows
           </Text>
 
-          {/* Quick-action Grok capability capsules */}
-          <View className="mt-8 flex-row flex-wrap justify-center gap-2 max-w-md">
+          {/* Calm Capability Pills */}
+          <View style={{ marginTop: 28, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 380 }}>
             {SUGGESTIONS.map((item) => (
               <Pressable
                 key={item.label}
@@ -612,13 +891,24 @@ export default function ChatScreen() {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
-                className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 active:bg-white/10"
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: radius.pill,
+                    backgroundColor: colors.surface,
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                ]}
               >
-                {item.icon === 'deepSearch' && <MESSAGE_ICONS.deepSearch size={14} color="#38bdf8" />}
-                {item.icon === 'think' && <MESSAGE_ICONS.brain size={14} color="#c084fc" />}
-                {item.icon === 'sparkles' && <MESSAGE_ICONS.sparkles size={14} color="#facc15" />}
-                {item.icon === 'wrench' && <SCREEN_ICONS.wrench size={14} color="#4ade80" />}
-                <Text className="text-sm font-medium text-zinc-200">{item.label}</Text>
+                {item.icon === 'deepSearch' && <Globe size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'think' && <CalendarClock size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'sparkles' && <SlidersHorizontal size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'wrench' && <FileText size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textPrimary }}>{item.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -626,7 +916,7 @@ export default function ChatScreen() {
       ) : (
         <ScrollView
           ref={scrollRef}
-          className="flex-1"
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 20 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
@@ -661,7 +951,7 @@ export default function ChatScreen() {
           })}
 
           {status === 'submitted' ? (
-            <View className="items-start">
+            <View style={{ alignItems: 'flex-start' }}>
               <Spinner size="sm" />
             </View>
           ) : null}
@@ -684,7 +974,7 @@ export default function ChatScreen() {
               <Alert.Content>
                 <Alert.Title>Request failed</Alert.Title>
                 <Alert.Description>{error.message}</Alert.Description>
-                <View className="mt-2">
+                <View style={{ marginTop: 8 }}>
                   <Button size="sm" variant="secondary" onPress={() => void regenerate()}>
                     <Button.Label>Retry</Button.Label>
                   </Button>
@@ -718,10 +1008,13 @@ export default function ChatScreen() {
             setAttachments((current) => current.filter((a) => a.documentId !== documentId))
           }
           isStreaming={isStreaming}
+          isTaskActive={isTaskActive}
+          onPause={handlePauseTask}
           deepSearchActive={deepSearchActive}
           onToggleDeepSearch={toggleDeepSearch}
           thinkActive={thinkActive}
           onToggleThink={toggleThink}
+          agentName={currentAgent?.name ?? threadAgent?.name ?? 'Agent'}
         />
       </View>
 

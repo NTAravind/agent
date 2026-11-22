@@ -905,8 +905,7 @@ since SDK 53). The EAS project id is read from `Constants.expoConfig.extra.eas.p
 **API client resilience (Phase 9):** every call goes through `apps/mobile/src/lib/api-session.ts`
 (`authedFetch`): it refreshes the Supabase session when the access token is expired (or within a
 minute of expiry) and retries once on a 401, so a stale token never surfaces as a failure. A 403
-("this account is not allowed") is surfaced as-is — the signed-in account must match the
-deployment's `ALLOWED_USER_ID`. `apps/mobile/src/lib/api.ts` parses response bodies defensively:
+is surfaced as-is. `apps/mobile/src/lib/api.ts` parses response bodies defensively:
 a non-JSON body (Vercel's HTML 404 for a route missing from the deployed build, proxy error
 pages) becomes a readable `ApiRequestError` instead of a bare `SyntaxError`.
 
@@ -924,7 +923,7 @@ pages) becomes a readable `ApiRequestError` instead of a bare `SyntaxError`.
 
 | Layer | Mechanism |
 |-------|-----------|
-| **Auth** | Supabase JWT on every request; `requireUser()` verifies `user_id = ALLOWED_USER_ID` |
+| **Auth** | Supabase JWT on every request; a Supabase Auth trigger limits account creation to one user |
 | **RLS** | `using (user_id = auth.uid())` on all tables; child tables join through parent |
 | **Secrets** | Only in Vercel env; MCP credentials AES-256-GCM encrypted at rest; decrypted server-side at runtime only |
 | **Prompt Injection** | All web content, files, MCP tool descriptions/results treated as untrusted. Sensitive tools require approval by default. Tool output never changes tool allow-list. |
@@ -1064,7 +1063,6 @@ chat screen both route a group thread to the group screen.
 | `GITHUB_VAULT_TOKEN`, `GITHUB_VAULT_REPO` | Vault sync (e.g. `owner/repo`) |
 | `GITHUB_WEBHOOK_SECRET` | HMAC verification |
 | `ENCRYPTION_KEY` | 32-byte hex for AES-256-GCM (MCP credentials) |
-| `ALLOWED_USER_ID` | Your Supabase user UUID (single-user gate) — **must be the account the app signs in with**, otherwise every route answers 403 |
 | `EXPO_PUBLIC_API_BASE_URL` | Mobile → API base |
 
 ### Mobile (Expo) Env
@@ -1167,7 +1165,6 @@ chat screen both route a group thread to the group screen.
 | Canvas not refreshing | `dataSources` in spec valid? `POST /api/canvases/:id/refresh` works? Cron registered? |
 | App shows a JSON parse error | The API returned a non-JSON body — usually Vercel's HTML 404 for a route missing from the deployed build. Redeploy the API (`check-deployed.ts` verifies it). |
 | Every API call returns 401 | The stored access token expired — the app refreshes and retries automatically now; if it persists, sign out and back in. |
-| Every API call returns 403 | The signed-in account is not the deployment's `ALLOWED_USER_ID` (the error names the signed-in id). Sign in with the right account or update the env var. |
 | Reminder push not arriving | Device registered in `push_tokens`? `EXPO_PUBLIC_EAS_PROJECT_ID` set? `reminder_log` row exists (claimed)? `reminder/tick` cron running? Remote push needs a **dev build** (not Expo Go on Android) |
 | Recurring event shows the wrong time | The rule must be anchored to the item's `starts_at` (DTSTART) — `expandStarts` in `lib/recurrence.ts` |
 | A routine fires at the wrong hour | The schedule's `time` is the user's **local** wall clock — check `routines.tz` and that the client sent its device timezone (`tz` in the chat body). `rrule@2.8` ignores `tzid` for `BYHOUR`, so the occurrences are computed by `lib/routines/schedule.ts`, not by the library. |

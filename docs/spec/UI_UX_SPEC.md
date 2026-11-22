@@ -7,6 +7,10 @@
 - Ask before acting: approvals are impossible to miss and fast to answer.
 - Native-feeling, dark and light themes, thumb-reachable floating capsule controls.
 
+## 1b. Authentication
+- Sign-in offers email/password sign-in and first-account creation only. GitHub is not an authentication button; the GitHub vault remains server-configured.
+- The database accepts one account. If account creation is attempted after one exists, show a clear message directing the user to sign in.
+
 ## 2. Navigation (bottom tabs)
 | Tab | Purpose |
 |---|---|

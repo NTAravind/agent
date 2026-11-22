@@ -1,27 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Spinner, Typography } from 'heroui-native';
+import { Spinner } from 'heroui-native';
 import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AlertTriangle, Check, CheckCircle2, ChevronRight, Wrench, XCircle } from 'lucide-react-native';
+import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Wrench, XCircle } from 'lucide-react-native';
 import { DEFAULT_AGENT_AVATAR, type Approval, type RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
+import {
+  GroupedCard,
+  HairlineDivider,
+  PillButton,
+  RoundButton,
+  SectionLabel,
+} from '@/components/design-system';
+import { colors, radius, shadow, space } from '@/theme';
 import { cancelRun, decideApproval, fetchRun, pauseRun, resumeRun, type RunDetail } from '@/lib/agents';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
 /** Statuses that keep the detail view polling (paused included so a resume flips live). */
 const POLLING = new Set([...ACTIVE, 'paused']);
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; border: string; text: string; dot: string }> = {
-  queued: { label: 'Queued', bg: 'bg-zinc-100 dark:bg-white/5', border: 'border-zinc-200 dark:border-white/10', text: 'text-zinc-600 dark:text-zinc-400', dot: 'bg-zinc-400' },
-  running: { label: 'Running', bg: 'bg-amber-500/15', border: 'border-amber-500/30', text: 'text-amber-500 dark:text-amber-300', dot: 'bg-amber-400' },
-  awaiting_approval: { label: 'Awaiting Approval', bg: 'bg-orange-500/15', border: 'border-orange-500/30', text: 'text-orange-500 dark:text-orange-300', dot: 'bg-orange-400' },
-  paused: { label: 'Paused', bg: 'bg-violet-500/15', border: 'border-violet-500/30', text: 'text-violet-500 dark:text-violet-300', dot: 'bg-violet-400' },
-  succeeded: { label: 'Completed', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', text: 'text-emerald-500 dark:text-emerald-300', dot: 'bg-emerald-400' },
-  failed: { label: 'Failed', bg: 'bg-red-500/15', border: 'border-red-500/30', text: 'text-red-500 dark:text-red-300', dot: 'bg-red-400' },
-  cancelled: { label: 'Cancelled', bg: 'bg-zinc-100 dark:bg-white/5', border: 'border-zinc-200 dark:border-white/10', text: 'text-zinc-600 dark:text-zinc-400', dot: 'bg-zinc-500' },
+const STATUS_CONFIG: Record<string, { label: string; text: string; dot: string }> = {
+  queued: { label: 'Queued', text: colors.textSecondary, dot: colors.textTertiary },
+  running: { label: 'Running', text: colors.textPrimary, dot: colors.primary },
+  awaiting_approval: { label: 'Awaiting Approval', text: colors.recording, dot: colors.recording },
+  paused: { label: 'Paused', text: colors.textSecondary, dot: colors.textTertiary },
+  succeeded: { label: 'Completed', text: colors.success, dot: colors.success },
+  failed: { label: 'Failed', text: colors.recording, dot: colors.recording },
+  cancelled: { label: 'Cancelled', text: colors.textTertiary, dot: colors.textTertiary },
 };
 
 const NODE_LABEL: Record<string, string> = {
@@ -151,27 +159,43 @@ export default function RunScreen() {
     );
   }, [run, load]);
 
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/agents' as never);
+    }
+  }, [router]);
+
   const statusConfig = STATUS_CONFIG[status ?? 'queued'] ?? STATUS_CONFIG.queued;
 
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
             accessibilityLabel="Back"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Back
-            </Typography>
-          </Pressable>
+          />
         }
         center={
-          <View className={`flex-row items-center gap-1.5 rounded-full border px-3 py-1 ${statusConfig.bg} ${statusConfig.border}`}>
-            <View className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
-            <Text className={`text-xs font-semibold ${statusConfig.text}`}>
+          <View
+            style={[
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: radius.pill,
+                backgroundColor: colors.surfaceRaised,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              },
+              shadow.floating,
+            ]}
+          >
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusConfig.dot }} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: statusConfig.text }}>
               {statusConfig.label}
             </Text>
           </View>
@@ -179,7 +203,7 @@ export default function RunScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 16 }}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + 32, gap: space.lg }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -187,242 +211,227 @@ export default function RunScreen() {
               setRefreshing(true);
               void load();
             }}
-            tintColor="#8b5cf6"
+            tintColor={colors.textPrimary}
           />
         }
       >
         {/* Error banner (failed actions: pause/resume/cancel/approvals) */}
         {error ? (
-          <View className="flex-row items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3">
-            <AlertTriangle size={16} color="#ef4444" />
-            <Text className="flex-1 text-xs text-red-500 dark:text-red-300" numberOfLines={4}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.recordingBg, borderRadius: radius.card, padding: space.md }}>
+            <AlertTriangle size={16} color={colors.recording} />
+            <Text style={{ flex: 1, fontSize: 13, color: colors.recording }} numberOfLines={4}>
               {error}
             </Text>
             <Pressable
               onPress={() => setError(null)}
               accessibilityRole="button"
               accessibilityLabel="Dismiss error"
-              className="px-1 py-1 active:opacity-60"
+              style={{ padding: 4 }}
             >
-              <XCircle size={16} color="#ef4444" />
+              <XCircle size={16} color={colors.recording} />
             </Pressable>
           </View>
         ) : null}
 
         {/* Goal Hero Card */}
         {run ? (
-          <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5 shadow-sm gap-3">
-            <View className="flex-row items-center gap-3">
+          <GroupedCard style={{ padding: space.lg, gap: space.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
               {detail?.agent ? (
                 <AgentAvatar avatar={detail.agent.avatar} name={detail.agent.name} size={40} />
               ) : null}
-              <View className="flex-1 min-w-0">
-                <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   {detail?.agent?.name ?? (isGroupRun ? 'Agent Group' : 'Autonomous Run')}
                 </Text>
-                <Text className="text-base font-bold text-zinc-900 dark:text-white leading-6 mt-0.5">
+                <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary, lineHeight: 22, marginTop: 2 }}>
                   {run.goal}
                 </Text>
               </View>
             </View>
-            <View className="border-t border-zinc-200 dark:border-white/10 pt-2 flex-row items-center justify-between">
-              <Text className="text-xs text-zinc-400">
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary }}>
                 Started {new Date(run.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
               </Text>
               {run.tokens_used > 0 ? (
-                <Text className="text-xs text-zinc-500 font-medium">
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   {run.tokens_used} tokens
                 </Text>
               ) : null}
             </View>
-          </View>
+          </GroupedCard>
         ) : null}
 
         {/* Specialists (Supervisor Sub-runs) */}
         {children.length > 0 ? (
-          <View className="gap-2">
-            <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 px-1">
-              {isGroupRun ? 'Member Turns' : 'Specialists Researching'}
-            </Text>
-            <View className="gap-2">
-              {children.map((child) => {
+          <View style={{ gap: space.xs }}>
+            <SectionLabel text={isGroupRun ? 'Member Turns' : 'Specialists Researching'} />
+            <GroupedCard>
+              {children.map((child, index) => {
                 const childStatus = STATUS_CONFIG[child.status] ?? STATUS_CONFIG.queued;
                 return (
-                  <Pressable
-                    key={child.id}
-                    onPress={() => router.push({ pathname: '/run', params: { id: child.id } })}
-                    className="flex-row items-center justify-between rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-3.5 active:opacity-75"
-                  >
-                    <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
-                      <AgentAvatar
-                        avatar={child.agent?.avatar ?? DEFAULT_AGENT_AVATAR}
-                        name={child.agent?.name}
-                        size={32}
-                      />
-                      <View className="flex-1 min-w-0">
-                        <Text numberOfLines={1} className="text-sm font-semibold text-zinc-900 dark:text-white">
-                          {child.agent?.name ?? 'Specialist'}
-                        </Text>
-                        <Text numberOfLines={1} className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                          {child.goal}
-                        </Text>
+                  <View key={child.id}>
+                    {index > 0 && <HairlineDivider inset={56} />}
+                    <Pressable
+                      onPress={() => router.push({ pathname: '/run', params: { id: child.id } })}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingHorizontal: space.lg,
+                        paddingVertical: space.md,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, flex: 1, minWidth: 0, paddingRight: space.sm }}>
+                        <AgentAvatar
+                          avatar={child.agent?.avatar ?? DEFAULT_AGENT_AVATAR}
+                          name={child.agent?.name}
+                          size={32}
+                        />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+                            {child.agent?.name ?? 'Specialist'}
+                          </Text>
+                          <Text numberOfLines={1} style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                            {child.goal}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    <View className={`flex-row items-center gap-1 rounded-full border px-2 py-0.5 ${childStatus.bg} ${childStatus.border}`}>
-                      <Text className={`text-[10px] font-medium ${childStatus.text}`}>
-                        {childStatus.label}
-                      </Text>
-                      <ChevronRight size={12} color="#71717a" />
-                    </View>
-                  </Pressable>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceRaised, paddingHorizontal: 8, paddingVertical: 4 }}>
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: childStatus.dot }} />
+                        <Text style={{ fontSize: 11, fontWeight: '500', color: childStatus.text }}>
+                          {childStatus.label}
+                        </Text>
+                        <ChevronRight size={12} color={colors.textSecondary} />
+                      </View>
+                    </Pressable>
+                  </View>
                 );
               })}
-            </View>
+            </GroupedCard>
           </View>
         ) : null}
 
         {/* Final Result Card */}
         {answer ? (
-          <View className="rounded-3xl border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10 p-5 shadow-sm gap-2">
-            <View className="flex-row items-center gap-2">
-              <CheckCircle2 size={18} color="#10b981" />
-              <Text className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+          <GroupedCard style={{ padding: space.lg, gap: space.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <CheckCircle2 size={18} color={colors.success} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
                 Final Result
               </Text>
             </View>
-            <Text className="text-base text-zinc-900 dark:text-zinc-100 leading-6">
+            <Text style={{ fontSize: 16, lineHeight: 22, color: colors.textPrimary }}>
               {answer}
             </Text>
-          </View>
+          </GroupedCard>
         ) : null}
 
         {/* Pending Approvals */}
         {pendingApprovals.map((approval) => (
           <View
             key={approval.id}
-            className="rounded-3xl border border-amber-500/30 bg-amber-500/10 p-5 shadow-sm gap-3"
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: radius.card,
+              padding: space.lg,
+              gap: space.md,
+            }}
           >
-            <View className="flex-row items-center gap-2">
-              <AlertTriangle size={18} color="#f59e0b" />
-              <Text className="text-sm font-bold text-amber-500 dark:text-amber-300">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <AlertTriangle size={18} color={colors.recording} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
                 Approval Required
               </Text>
             </View>
-            <Text className="text-sm text-zinc-800 dark:text-zinc-200">
+            <Text style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}>
               {`${detail?.agent?.name ?? (isGroupRun ? 'A group member' : 'The agent')} wants to execute "${approval.tool_name ?? 'a sensitive tool'}".`}
             </Text>
             {typeof approval.args === 'object' && approval.args !== null ? (
-              <View className="rounded-2xl border border-white/10 bg-black/40 p-3">
-                <Text className="font-mono text-xs text-zinc-300 leading-5">
+              <View style={{ backgroundColor: colors.surfaceRaised, borderRadius: radius.tile, padding: space.md }}>
+                <Text style={{ fontFamily: 'monospace', fontSize: 12, color: colors.textPrimary, lineHeight: 18 }}>
                   {JSON.stringify(approval.args, null, 2)}
                 </Text>
               </View>
             ) : null}
-            <View className="flex-row gap-2.5 pt-1">
-              <Button
-                size="sm"
-                variant="primary"
-                className="rounded-full px-5"
+            <View style={{ flexDirection: 'row', gap: space.sm, paddingTop: space.xs }}>
+              <PillButton
+                label="Approve"
                 onPress={() => void handleDecision(approval, 'approve')}
-              >
-                <Button.Label>Approve</Button.Label>
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="rounded-full px-5"
+                variant="primary"
+              />
+              <PillButton
+                label="Deny"
                 onPress={() => void handleDecision(approval, 'deny')}
-              >
-                <Button.Label>Deny</Button.Label>
-              </Button>
+                variant="secondary"
+              />
             </View>
           </View>
         ))}
 
         {/* Live Timeline Section */}
-        <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5 shadow-sm gap-3">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
-            Execution Timeline
-          </Text>
-
-          {events.length === 0 ? (
-            <View className="py-6 items-center justify-center">
-              <Spinner size="sm" color="default" />
-              <Text className="text-xs text-zinc-500 mt-2">Initializing task plan…</Text>
-            </View>
-          ) : (
-            <View className="gap-2.5">
-              {events.map((event: RunEvent) => (
-                <EventRow key={event.id} event={event} />
-              ))}
-            </View>
-          )}
-
-          {status && ACTIVE.has(status) ? (
-            <View className="flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-white/10 pt-3">
-              <View className="flex-row items-center gap-2 flex-1">
+        <View style={{ gap: space.xs }}>
+          <SectionLabel text="Execution Timeline" />
+          <GroupedCard style={{ padding: space.lg, gap: space.md }}>
+            {events.length === 0 ? (
+              <View style={{ paddingVertical: space.xl, alignItems: 'center', justifyContent: 'center' }}>
                 <Spinner size="sm" color="default" />
-                <Text className="flex-1 text-xs text-zinc-500" numberOfLines={2}>
-                  Working in background… you can safely close the app.
-                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: space.sm }}>Initializing task plan…</Text>
               </View>
-              <View className="flex-row gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => void handlePauseToggle()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Pause task"
-                  accessibilityHint="Stops the task at its next step; resume continues from there"
-                >
-                  <Button.Label>Pause</Button.Label>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onPress={handleCancel}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel task"
-                  accessibilityHint="Ends this task permanently"
-                >
-                  <Button.Label>Cancel</Button.Label>
-                </Button>
+            ) : (
+              <View style={{ gap: space.md }}>
+                {events.map((event: RunEvent) => (
+                  <EventRow key={event.id} event={event} />
+                ))}
               </View>
-            </View>
-          ) : status === 'paused' ? (
-            <View className="flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-white/10 pt-3">
-              <View className="flex-1">
-                <Text className="text-xs font-semibold text-violet-500 dark:text-violet-300">
-                  Paused
-                </Text>
-                <Text className="mt-0.5 text-xs text-zinc-500">
-                  Stopped at its last step — resume continues from there.
-                </Text>
+            )}
+
+            {status && ACTIVE.has(status) ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.md }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1 }}>
+                  <Spinner size="sm" color="default" />
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }} numberOfLines={2}>
+                    Working in background… you can safely close the app.
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: space.xs }}>
+                  <PillButton
+                    label="Pause"
+                    onPress={() => void handlePauseToggle()}
+                    variant="secondary"
+                  />
+                  <PillButton
+                    label="Cancel"
+                    onPress={handleCancel}
+                    variant="secondary"
+                  />
+                </View>
               </View>
-              <View className="flex-row gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => void handlePauseToggle()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Resume task"
-                  accessibilityHint="Continues the task from where it stopped"
-                >
-                  <Button.Label>Resume</Button.Label>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onPress={handleCancel}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel task"
-                  accessibilityHint="Ends this task permanently"
-                >
-                  <Button.Label>Cancel</Button.Label>
-                </Button>
+            ) : status === 'paused' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.md }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+                    Paused
+                  </Text>
+                  <Text style={{ marginTop: 2, fontSize: 12, color: colors.textSecondary }}>
+                    Stopped at its last step — resume continues from there.
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: space.xs }}>
+                  <PillButton
+                    label="Resume"
+                    onPress={() => void handlePauseToggle()}
+                    variant="primary"
+                  />
+                  <PillButton
+                    label="Cancel"
+                    onPress={handleCancel}
+                    variant="secondary"
+                  />
+                </View>
               </View>
-            </View>
-          ) : null}
+            ) : null}
+          </GroupedCard>
         </View>
       </ScrollView>
     </View>
@@ -436,9 +445,9 @@ function EventRow({ event }: { event: RunEvent }) {
     const node = String(payload.node ?? '');
     const label = NODE_LABEL[node] ?? node;
     return (
-      <View className="flex-row items-center gap-2.5">
-        <View className="h-2 w-2 rounded-full bg-purple-500" />
-        <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary }} />
+        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
           {label}
         </Text>
       </View>
@@ -448,18 +457,18 @@ function EventRow({ event }: { event: RunEvent }) {
   if (event.type === 'node_end') {
     if (payload.failed) {
       return (
-        <View className="ml-4 flex-row items-center gap-1.5">
-          <XCircle size={12} color="#ef4444" />
-          <Text className="text-xs text-red-400">
+        <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <XCircle size={13} color={colors.recording} />
+          <Text style={{ fontSize: 13, color: colors.recording }}>
             Step failed, adjusting strategy…
           </Text>
         </View>
       );
     }
     return (
-      <View className="ml-4 flex-row items-center gap-1.5">
-        <Check size={12} color="#10b981" />
-        <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+      <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Check size={13} color={colors.success} />
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
           {String(payload.note ?? payload.summary ?? payload.action ?? 'Step completed')}
         </Text>
       </View>
@@ -468,9 +477,9 @@ function EventRow({ event }: { event: RunEvent }) {
 
   if (event.type === 'tool_call') {
     return (
-      <View className="ml-4 flex-row items-center gap-2 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 px-3 py-1 self-start">
-        <Wrench size={11} color="#38bdf8" />
-        <Text className="text-xs text-zinc-700 dark:text-zinc-300">
+      <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.xs, borderRadius: radius.pill, backgroundColor: colors.surfaceRaised, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' }}>
+        <Wrench size={12} color={colors.textSecondary} />
+        <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '500' }}>
           {`Calling ${String(payload.tool ?? 'tool')}`}
         </Text>
       </View>
@@ -479,8 +488,8 @@ function EventRow({ event }: { event: RunEvent }) {
 
   if (event.type === 'tool_result') {
     return (
-      <View className="ml-6 flex-row items-center gap-1.5">
-        <Text className="text-xs text-zinc-400">
+      <View style={{ marginLeft: space.xl, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={{ fontSize: 12, color: colors.textTertiary }}>
           {`↳ Result received`}
         </Text>
       </View>

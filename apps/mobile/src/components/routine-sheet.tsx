@@ -4,6 +4,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -12,6 +13,14 @@ import { Spinner } from 'heroui-native';
 import { CalendarClock, Pause, Play, Trash2, X } from 'lucide-react-native';
 import type { RoutineSchedule, RoutineWithPreview, Weekday } from '@agent/shared';
 
+import {
+  GroupedCard,
+  HairlineDivider,
+  PillButton,
+  RoundButton,
+  SectionLabel,
+} from '@/components/design-system';
+import { colors, radius, space } from '@/theme';
 import { formatDateTime } from '@/lib/dates';
 import {
   deleteRoutine,
@@ -23,14 +32,6 @@ import {
   updateRoutine,
 } from '@/lib/routines';
 
-/**
- * Routine sheets (Phase 10).
- *
- * `RoutineListSheet` is the clock icon in an agent's chat header: the
- * routines bound to that agent. `RoutineDetailSheet` is the drill-down —
- * schedule, next run, pause/resume, edit, run now and the past runs.
- */
-
 const WEEKDAY_CHIPS: { code: Weekday; label: string }[] = [
   { code: 'MO', label: 'M' },
   { code: 'TU', label: 'T' },
@@ -41,35 +42,30 @@ const WEEKDAY_CHIPS: { code: Weekday; label: string }[] = [
   { code: 'SU', label: 'S' },
 ];
 
-export const ROUTINE_STATUS_STYLES: Record<string, string> = {
-  active: 'bg-emerald-500/15 text-emerald-300',
-  draft: 'bg-sky-500/15 text-sky-300',
-  paused: 'bg-amber-500/15 text-amber-300',
-  completed: 'bg-zinc-500/15 text-zinc-400',
-};
-
-type ListProps = {
+type Props = {
+  agentId?: string | null;
   visible: boolean;
   onClose: () => void;
-  /** Only show the routines bound to this agent. */
-  agentId?: string | null;
-  /** Called after a routine changed (activate/pause/resume/delete). */
   onChanged?: () => void;
 };
 
-/** The routine list inside a sheet (agent chat header / More). */
-export function RoutineListSheet({ visible, onClose, agentId, onChanged }: ListProps) {
+/**
+ * Routine list sheet: shows routines configured for this agent.
+ */
+export function RoutineListSheet({ agentId, visible, onClose, onChanged }: Props) {
   const [routines, setRoutines] = useState<RoutineWithPreview[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setNotice(null);
     try {
-      const all = await fetchRoutines();
-      setRoutines(agentId ? all.filter((routine) => routine.agentId === agentId) : all);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      const items = await fetchRoutines();
+      setRoutines(agentId ? items.filter((r) => r.agentId === agentId) : items);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -79,14 +75,13 @@ export function RoutineListSheet({ visible, onClose, agentId, onChanged }: ListP
     if (!visible) return;
     let active = true;
     void (async () => {
+      setLoading(true);
+      setNotice(null);
       try {
-        const all = await fetchRoutines();
-        if (!active) return;
-        setRoutines(agentId ? all.filter((routine) => routine.agentId === agentId) : all);
-        setNotice(null);
-      } catch (error) {
-        if (!active) return;
-        setNotice(error instanceof Error ? error.message : String(error));
+        const items = await fetchRoutines();
+        if (active) setRoutines(agentId ? items.filter((r) => r.agentId === agentId) : items);
+      } catch (err) {
+        if (active) setNotice(err instanceof Error ? err.message : String(err));
       } finally {
         if (active) setLoading(false);
       }
@@ -100,60 +95,65 @@ export function RoutineListSheet({ visible, onClose, agentId, onChanged }: ListP
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/50">
-        <View
-          className="max-h-[80%] rounded-t-3xl border-t border-zinc-200 dark:border-white/10 bg-white dark:bg-[#121215] px-5 pt-5 pb-8 gap-3"
-        >
-          <View className="flex-row items-center justify-between">
-            <Text className="text-base font-bold text-zinc-900 dark:text-white">Routines</Text>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-              <X size={18} color="#71717a" />
-            </Pressable>
+      <View style={styles.overlay}>
+        <View style={styles.sheetContainer}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Routines</Text>
+            <RoundButton
+              icon={X}
+              onPress={onClose}
+              accessibilityLabel="Close"
+              style={styles.sheetCloseButton}
+            />
           </View>
 
           {notice ? (
-            <Text className="text-xs text-red-400">{notice}</Text>
+            <Text style={styles.errorNotice}>{notice}</Text>
           ) : null}
 
           {loading ? (
-            <View className="py-10 items-center justify-center">
+            <View style={{ paddingVertical: 40, alignItems: 'center', justifyContent: 'center' }}>
               <Spinner size="lg" color="default" />
             </View>
           ) : routines.length === 0 ? (
-            <View className="py-8 items-center gap-2">
-              <CalendarClock size={24} color="#71717a" />
-              <Text className="text-xs text-zinc-500 text-center">
+            <View style={{ paddingVertical: 32, alignItems: 'center', gap: space.sm }}>
+              <CalendarClock size={24} color={colors.textSecondary} />
+              <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', maxWidth: 260 }}>
                 No routines yet. Ask in the chat — “every Monday at 9 summarize my open tasks”.
               </Text>
             </View>
           ) : (
-            <ScrollView className="gap-2" showsVerticalScrollIndicator={false}>
-              {routines.map((routine) => (
-                <Pressable
-                  key={routine.id}
-                  onPress={() => setOpenId(routine.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${routine.name}`}
-                  className="gap-1 rounded-2xl border border-zinc-200 dark:border-white/10 px-3.5 py-3 active:opacity-70"
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Text className="flex-1 text-sm font-semibold text-zinc-900 dark:text-white">
-                      {routine.name}
-                    </Text>
-                    <View
-                      className={`rounded-full px-2 py-0.5 ${ROUTINE_STATUS_STYLES[routine.status] ?? ROUTINE_STATUS_STYLES.draft}`}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <GroupedCard>
+                {routines.map((routine, index) => (
+                  <View key={routine.id}>
+                    {index > 0 && <HairlineDivider inset={space.lg} />}
+                    <Pressable
+                      onPress={() => setOpenId(routine.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${routine.name}`}
+                      style={{ padding: space.lg, gap: 4 }}
                     >
-                      <Text className="text-[10px] font-semibold uppercase">{routine.status}</Text>
-                    </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                        <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.textPrimary }}>
+                          {routine.name}
+                        </Text>
+                        <View style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceRaised, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '500', color: colors.textSecondary, textTransform: 'uppercase' }}>
+                            {routine.status}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 13, color: colors.textSecondary }}>{routine.scheduleLabel}</Text>
+                      {routine.nextRuns[0] ? (
+                        <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                          {`Next: ${formatDateTime(routine.nextRuns[0], routine.tz)}`}
+                        </Text>
+                      ) : null}
+                    </Pressable>
                   </View>
-                  <Text className="text-xs text-zinc-500 dark:text-zinc-400">{routine.scheduleLabel}</Text>
-                  {routine.nextRuns[0] ? (
-                    <Text className="text-[11px] text-zinc-400">
-                      {`Next: ${formatDateTime(routine.nextRuns[0], routine.tz)}`}
-                    </Text>
-                  ) : null}
-                </Pressable>
-              ))}
+                ))}
+              </GroupedCard>
             </ScrollView>
           )}
 
@@ -249,7 +249,7 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
     void withBusy(async () => {
       await updateRoutine(routine.id, {
         name: draftName.trim() || routine.name,
-        prompt: draftPrompt,
+        prompt: draftPrompt.trim() || routine.prompt,
         schedule,
       });
       setEditing(false);
@@ -258,7 +258,7 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
 
   const handleDelete = useCallback(() => {
     if (!routine) return;
-    Alert.alert('Delete routine', `Delete “${routine.name}”? It will stop running.`, [
+    Alert.alert('Delete routine?', `“${routine.name}” will stop running automatically.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -274,8 +274,8 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
   }, [onClose, routine, withBusy]);
 
   const nextRunLabel = useMemo(() => {
-    if (!routine) return null;
-    return routine.nextRuns[0] ? formatDateTime(routine.nextRuns[0], routine.tz) : null;
+    if (!routine?.nextRuns[0]) return null;
+    return formatDateTime(routine.nextRuns[0], routine.tz);
   }, [routine]);
 
   if (!routine) return null;
@@ -287,54 +287,53 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View className="flex-1 justify-end bg-black/60">
-        <View
-          className="max-h-[85%] rounded-t-3xl border-t border-zinc-200 dark:border-white/10 bg-white dark:bg-[#121215] px-5 pt-5 pb-8 gap-3"
-        >
-          <View className="flex-row items-center justify-between">
-            <Text className="text-base font-bold text-zinc-900 dark:text-white">{routine.name}</Text>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-              <X size={18} color="#71717a" />
-            </Pressable>
+      <View style={styles.overlay}>
+        <View style={styles.sheetContainer}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>{routine.name}</Text>
+            <RoundButton
+              icon={X}
+              onPress={onClose}
+              accessibilityLabel="Close"
+              style={styles.sheetCloseButton}
+            />
           </View>
 
-          {notice ? <Text className="text-xs text-red-400">{notice}</Text> : null}
+          {notice ? <Text style={styles.errorNotice}>{notice}</Text> : null}
 
           {editing ? (
-            <View className="gap-3">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: space.md }}>
               <TextInput
-                className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
+                style={styles.input}
                 placeholder="Name"
-                placeholderTextColor="#71717a"
+                placeholderTextColor={colors.textSecondary}
                 value={draftName}
                 onChangeText={setDraftName}
               />
               <TextInput
-                className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
+                style={[styles.input, { minHeight: 70, textAlignVertical: 'top' }]}
                 placeholder="What should the agent do?"
-                placeholderTextColor="#71717a"
+                placeholderTextColor={colors.textSecondary}
                 value={draftPrompt}
                 onChangeText={setDraftPrompt}
                 multiline
               />
-              <View className="flex-row flex-wrap gap-2">
+              <View style={{ flexDirection: 'row', gap: space.sm }}>
                 {(['daily', 'weekly', 'monthly'] as const).map((frequency) => (
                   <Pressable
                     key={frequency}
                     onPress={() => setDraftFrequency(frequency)}
                     accessibilityRole="button"
-                    className={`rounded-full border px-3 py-1.5 ${
-                      draftFrequency === frequency
-                        ? 'border-zinc-900 dark:border-white bg-zinc-900 dark:bg-white'
-                        : 'border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5'
-                    }`}
+                    style={[
+                      styles.frequencyChip,
+                      draftFrequency === frequency && styles.frequencyChipActive,
+                    ]}
                   >
                     <Text
-                      className={`text-xs font-semibold capitalize ${
-                        draftFrequency === frequency
-                          ? 'text-white dark:text-zinc-900'
-                          : 'text-zinc-600 dark:text-zinc-400'
-                      }`}
+                      style={[
+                        styles.frequencyChipText,
+                        draftFrequency === frequency && styles.frequencyChipTextActive,
+                      ]}
                     >
                       {frequency}
                     </Text>
@@ -342,7 +341,7 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                 ))}
               </View>
               {draftFrequency === 'weekly' ? (
-                <View className="flex-row gap-2">
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
                   {WEEKDAY_CHIPS.map((chip, index) => {
                     const active = draftDays.includes(chip.code);
                     return (
@@ -357,16 +356,16 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                         }
                         accessibilityRole="button"
                         accessibilityLabel={`Toggle ${chip.code}`}
-                        className={`h-8 w-8 items-center justify-center rounded-full border ${
-                          active
-                            ? 'border-zinc-900 dark:border-white bg-zinc-900 dark:bg-white'
-                            : 'border-zinc-200 dark:border-white/10'
-                        }`}
+                        style={[
+                          styles.weekdayCircle,
+                          active && styles.weekdayCircleActive,
+                        ]}
                       >
                         <Text
-                          className={`text-xs font-semibold ${
-                            active ? 'text-white dark:text-zinc-900' : 'text-zinc-500'
-                          }`}
+                          style={[
+                            styles.weekdayCircleText,
+                            active && styles.weekdayCircleTextActive,
+                          ]}
                         >
                           {chip.label}
                         </Text>
@@ -376,41 +375,41 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                 </View>
               ) : null}
               <TextInput
-                className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
+                style={styles.input}
                 placeholder="HH:mm (24h)"
-                placeholderTextColor="#71717a"
+                placeholderTextColor={colors.textSecondary}
                 value={draftTime}
                 onChangeText={setDraftTime}
                 autoCapitalize="none"
               />
-              <View className="flex-row gap-2">
-                <Pressable
-                  onPress={handleSave}
-                  disabled={busy}
-                  className="flex-1 items-center rounded-2xl bg-zinc-900 dark:bg-white py-3 active:opacity-80 disabled:opacity-40"
-                >
-                  <Text className="text-sm font-bold text-white dark:text-zinc-900">Save</Text>
-                </Pressable>
-                <Pressable
+              <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
+                <View style={{ flex: 1 }}>
+                  <PillButton
+                    label={busy ? 'Saving…' : 'Save'}
+                    onPress={handleSave}
+                    disabled={busy}
+                    variant="primary"
+                  />
+                </View>
+                <PillButton
+                  label="Cancel"
                   onPress={() => setEditing(false)}
-                  className="items-center rounded-2xl border border-zinc-200 dark:border-white/10 px-5 py-3 active:opacity-70"
-                >
-                  <Text className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">Cancel</Text>
-                </Pressable>
+                  variant="secondary"
+                />
               </View>
-            </View>
+            </ScrollView>
           ) : (
-            <ScrollView className="gap-4" showsVerticalScrollIndicator={false}>
-              <View className="gap-1">
-                <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: space.lg }}>
+              <View style={{ gap: space.xs }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
                   {routine.scheduleLabel}
                 </Text>
-                <Text className="text-xs text-zinc-500">{routine.prompt}</Text>
+                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{routine.prompt}</Text>
                 {nextRunLabel ? (
-                  <Text className="text-xs text-zinc-400">{`Next run: ${nextRunLabel}`}</Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>{`Next run: ${nextRunLabel}`}</Text>
                 ) : null}
                 {routine.nextRuns.length > 1 ? (
-                  <Text className="text-[11px] text-zinc-400">
+                  <Text style={{ fontSize: 12, color: colors.textTertiary }}>
                     {`Then: ${routine.nextRuns
                       .slice(1)
                       .map((run) => formatDateTime(run, routine.tz))
@@ -419,7 +418,7 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                 ) : null}
               </View>
 
-              <View className="flex-row flex-wrap gap-2">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                 {routine.status === 'active' ? (
                   <Pressable
                     onPress={() =>
@@ -428,10 +427,10 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                       })
                     }
                     disabled={busy}
-                    className="flex-row items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-2 active:opacity-75 disabled:opacity-40"
+                    style={styles.actionChip}
                   >
-                    <Pause size={13} color="#fbbf24" />
-                    <Text className="text-xs font-semibold text-amber-300">Pause</Text>
+                    <Pause size={13} color={colors.textPrimary} />
+                    <Text style={styles.actionChipText}>Pause</Text>
                   </Pressable>
                 ) : routine.status !== 'completed' ? (
                   <Pressable
@@ -441,10 +440,10 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                       })
                     }
                     disabled={busy}
-                    className="flex-row items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 active:opacity-75 disabled:opacity-40"
+                    style={styles.actionChip}
                   >
-                    <Play size={13} color="#4ade80" />
-                    <Text className="text-xs font-semibold text-emerald-300">Resume</Text>
+                    <Play size={13} color={colors.textPrimary} />
+                    <Text style={styles.actionChipText}>Resume</Text>
                   </Pressable>
                 ) : null}
 
@@ -456,53 +455,50 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
                     })
                   }
                   disabled={busy || routine.status === 'completed'}
-                  className="flex-row items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-2 active:opacity-75 disabled:opacity-40"
+                  style={styles.actionChip}
                 >
-                  <CalendarClock size={13} color="#38bdf8" />
-                  <Text className="text-xs font-semibold text-sky-300">Run now</Text>
+                  <CalendarClock size={13} color={colors.textPrimary} />
+                  <Text style={styles.actionChipText}>Run now</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={() => setEditing(true)}
-                  className="rounded-full border border-zinc-200 dark:border-white/10 px-3 py-2 active:opacity-75"
+                  style={styles.actionChip}
                 >
-                  <Text className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Edit</Text>
+                  <Text style={styles.actionChipText}>Edit</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={handleDelete}
-                  className="flex-row items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-2 active:opacity-75"
+                  style={[styles.actionChip, { backgroundColor: colors.recordingBg }]}
                 >
-                  <Trash2 size={13} color="#f87171" />
-                  <Text className="text-xs font-semibold text-red-300">Delete</Text>
+                  <Trash2 size={13} color={colors.recording} />
+                  <Text style={[styles.actionChipText, { color: colors.recording }]}>Delete</Text>
                 </Pressable>
               </View>
 
-              <View className="gap-2">
-                <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Past runs
-                </Text>
+              <View style={{ gap: space.xs }}>
+                <SectionLabel text="Past runs" />
                 {runs.length === 0 ? (
-                  <Text className="text-xs text-zinc-500">No runs yet.</Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, paddingHorizontal: space.xs }}>No runs yet.</Text>
                 ) : (
-                  runs.slice(0, 8).map((run) => (
-                    <View
-                      key={run.id}
-                      className="flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-white/5 px-3 py-2"
-                    >
-                      <Text
-                        className="flex-1 text-xs text-zinc-600 dark:text-zinc-300"
-                        numberOfLines={1}
-                      >
-                        {run.scheduledFor
-                          ? formatDateTime(run.scheduledFor, routine.tz)
-                          : formatDateTime(run.createdAt, routine.tz)}
-                      </Text>
-                      <Text className="text-[10px] font-semibold uppercase text-zinc-400">
-                        {run.status}
-                      </Text>
-                    </View>
-                  ))
+                  <GroupedCard>
+                    {runs.slice(0, 8).map((run, index) => (
+                      <View key={run.id}>
+                        {index > 0 && <HairlineDivider inset={space.md} />}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.lg, paddingVertical: space.sm }}>
+                          <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary }} numberOfLines={1}>
+                            {run.scheduledFor
+                              ? formatDateTime(run.scheduledFor, routine.tz)
+                              : formatDateTime(run.createdAt, routine.tz)}
+                          </Text>
+                          <Text style={{ fontSize: 11, fontWeight: '500', color: colors.textSecondary, textTransform: 'uppercase' }}>
+                            {run.status}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </GroupedCard>
                 )}
               </View>
             </ScrollView>
@@ -512,3 +508,101 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: colors.overlay,
+  },
+  sheetContainer: {
+    maxHeight: '85%',
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.xxl,
+    gap: space.md,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sheetTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  sheetCloseButton: {
+    backgroundColor: colors.surface,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  errorNotice: {
+    fontSize: 13,
+    color: colors.recording,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  frequencyChip: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+  },
+  frequencyChipActive: {
+    backgroundColor: colors.primary,
+  },
+  frequencyChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  frequencyChipTextActive: {
+    color: colors.onPrimary,
+  },
+  weekdayCircle: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  weekdayCircleActive: {
+    backgroundColor: colors.primary,
+  },
+  weekdayCircleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  weekdayCircleTextActive: {
+    color: colors.onPrimary,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  actionChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+});

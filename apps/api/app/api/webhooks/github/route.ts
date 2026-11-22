@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { optionalEnv } from "@/lib/env";
+import { getSoleUserId } from "@/lib/auth";
 import { inngest } from "@/lib/inngest/client";
 import { vaultChanged } from "@/lib/inngest/events";
 
@@ -54,10 +55,19 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, ignored: "different repository" });
   }
 
-  const userId = optionalEnv("ALLOWED_USER_ID");
+  let userId: string | null;
+  try {
+    userId = await getSoleUserId();
+  } catch (error) {
+    console.error("[github webhook] Could not resolve the single app account.", error);
+    return Response.json(
+      { error: { code: "not_configured", message: "Could not resolve the app account." } },
+      { status: 503 },
+    );
+  }
   if (!userId) {
     return Response.json(
-      { error: { code: "not_configured", message: "ALLOWED_USER_ID is not set." } },
+      { error: { code: "not_configured", message: "Exactly one app account must exist." } },
       { status: 503 },
     );
   }

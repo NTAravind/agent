@@ -1,20 +1,28 @@
 import type { Agent, AgentGroup, GroupMode } from '@agent/shared';
-import { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert as RNAlert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Button, Spinner, Typography } from 'heroui-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect } from 'expo-router';
 import { Check, Minus, Plus, Trash2, Users } from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import {
+  GroupedCard,
+  HairlineDivider,
+  PillButton,
+  SectionLabel,
+} from '@/components/design-system';
+import { colors, radius, shadow, space } from '@/theme';
 import { fetchAgents } from '@/lib/agents';
 import {
   createGroup,
@@ -186,7 +194,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-white dark:bg-[#09090b]">
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <Spinner size="lg" color="default" />
       </View>
     );
@@ -194,75 +202,72 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-white dark:bg-[#09090b]"
+      style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: 48, gap: 22 }}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: 48, gap: space.xl }}
         keyboardShouldPersistTaps="handled"
       >
         {error ? (
-          <View className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2.5">
-            <Text className="text-xs text-red-500 dark:text-red-300">{error}</Text>
+          <View style={{ backgroundColor: colors.recordingBg, borderRadius: radius.card, padding: space.md }}>
+            <Text style={{ fontSize: 13, color: colors.recording }}>{error}</Text>
           </View>
         ) : null}
 
-        <View className="items-center gap-3 rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5">
-          <View className="flex-row -space-x-2">
+        <GroupedCard style={{ alignItems: 'center', gap: space.sm, padding: space.xl }}>
+          <View style={{ flexDirection: 'row', marginRight: 4 }}>
             {agents
               .filter((agent) => memberIds.has(agent.id))
               .slice(0, 4)
-              .map((agent) => (
+              .map((agent, i) => (
                 <View
                   key={agent.id}
-                  className="rounded-full border-2 border-zinc-50 dark:border-[#121215]"
+                  style={[
+                    { borderRadius: radius.pill, borderWidth: 2, borderColor: colors.surface },
+                    i > 0 && { marginLeft: -12 },
+                  ]}
                 >
                   <AgentAvatar avatar={agent.avatar} name={agent.name} size={38} />
                 </View>
               ))}
           </View>
-          <Text className="text-base font-bold text-zinc-900 dark:text-white">
+          <Text style={{ fontSize: 18, fontWeight: '600', color: colors.textPrimary, marginTop: space.xs }}>
             {name.trim() || 'New agent group'}
           </Text>
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
             {selectedCount} member{selectedCount === 1 ? '' : 's'} · {mode}
           </Text>
-        </View>
+        </GroupedCard>
 
-        <View className="gap-4">
-          <View>
-            <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Name
-            </Text>
+        <View style={{ gap: space.lg }}>
+          <View style={{ gap: space.xs }}>
+            <SectionLabel text="Name" />
             <TextInput
               value={name}
               onChangeText={setName}
               placeholder="e.g. Research Crew"
-              placeholderTextColor="#71717a"
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-base text-zinc-900 dark:text-white"
+              placeholderTextColor={colors.textSecondary}
+              style={styles.input}
             />
           </View>
 
-          <View>
-            <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Description
-            </Text>
+          <View style={{ gap: space.xs }}>
+            <SectionLabel text="Description" />
             <TextInput
               value={description}
               onChangeText={setDescription}
               placeholder="What should this group accomplish?"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textSecondary}
               multiline
-              className="min-h-[72px] rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-4 py-3 text-base text-zinc-900 dark:text-white leading-5"
+              style={[styles.input, { minHeight: 72, textAlignVertical: 'top' }]}
             />
           </View>
         </View>
 
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Collaboration mode
-          </Text>
-          <View className="flex-row rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 p-1">
+        <View style={{ gap: space.xs }}>
+          <SectionLabel text="Collaboration Mode" />
+          <View style={styles.tabTrack}>
             {(['handoff', 'roundtable'] as const).map((value) => {
               const selected = mode === value;
               return (
@@ -271,10 +276,17 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
                   onPress={() => setMode(value)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  className={`flex-1 items-center rounded-full py-2 ${selected ? 'bg-white dark:bg-white/15' : ''}`}
+                  style={[
+                    styles.tabSegment,
+                    selected && styles.tabSegmentActive,
+                    selected && shadow.floating,
+                  ]}
                 >
                   <Text
-                    className={`text-xs font-semibold capitalize ${selected ? 'text-zinc-900 dark:text-white' : 'text-zinc-500'}`}
+                    style={[
+                      styles.tabSegmentText,
+                      selected && styles.tabSegmentTextActive,
+                    ]}
                   >
                     {value}
                   </Text>
@@ -282,167 +294,251 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
               );
             })}
           </View>
-          <Text className="text-xs leading-4 text-zinc-400">
+          <Text style={styles.helpText}>
             {mode === 'handoff'
               ? 'Members pass control to the best next agent and the lead finalizes.'
               : 'Every member takes one turn, then the lead finalizes.'}
           </Text>
         </View>
 
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Lead agent
-          </Text>
-          <View className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215]">
+        <View style={{ gap: space.xs }}>
+          <SectionLabel text="Lead Agent" />
+          <GroupedCard>
             {agents.map((agent, index) => {
               const selected = leadAgentId === agent.id;
               return (
-                <Pressable
-                  key={agent.id}
-                  onPress={() => chooseLead(agent.id)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  className={`flex-row items-center gap-3 p-3.5 active:bg-zinc-100 dark:active:bg-white/5 ${index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''}`}
-                >
-                  <AgentAvatar avatar={agent.avatar} name={agent.name} size={34} />
-                  <View className="flex-1">
-                    <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{agent.name}</Text>
-                    <Text className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {agent.role ?? 'Group member'}
-                    </Text>
-                  </View>
-                  {selected ? <Check size={17} color="#8b5cf6" /> : null}
-                </Pressable>
+                <React.Fragment key={agent.id}>
+                  {index > 0 && <HairlineDivider inset={56} />}
+                  <Pressable
+                    onPress={() => chooseLead(agent.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: space.md,
+                      padding: space.md,
+                    }}
+                  >
+                    <AgentAvatar avatar={agent.avatar} name={agent.name} size={34} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{agent.name}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                        {agent.role ?? 'Group member'}
+                      </Text>
+                    </View>
+                    {selected ? <Check size={18} color={colors.textPrimary} strokeWidth={2.5} /> : null}
+                  </Pressable>
+                </React.Fragment>
               );
             })}
-          </View>
+          </GroupedCard>
         </View>
 
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Members
-          </Text>
+        <View style={{ gap: space.xs }}>
+          <SectionLabel text="Members" />
           {agents.length === 0 ? (
-            <View className="items-center gap-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5">
-              <Users size={20} color="#71717a" />
-              <Text className="text-xs text-zinc-500">Create an agent before building a group.</Text>
-            </View>
+            <GroupedCard style={{ alignItems: 'center', gap: space.sm, padding: space.xl }}>
+              <Users size={20} color={colors.textSecondary} />
+              <Text style={{ fontSize: 13, color: colors.textSecondary }}>Create an agent before building a group.</Text>
+            </GroupedCard>
           ) : (
-            <View className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215]">
+            <GroupedCard>
               {agents.map((agent, index) => {
                 const isLead = leadAgentId === agent.id;
                 const selected = memberIds.has(agent.id);
                 return (
-                  <Pressable
-                    key={agent.id}
-                    onPress={() => toggleMember(agent.id)}
-                    disabled={isLead}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected, disabled: isLead }}
-                    className={`flex-row items-center gap-3 p-3.5 active:bg-zinc-100 dark:active:bg-white/5 ${index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''}`}
-                  >
-                    <AgentAvatar avatar={agent.avatar} name={agent.name} size={34} />
-                    <View className="flex-1">
-                      <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{agent.name}</Text>
-                      <Text className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                        {isLead ? 'Lead · always included' : agent.role ?? 'Member'}
-                      </Text>
-                    </View>
-                    <View
-                      className={`h-5 w-5 items-center justify-center rounded-md border ${selected ? 'border-violet-500 bg-violet-500' : 'border-zinc-300 dark:border-white/20'}`}
+                  <React.Fragment key={agent.id}>
+                    {index > 0 && <HairlineDivider inset={56} />}
+                    <Pressable
+                      onPress={() => toggleMember(agent.id)}
+                      disabled={isLead}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected, disabled: isLead }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: space.md,
+                        padding: space.md,
+                        opacity: isLead ? 0.75 : 1,
+                      }}
                     >
-                      {selected ? <Check size={13} color="#ffffff" /> : null}
-                    </View>
-                  </Pressable>
+                      <AgentAvatar avatar={agent.avatar} name={agent.name} size={34} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{agent.name}</Text>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                          {isLead ? 'Lead · always included' : agent.role ?? 'Member'}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          {
+                            width: 20,
+                            height: 20,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: radius.tile / 2,
+                            backgroundColor: selected ? colors.primary : colors.surfaceRaised,
+                          },
+                        ]}
+                      >
+                        {selected ? <Check size={13} color={colors.onPrimary} strokeWidth={2.5} /> : null}
+                      </View>
+                    </Pressable>
+                  </React.Fragment>
                 );
               })}
-            </View>
+            </GroupedCard>
           )}
         </View>
 
-        <View className="gap-3">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Guardrails
-          </Text>
-          <View className="flex-row items-center justify-between rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4">
-            <View className="flex-1 pr-3">
-              <Text className="text-sm font-semibold text-zinc-900 dark:text-white">Maximum hops</Text>
-              <Text className="text-[11px] text-zinc-500 dark:text-zinc-400">Stops runaway handoffs.</Text>
+        <View style={{ gap: space.xs }}>
+          <SectionLabel text="Guardrails" />
+          <GroupedCard style={{ padding: space.md, gap: space.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, paddingRight: space.md }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>Maximum hops</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Stops runaway handoffs.</Text>
+              </View>
+              <Pressable
+                onPress={() => setMaxHops((value) => Math.max(1, value - 1))}
+                accessibilityRole="button"
+                accessibilityLabel="Decrease maximum hops"
+                style={styles.stepperButton}
+              >
+                <Minus size={14} color={colors.textPrimary} />
+              </Pressable>
+              <Text style={{ width: 40, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{maxHops}</Text>
+              <Pressable
+                onPress={() => setMaxHops((value) => Math.min(20, value + 1))}
+                accessibilityRole="button"
+                accessibilityLabel="Increase maximum hops"
+                style={styles.stepperButton}
+              >
+                <Plus size={14} color={colors.textPrimary} />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setMaxHops((value) => Math.max(1, value - 1))}
-              accessibilityRole="button"
-              accessibilityLabel="Decrease maximum hops"
-              className="h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-white/10"
-            >
-              <Minus size={14} color="#71717a" />
-            </Pressable>
-            <Text className="w-10 text-center text-sm font-bold text-zinc-900 dark:text-white">{maxHops}</Text>
-            <Pressable
-              onPress={() => setMaxHops((value) => Math.min(20, value + 1))}
-              accessibilityRole="button"
-              accessibilityLabel="Increase maximum hops"
-              className="h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-white/10"
-            >
-              <Plus size={14} color="#71717a" />
-            </Pressable>
-          </View>
-          <View className="flex-row items-center justify-between rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4">
-            <View className="flex-1 pr-3">
-              <Text className="text-sm font-semibold text-zinc-900 dark:text-white">Token budget</Text>
-              <Text className="text-[11px] text-zinc-500 dark:text-zinc-400">Cumulative across the group run.</Text>
+
+            <HairlineDivider />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, paddingRight: space.md }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>Token budget</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Cumulative across the group run.</Text>
+              </View>
+              <Pressable
+                onPress={() => setTokenBudget((value) => Math.max(1_000, value - 5_000))}
+                accessibilityRole="button"
+                accessibilityLabel="Decrease token budget"
+                style={styles.stepperButton}
+              >
+                <Minus size={14} color={colors.textPrimary} />
+              </Pressable>
+              <Text style={{ width: 60, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+                {Math.round(tokenBudget / 1_000)}k
+              </Text>
+              <Pressable
+                onPress={() => setTokenBudget((value) => Math.min(500_000, value + 5_000))}
+                accessibilityRole="button"
+                accessibilityLabel="Increase token budget"
+                style={styles.stepperButton}
+              >
+                <Plus size={14} color={colors.textPrimary} />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setTokenBudget((value) => Math.max(1_000, value - 5_000))}
-              accessibilityRole="button"
-              accessibilityLabel="Decrease token budget"
-              className="h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-white/10"
-            >
-              <Minus size={14} color="#71717a" />
-            </Pressable>
-            <Text className="w-16 text-center text-sm font-bold text-zinc-900 dark:text-white">
-              {Math.round(tokenBudget / 1_000)}k
-            </Text>
-            <Pressable
-              onPress={() => setTokenBudget((value) => Math.min(500_000, value + 5_000))}
-              accessibilityRole="button"
-              accessibilityLabel="Increase token budget"
-              className="h-8 w-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-white/10"
-            >
-              <Plus size={14} color="#71717a" />
-            </Pressable>
-          </View>
+          </GroupedCard>
         </View>
 
-        <Button
-          size="lg"
-          variant="primary"
-          className="rounded-full"
-          isDisabled={saving || agents.length < 2}
+        <PillButton
+          label={editing ? (saving ? 'Saving…' : 'Save Group') : (saving ? 'Creating…' : 'Create Group')}
           onPress={() => void handleSave()}
-          accessibilityLabel={editing ? 'Save group' : 'Create group'}
-        >
-          {saving ? <Spinner size="sm" color="default" /> : <Button.Label>{editing ? 'Save Group' : 'Create Group'}</Button.Label>}
-        </Button>
+          disabled={saving || agents.length < 2}
+          variant="primary"
+        />
 
         {editing ? (
           <Pressable
             onPress={handleDelete}
             accessibilityRole="button"
             accessibilityLabel="Delete group"
-            className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 py-3 active:opacity-75"
+            style={styles.deleteButton}
           >
-            <Trash2 size={16} color="#ef4444" />
-            <Text className="text-sm font-semibold text-red-500">Delete Group</Text>
+            <Trash2 size={16} color={colors.recording} />
+            <Text style={styles.deleteButtonText}>Delete Group</Text>
           </Pressable>
         ) : null}
 
         {leadAgent ? (
-          <Typography type="body-xs" className="text-center text-zinc-400">
+          <Text style={{ textAlign: 'center', fontSize: 13, color: colors.textSecondary }}>
             {leadAgent.name} leads and finalizes the group result.
-          </Typography>
+          </Text>
         ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  tabTrack: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    padding: 3,
+  },
+  tabSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    paddingVertical: 7,
+  },
+  tabSegmentActive: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  tabSegmentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  tabSegmentTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  helpText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.textSecondary,
+    paddingHorizontal: space.xs,
+  },
+  stepperButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.sm,
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    paddingVertical: space.md,
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.recording,
+  },
+});

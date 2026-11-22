@@ -12,11 +12,13 @@ import { ownedAgentId } from "@/lib/agents";
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { loadAttachments, withAttachmentParts } from "@/lib/chat/attachments";
 import {
+  bindThreadToAgent,
   createThread,
   getThread,
   insertMessage,
   titleFromParts,
 } from "@/lib/chat/persist";
+import { resolveChatAgentScope } from "@/lib/chat/agent-scope";
 import { createChatStream } from "@/lib/chat/stream";
 import { buildSystemPrompt } from "@/lib/chat/system-prompt";
 import { inngest } from "@/lib/inngest/client";
@@ -34,7 +36,7 @@ export const maxDuration = 300;
 /**
  * POST /api/chat — streams a chat completion.
  *
- * Body: { threadId?, messages, model?, attachments? }
+ * Body: { threadId?, agentId?, messages, model?, attachments? }
  * Auth: Bearer <supabase JWT>
  */
 export async function POST(request: Request) {
@@ -71,6 +73,48 @@ export async function POST(request: Request) {
       }
     }
 
+    // Agent scope: a thread's persisted owner is authoritative. The request
+    // may repeat that owner (or omit it), but it may not move the thread to a
+    // different agent. This prevents one agent's transcript from being used
+    // as another agent's context.
+    const requestedAgentId = body.agentId ?? null;
+    if (requestedAgentId && !(await ownedAgentId(user.id, requestedAgentId))) {
+      return Response.json(
+        { error: { code: "agent_not_found", message: "Unknown agent." } },
+        { status: 404 },
+      );
+    }
+
+    let agentId: string | null = null;
+    if (knownThread) {
+      const scope = resolveChatAgentScope(requestedAgentId, knownThread.agent_id);
+      if (!scope.ok) {
+        return Response.json(
+          { error: { code: scope.code, message: scope.message } },
+          { status: 409 },
+        );
+      }
+
+      agentId = scope.agentId;
+      if (scope.bindToThread && agentId) {
+        const effectiveAgentId = await bindThreadToAgent(user.id, threadId!, agentId);
+        if (effectiveAgentId !== agentId) {
+          return Response.json(
+            {
+              error: {
+                code: "agent_mismatch",
+                message: "This conversation belongs to a different agent.",
+              },
+            },
+            { status: 409 },
+          );
+        }
+        agentId = effectiveAgentId;
+      }
+    } else {
+      agentId = requestedAgentId;
+    }
+
     // Model selection: request -> default. Unknown ids are rejected loudly.
     const requestedModel = body.model ?? await defaultMobileModel() ?? DEFAULT_MODEL_ID;
     if (!(await primeMobileModel(requestedModel))) {
@@ -82,7 +126,6 @@ export async function POST(request: Request) {
 
     // Thread: the client generates the id, so a new chat needs no round trip.
     // If the thread does not exist yet, create it with that id.
-    const agentId = body.agentId ? await ownedAgentId(user.id, body.agentId) : null;
     if (threadId && !knownThread) {
       const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
       const created = await createThread(user.id, {

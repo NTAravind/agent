@@ -1,8 +1,12 @@
-import { Pressable, Text, View } from 'react-native';
+import { useCallback } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ChevronLeft } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
+import { RoundButton } from '@/components/design-system';
 import { GroupEditor } from '@/components/group-editor';
+import { colors } from '@/theme';
 
 /** Edits a dynamic agent group's metadata and membership. */
 export default function EditGroupScreen() {
@@ -10,26 +14,44 @@ export default function EditGroupScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === 'string' ? params.id : '';
 
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(id ? ({ pathname: '/groups/[id]', params: { id } } as never) : ('/agents' as never));
+    }
+  }, [id, router]);
+
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
             accessibilityLabel="Cancel"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Text className="text-base text-zinc-500 dark:text-zinc-400">Cancel</Text>
-          </Pressable>
+          />
         }
-        center={<Text className="text-sm font-semibold text-zinc-900 dark:text-white">Edit Group</Text>}
+        center={<Text style={styles.headerTitle}>Edit Group</Text>}
       />
       <GroupEditor
         groupId={id}
-        onSaved={() => router.back()}
-        onDeleted={() => router.replace('/groups' as never)}
+        onSaved={handleBack}
+        onDeleted={() => router.replace('/agents' as never)}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+});

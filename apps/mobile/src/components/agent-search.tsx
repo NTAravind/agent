@@ -1,133 +1,399 @@
-import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { BottomSheet, Button, SearchField, Typography } from 'heroui-native';
-import type { Agent } from '@agent/shared';
+import React, { useMemo, useState } from 'react';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Search as SearchIcon, SlidersHorizontal, X } from 'lucide-react-native';
+import type { Agent, AgentGroup } from '@agent/shared';
 
-import { AgentAvatar } from '@/components/agent-avatar';
-import { AGENT_LIST_AVATAR_SIZE } from '@/constants/icons';
+import { AgentAvatar, ClusterAvatar } from '@/components/agent-avatar';
+import { colors, radius, space, typography } from '@/theme';
 import type { RunListItem } from '@/lib/agents';
 
 type Props = {
   agents: Agent[];
+  groups?: AgentGroup[];
   runs: RunListItem[];
-  /** Called with the tapped agent id; the sheet closes itself. */
   onSelect: (agentId: string) => void;
+  onSelectGroup?: (groupId: string) => void;
   onClose: () => void;
   isOpen: boolean;
 };
 
+type SearchResultItem =
+  | {
+      id: string;
+      kind: 'agent';
+      title: string;
+      subtitle: string;
+      agent: Agent;
+    }
+  | {
+      id: string;
+      kind: 'group';
+      title: string;
+      subtitle: string;
+      group: AgentGroup;
+    }
+  | {
+      id: string;
+      kind: 'message';
+      title: string;
+      subtitle: string;
+      targetId: string;
+      targetType: 'agent' | 'group';
+      agent?: Agent;
+    };
+
 /**
- * Agent search: a HeroUI BottomSheet with a SearchField that filters the
- * agent list by name, role or current activity (the active run's goal).
+ * Highlights the matched query substring in bold (700)
  */
-export function AgentSearch({ agents, runs, onSelect, onClose, isOpen }: Props) {
-  const [query, setQuery] = useState('');
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  if (!query || !text) {
+    return <Text style={styles.resultSubtitle}>{text}</Text>;
+  }
 
-  /** An agent's current activity: its active run's goal, else the role. */
-  const activityFor = (agent: Agent): string => {
-    const active = runs.find(
-      (run) =>
-        run.agent_id === agent.id &&
-        !['succeeded', 'failed', 'cancelled'].includes(run.status),
-    );
-    if (!active) return agent.role ?? 'Idle';
-    return active.status === 'paused' ? `⏸ Paused: ${active.goal}` : active.goal;
-  };
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerText.indexOf(lowerQuery);
 
-  const q = query.trim().toLowerCase();
-  const filteredAgents = agents.filter((agent) => {
-    if (!q) return true;
-    return (
-      agent.name.toLowerCase().includes(q) ||
-      (agent.role ?? '').toLowerCase().includes(q) ||
-      activityFor(agent).toLowerCase().includes(q)
-    );
-  });
+  if (index === -1) {
+    return <Text style={styles.resultSubtitle}>{text}</Text>;
+  }
+
+  const before = text.slice(0, index);
+  const match = text.slice(index, index + query.length);
+  const after = text.slice(index + query.length);
 
   return (
-    <BottomSheet
-      isOpen={isOpen}
-      onOpenChange={(open: boolean) => {
-        if (!open) {
-          setQuery('');
-          onClose();
+    <Text numberOfLines={1} style={styles.resultSubtitle}>
+      {before}
+      <Text style={styles.resultSubtitleBold}>{match}</Text>
+      {after}
+    </Text>
+  );
+}
+
+/**
+ * 6.11 Search sheet conforming to design.md:
+ * - Slides up over dimmed background (overlay), top corners radius 32.
+ * - Top bar: close X (round, 44x44, surface fill), pill search field (surface fill, 44 tall, magnifying glass icon, "Search" in textSecondary), filter sliders button on the right (44x44, surface).
+ * - Results: each row has a 60pt avatar/mark, title 20/500, subtitle/preview 17/400 (with the matched word bold), and a right-aligned type label in 15pt textSecondary ("Group", "Agent", "Message").
+ */
+export function AgentSearch({
+  agents,
+  groups = [],
+  runs,
+  onSelect,
+  onSelectGroup,
+  onClose,
+  isOpen,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+
+  const q = query.trim().toLowerCase();
+
+  const results = useMemo<SearchResultItem[]>(() => {
+    const list: SearchResultItem[] = [];
+
+    // 1. Groups matching query
+    groups.forEach((g) => {
+      if (!q || g.name.toLowerCase().includes(q) || (g.description ?? '').toLowerCase().includes(q)) {
+        list.push({
+          id: `group-${g.id}`,
+          kind: 'group',
+          title: g.name,
+          subtitle: g.description || 'Group conversation',
+          group: g,
+        });
+      }
+    });
+
+    // 2. Agents matching query
+    agents.forEach((a) => {
+      if (
+        !q ||
+        a.name.toLowerCase().includes(q) ||
+        (a.role ?? '').toLowerCase().includes(q) ||
+        (a.instructions ?? '').toLowerCase().includes(q)
+      ) {
+        list.push({
+          id: `agent-${a.id}`,
+          kind: 'agent',
+          title: a.name,
+          subtitle: a.role || a.instructions?.slice(0, 50) || 'Personal assistant',
+          agent: a,
+        });
+      }
+    });
+
+    // 3. Messages matching query
+    if (q) {
+      runs.forEach((r) => {
+        if (r.goal.toLowerCase().includes(q)) {
+          const matchingAgent = agents.find((a) => a.id === r.agent_id);
+          list.push({
+            id: `msg-${r.id}`,
+            kind: 'message',
+            title: matchingAgent ? matchingAgent.name : 'Message',
+            subtitle: r.goal,
+            targetId: r.agent_id ?? '',
+            targetType: 'agent',
+            agent: matchingAgent,
+          });
         }
-      }}
+      });
+    }
+
+    return list;
+  }, [q, agents, groups, runs]);
+
+  if (!isOpen) return null;
+
+  return (
+    <Modal
+      visible={isOpen}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
     >
-      <BottomSheet.Portal>
-        <BottomSheet.Overlay />
-        <BottomSheet.Content
-          snapPoints={['50%', '90%']}
-          enableOverDrag={false}
-          enableDynamicSizing={false}
-          contentContainerClassName="h-full"
-        >
-          <BottomSheet.Close />
-          <BottomSheet.Title>Search agents</BottomSheet.Title>
-          <BottomSheet.Description>Find an agent by name, role or current activity.</BottomSheet.Description>
+      <View style={styles.overlay}>
+        <View style={[styles.sheetContainer, { paddingTop: insets.top + 8 }]}>
+          {/* Top Bar */}
+          <View style={styles.topBar}>
+            {/* Close X (round, 44x44, surface fill) */}
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close search"
+              style={({ pressed }) => [styles.roundIconBtn, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <X size={20} color={colors.textPrimary} strokeWidth={1.75} />
+            </Pressable>
 
-          <View className="gap-3 px-4 pb-4 flex-1">
-            <SearchField value={query} onChange={setQuery}>
-              <SearchField.Group>
-                <SearchField.Input
-                  placeholder="e.g. researcher, steak, idle"
-                  accessibilityLabel="Search agents"
-                  accessibilityHint="Filters the list below by name, role or current activity"
-                  autoFocus
-                />
-                <SearchField.ClearButton accessibilityLabel="Clear search" />
-              </SearchField.Group>
-            </SearchField>
-
-            <Typography type="body-xs" color="muted">
-              {filteredAgents.length} agent{filteredAgents.length === 1 ? '' : 's'}
-            </Typography>
-
-            <View className="flex-1 gap-2">
-              {filteredAgents.length === 0 ? (
-                <View className="flex-1 items-center justify-center">
-                  <Typography type="body" color="muted">
-                    {q ? 'No agents match your search' : 'No agents yet'}
-                  </Typography>
-                </View>
-              ) : (
-                filteredAgents.map((agent) => {
-                  const activityText = activityFor(agent);
-
-                  return (
-                    <Pressable
-                      key={agent.id}
-                      onPress={() => {
-                        onSelect(agent.id);
-                        setQuery('');
-                        onClose();
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${agent.name}, ${activityText}`}
-                      accessibilityHint="Opens a chat with this agent"
-                      className="flex-row items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5 active:opacity-70"
-                    >
-                      <AgentAvatar avatar={agent.avatar} size={AGENT_LIST_AVATAR_SIZE} />
-                      <View className="flex-1 min-w-0 gap-0.5">
-                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                          {agent.name}
-                        </Text>
-                        <Text className="text-xs text-muted" numberOfLines={1}>
-                          {activityText}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })
+            {/* Pill Search Field (surface fill, 44 tall, magnifying glass) */}
+            <View style={styles.searchPill}>
+              <SearchIcon size={18} color={colors.textSecondary} strokeWidth={1.75} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search"
+                placeholderTextColor={colors.textSecondary}
+                autoFocus
+                style={styles.searchInput}
+              />
+              {query.length > 0 && (
+                <Pressable
+                  onPress={() => setQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search text"
+                  style={styles.clearBtn}
+                >
+                  <X size={12} color={colors.textSecondary} strokeWidth={2} />
+                </Pressable>
               )}
             </View>
 
-            <Button variant="secondary" onPress={() => { setQuery(''); onClose(); }}>
-              <Button.Label>Close</Button.Label>
-            </Button>
+            {/* Filter sliders button on right (44x44, surface) */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Filter results"
+              style={({ pressed }) => [styles.roundIconBtn, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <SlidersHorizontal size={18} color={colors.textPrimary} strokeWidth={1.75} />
+            </Pressable>
           </View>
-        </BottomSheet.Content>
-      </BottomSheet.Portal>
-    </BottomSheet>
+
+          {/* Results List */}
+          <ScrollView
+            contentContainerStyle={{
+              paddingHorizontal: space.lg,
+              paddingTop: space.sm,
+              paddingBottom: insets.bottom + 24,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {results.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  {q ? 'No results found' : 'Type to search agents and messages'}
+                </Text>
+              </View>
+            ) : (
+              results.map((item) => {
+                const isGroup = item.kind === 'group';
+                const isAgent = item.kind === 'agent';
+                const isMessage = item.kind === 'message';
+
+                const typeLabel = isGroup ? 'Group' : isAgent ? 'Agent' : 'Message';
+
+                const handlePress = () => {
+                  onClose();
+                  if (isGroup) {
+                    onSelectGroup?.(item.group.id);
+                  } else if (isAgent) {
+                    onSelect(item.agent.id);
+                  } else if (isMessage && item.targetId) {
+                    onSelect(item.targetId);
+                  }
+                };
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={handlePress}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.title}, ${typeLabel}`}
+                    style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
+                  >
+                    {/* 60pt avatar/mark */}
+                    <View style={styles.avatarContainer}>
+                      {isGroup ? (
+                        <ClusterAvatar size={60} members={item.group.members ?? []} />
+                      ) : (
+                        <AgentAvatar
+                          avatar={isAgent ? item.agent.avatar : item.agent?.avatar}
+                          name={item.title}
+                          size={60}
+                        />
+                      )}
+                    </View>
+
+                    {/* Title 20/500, subtitle/preview 17/400 with bold match */}
+                    <View style={styles.rowContent}>
+                      <Text numberOfLines={1} style={styles.resultTitle}>
+                        {item.title}
+                      </Text>
+                      <HighlightedText text={item.subtitle} query={query} />
+                    </View>
+
+                    {/* Right-aligned type label 15pt textSecondary */}
+                    <Text style={styles.typeLabel}>{typeLabel}</Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    flex: 1,
+    backgroundColor: colors.surfaceRaised,
+    marginTop: 48,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    overflow: 'hidden',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
+    gap: space.sm,
+  },
+  roundIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchPill: {
+    flex: 1,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    gap: space.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+  },
+  clearBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.divider,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
+  },
+  avatarContainer: {
+    marginRight: space.md,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowContent: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: space.sm,
+  },
+  resultTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  resultSubtitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  resultSubtitleBold: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  typeLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    marginLeft: 8,
+  },
+});

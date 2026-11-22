@@ -68,8 +68,8 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 async function main() {
-  const userId = process.env.CHECK_USER_ID ?? process.env.ALLOWED_USER_ID;
-  if (!userId) throw new Error("CHECK_USER_ID / ALLOWED_USER_ID is not set.");
+  const userId = process.env.CHECK_USER_ID;
+  if (!userId) throw new Error("CHECK_USER_ID is not set.");
 
   const admin = supabaseAdmin();
   const taskIds: string[] = [];

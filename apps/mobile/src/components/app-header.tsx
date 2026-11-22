@@ -1,47 +1,75 @@
-import type { ReactNode } from 'react';
-import { BlurView } from 'expo-blur';
-import { Platform, View } from 'react-native';
+import React, { type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, space } from '@/theme';
 
 type Props = {
-  /** Left-hand control (usually an icon button or drawer toggle). */
+  /** Left-hand control (usually RoundButton with ChevronLeft or X). */
   left?: ReactNode;
-  /** Centred content — a title or model capsule picker. */
+  /** Centred content — title pill or text. */
   center?: ReactNode;
-  /** Right-hand control. */
+  /** Right-hand control (round button, pill action, etc.). */
   right?: ReactNode;
-  /** Extra bottom padding, e.g. for a hairline + spacing. */
+  /** Extra bottom padding. */
   bottomInset?: number;
 };
 
 /**
- * Grok-inspired translucent frosted header.
- * Uses BlurView with a dark obsidian tint and hairline border.
+ * 6.1 Floating header conforming to design.md:
+ * - No navigation bar background.
+ * - Left: round back button (44x44, surfaceRaised, floating shadow).
+ * - Center: title pill or clean text.
+ * - Right: round button or primary pill action.
  */
 export function AppHeader({ left, center, right, bottomInset = 0 }: Props) {
   const insets = useSafeAreaInsets();
 
-  const content = (
+  return (
     <View
-      className="border-b border-white/10 px-3.5 pb-2.5"
-      style={{ paddingTop: insets.top + 6, paddingBottom: 10 + bottomInset }}
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top + space.sm,
+          paddingBottom: space.sm + bottomInset,
+        },
+      ]}
     >
-      <View className="h-11 flex-row items-center justify-between gap-2">
-        <View className="min-w-10 flex-row items-center justify-start">{left}</View>
-        <View className="flex-1 items-center justify-center">{center}</View>
-        <View className="min-w-10 flex-row items-center justify-end">{right}</View>
+      <View style={styles.bar}>
+        <View style={styles.leftSlot}>{left}</View>
+        {center ? <View style={styles.centerSlot}>{center}</View> : null}
+        <View style={styles.rightSlot}>{right}</View>
       </View>
     </View>
   );
-
-  if (Platform.OS === 'ios') {
-    return (
-      <BlurView intensity={70} tint="dark" className="bg-[#09090b]/60">
-        {content}
-      </BlurView>
-    );
-  }
-
-  // Android / Web fallback
-  return <View className="bg-[#09090b]/95">{content}</View>;
 }
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: space.lg,
+  },
+  bar: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.sm,
+  },
+  leftSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexShrink: 0,
+  },
+  centerSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rightSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+  },
+});

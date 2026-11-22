@@ -90,8 +90,8 @@ async function mintAccessToken(userId: string): Promise<string | null> {
 }
 
 async function main() {
-  const userId = process.env.ALLOWED_USER_ID;
-  if (!userId) throw new Error("ALLOWED_USER_ID is not set.");
+  const userId = process.env.CHECK_USER_ID;
+  if (!userId) throw new Error("CHECK_USER_ID is not set.");
 
   const admin = supabaseAdmin();
   const createdRoutineIds: string[] = [];

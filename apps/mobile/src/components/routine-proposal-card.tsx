@@ -1,17 +1,15 @@
 import { useState } from 'react';
-import { Button, Typography } from 'heroui-native';
-import { Pressable, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarClock, Check, Pencil } from 'lucide-react-native';
 
+import { PillButton } from '@/components/design-system';
 import { formatDateTime } from '@/lib/dates';
 import { activateRoutine } from '@/lib/routines';
+import { colors, radius, space, typography } from '@/theme';
 
 /**
- * The routine proposal card (Phase 10).
- *
- * When the agent proposes a schedule, the app shows this card: the name, the
- * human-readable schedule and the next three runs. Nothing recurring starts
- * until the user taps Confirm.
+ * The routine proposal card (Phase 10) conforming to design.md.
+ * Monochrome surfaces, hairline dividers, green check for confirmed.
  */
 
 export type RoutineProposal = {
@@ -50,75 +48,68 @@ export function RoutineProposalCard({ proposal, onEdit }: Props) {
   const confirmed = state === 'confirmed';
 
   return (
-    <View className="my-1 gap-3 rounded-2xl border border-sky-500/25 bg-sky-500/5 p-3.5">
-      <View className="flex-row items-center gap-2">
-        <CalendarClock size={16} color="#38bdf8" />
-        <Typography type="body-sm" weight="semibold" className="flex-1 text-sky-200">
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <CalendarClock size={16} color={colors.textSecondary} strokeWidth={1.75} />
+        <Text style={styles.title} numberOfLines={1}>
           {proposal.name}
-        </Typography>
+        </Text>
         {confirmed ? (
-          <View className="flex-row items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5">
-            <Check size={11} color="#4ade80" />
-            <Typography type="body-xs" className="text-emerald-300">
-              Scheduled
-            </Typography>
+          <View style={styles.confirmedBadge}>
+            <Check size={13} color={colors.success} strokeWidth={2.2} />
+            <Text style={styles.confirmedText}>Scheduled</Text>
           </View>
         ) : null}
       </View>
 
-      <Typography type="body-xs" className="text-zinc-300">
+      <Text style={styles.scheduleText}>
         {proposal.scheduleLabel}
-      </Typography>
+      </Text>
 
       {proposal.prompt ? (
-        <Typography type="body-xs" className="text-zinc-400">
+        <Text style={styles.promptText}>
           {proposal.prompt}
-        </Typography>
+        </Text>
       ) : null}
 
       {proposal.nextRuns.length > 0 ? (
-        <View className="gap-1 rounded-xl border border-white/5 bg-black/20 px-3 py-2">
-          <Typography type="body-xs" className="text-zinc-500">
+        <View style={styles.nextRunsContainer}>
+          <Text style={styles.nextRunsLabel}>
             Next runs
-          </Typography>
+          </Text>
           {proposal.nextRuns.map((run) => (
-            <Typography key={run} type="body-xs" className="text-zinc-300">
+            <Text key={run} style={styles.runDateText}>
               {formatDateTime(run, proposal.tz)}
-            </Typography>
+            </Text>
           ))}
         </View>
       ) : null}
 
       {error ? (
-        <Typography type="body-xs" className="text-red-400">
+        <Text style={styles.errorText}>
           {error}
-        </Typography>
+        </Text>
       ) : null}
 
       {!confirmed ? (
-        <View className="flex-row items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            className="rounded-full px-3"
+        <View style={styles.actions}>
+          <PillButton
+            label={state === 'confirming' ? 'Confirming…' : 'Confirm'}
             onPress={() => void confirm()}
-            isDisabled={state === 'confirming'}
-            accessibilityRole="button"
-            accessibilityLabel="Confirm this routine"
-          >
-            <Button.Label>{state === 'confirming' ? 'Confirming…' : 'Confirm'}</Button.Label>
-          </Button>
+            disabled={state === 'confirming'}
+          />
           {onEdit ? (
             <Pressable
               onPress={() => onEdit(proposal.routineId)}
               accessibilityRole="button"
               accessibilityLabel="Edit this routine"
-              className="flex-row items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 active:bg-white/10"
+              style={({ pressed }) => [
+                styles.editButton,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
             >
-              <Pencil size={12} color="#a1a1aa" />
-              <Typography type="body-xs" className="text-zinc-300">
-                Edit
-              </Typography>
+              <Pencil size={14} color={colors.textPrimary} strokeWidth={1.75} />
+              <Text style={styles.editText}>Edit</Text>
             </Pressable>
           ) : null}
         </View>
@@ -126,3 +117,87 @@ export function RoutineProposalCard({ proposal, onEdit }: Props) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    marginVertical: space.xs,
+    gap: space.sm,
+    borderRadius: radius.card,
+    backgroundColor: colors.surfaceRaised,
+    padding: space.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  title: {
+    flex: 1,
+    ...typography.rowTitle,
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  confirmedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  confirmedText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.success,
+  },
+  scheduleText: {
+    ...typography.bodySecondary,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  promptText: {
+    ...typography.bodySecondary,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  nextRunsContainer: {
+    gap: 4,
+    borderRadius: radius.inner,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  nextRunsLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  runDateText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textPrimary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.recording,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginTop: space.xs,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+  },
+  editText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+});

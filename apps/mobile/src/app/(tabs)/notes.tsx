@@ -1,20 +1,50 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FileText, Folder, Plus, RefreshCw, Search, X } from 'lucide-react-native';
+import { ChevronRight, FileText, Folder, Plus, RefreshCw, Search, X } from 'lucide-react-native';
 import type { Note, NoteChunk } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, HairlineDivider, PillButton, RoundButton } from '@/components/design-system';
+import { colors, radius, shadow, space } from '@/theme';
 import { fetchNotes, saveNote, searchNotes, suggestNotePath, syncVault } from '@/lib/knowledge';
+import { useSession } from '@/lib/session';
+
+function formatNoteDate(dateStr?: string | null): string {
+  if (!dateStr) return 'Markdown note';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 'Markdown note';
+
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return `Updated today, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return `Updated ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
 
 export default function NotesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { session } = useSession();
 
   const [notes, setNotes] = useState<Note[]>([]);
-  const [matches, setMatches] = useState<NoteChunk[] | null>(null);
+  const [search, setSearch] = useState<{ query: string; results: NoteChunk[] } | null>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,45 +71,51 @@ export default function NotesScreen() {
     }, [load]),
   );
 
+  const trimmedQuery = query.trim();
+
+  // The visible results are derived during render: an empty query simply has
+  // no results, and results from an older query are never shown against a
+  // newer one. Clearing the search is therefore not an effect at all.
+  const matches = trimmedQuery && search?.query === trimmedQuery ? search.results : null;
+
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+    if (!trimmedQuery) return;
 
     let active = true;
     const timer = setTimeout(() => {
-      void searchNotes(trimmed).then((result) => {
-        if (active) setMatches(result);
+      void searchNotes(trimmedQuery).then((result) => {
+        if (active) setSearch({ query: trimmedQuery, results: result });
       });
-    }, 350);
+    }, 250);
 
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [trimmedQuery]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setNotice(null);
-    const result = await syncVault();
-    setSyncing(false);
-    setNotice(
-      result.ok
-        ? 'Vault sync queued. Index refreshes in background.'
-        : (result.message ?? 'Could not sync vault.'),
-    );
-    if (result.ok) void load();
+    try {
+      const summary = await syncVault();
+      setNotice(summary.message ?? (summary.ok ? 'Vault synced successfully.' : 'Vault sync initiated.'));
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSyncing(false);
+    }
   }, [load]);
-
-  const effectiveMatches = query.trim() ? matches : null;
 
   const handleCreate = useCallback(async () => {
     const title = newTitle.trim();
-    if (!title || creating) return;
+    if (!title) return;
     setCreating(true);
     try {
       const path = suggestNotePath(title);
-      await saveNote(path, `# ${title}\n\n`);
+      const initial = `# ${title}\n\n`;
+      await saveNote(path, initial);
       setNewOpen(false);
       setNewTitle('');
       router.push({ pathname: '/note', params: { path } });
@@ -88,7 +124,7 @@ export default function NotesScreen() {
     } finally {
       setCreating(false);
     }
-  }, [creating, newTitle, router]);
+  }, [newTitle, router]);
 
   const grouped = useMemo(() => {
     const folders = new Map<string, Note[]>();
@@ -101,91 +137,85 @@ export default function NotesScreen() {
     return [...folders.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [notes]);
 
+  const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
+
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
+      {/* 6.1 Floating AppHeader */}
       <AppHeader
         left={
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.push('/more')}
             accessibilityRole="button"
-            className="px-2 py-1 active:opacity-60"
+            accessibilityLabel="Open settings"
+            style={({ pressed }) => [
+              styles.initialsAvatar,
+              shadow.floating,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
           >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Close
-            </Typography>
+            <Text style={styles.initialsText}>{userInitial}</Text>
           </Pressable>
         }
         center={
-          <Typography type="body" weight="semibold" className="text-zinc-900 dark:text-white">
-            Knowledge Vault
-          </Typography>
+          <Text style={styles.headerTitle}>Notes</Text>
         }
         right={
-          <View className="flex-row items-center gap-1.5">
-            <Pressable
-              onPress={() => setNewOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="New note"
-              className="h-8.5 w-8.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-            >
-              <Plus size={14} color="#71717a" />
-            </Pressable>
-            <Pressable
+          <View style={styles.headerActions}>
+            <RoundButton
+              icon={RefreshCw}
               onPress={() => void handleSync()}
-              disabled={syncing}
-              accessibilityRole="button"
               accessibilityLabel="Sync vault"
-              className="h-8.5 px-3 flex-row items-center gap-1.5 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-            >
-              {syncing ? (
-                <Spinner size="sm" color="default" />
-              ) : (
-                <>
-                  <RefreshCw size={13} color="#71717a" />
-                  <Text className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Sync
-                  </Text>
-                </>
-              )}
-            </Pressable>
+            />
+            <RoundButton
+              icon={Plus}
+              onPress={() => setNewOpen(true)}
+              accessibilityLabel="New note"
+            />
           </View>
         }
       />
 
-      {/* Search Input */}
-      <View className="px-4 py-2">
-        <View className="flex-row items-center rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-3.5 py-2.5 gap-2">
-          <Search size={16} color="#71717a" />
+      {/* Pill Search Input */}
+      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.xs }}>
+        <View style={styles.searchBar}>
+          <Search size={16} color={colors.textSecondary} strokeWidth={1.75} />
           <TextInput
-            className="flex-1 text-sm text-zinc-900 dark:text-white"
-            placeholder="Search notes with semantic hybrid search…"
-            placeholderTextColor="#71717a"
+            style={styles.searchInput}
+            placeholder="Search notes…"
+            placeholderTextColor={colors.textSecondary}
             value={query}
             onChangeText={setQuery}
             autoCapitalize="none"
             autoCorrect={false}
           />
           {query ? (
-            <Pressable onPress={() => setQuery('')} className="p-1">
-              <X size={14} color="#71717a" />
+            <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear">
+              <X size={16} color={colors.textSecondary} />
             </Pressable>
           ) : null}
         </View>
       </View>
 
       {notice ? (
-        <View className="mx-4 mt-1 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3.5 py-2.5">
-          <Text className="text-xs text-sky-500 dark:text-sky-400">{notice}</Text>
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeText}>{notice}</Text>
         </View>
       ) : null}
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 16 }}
+          contentContainerStyle={{
+            paddingHorizontal: space.lg,
+            paddingTop: space.sm,
+            paddingBottom: insets.bottom + 100, // accommodate pill dock
+            gap: space.lg,
+          }}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -193,131 +223,338 @@ export default function NotesScreen() {
                 setRefreshing(true);
                 void load();
               }}
-              tintColor="#8b5cf6"
+              tintColor={colors.textPrimary}
             />
           }
         >
-          {effectiveMatches ? (
-            <View className="gap-2.5">
-              <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 px-1">
-                {`${effectiveMatches.length} Search Result${effectiveMatches.length === 1 ? '' : 's'}`}
+          {matches ? (
+            <View style={{ gap: space.sm }}>
+              <Text style={styles.sectionLabel}>
+                {`${matches.length} Result${matches.length === 1 ? '' : 's'}`}
               </Text>
-              {effectiveMatches.map((match) => (
-                <Pressable
-                  key={match.chunk_id}
-                  onPress={() =>
-                    router.push({ pathname: '/note', params: { path: match.path } })
-                  }
-                  className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-4 active:bg-zinc-100 dark:active:bg-[#18181e] gap-1.5 shadow-sm"
-                >
-                  <View className="flex-row items-center gap-2">
-                    <FileText size={15} color="#3b82f6" />
-                    <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
-                      {match.path}
-                    </Text>
-                  </View>
-                  {match.heading ? (
-                    <Text className="text-xs font-medium text-purple-500">
-                      § {match.heading}
-                    </Text>
-                  ) : null}
-                  <Text numberOfLines={3} className="text-xs text-zinc-500 dark:text-zinc-400 leading-4">
-                    {match.content}
-                  </Text>
-                </Pressable>
-              ))}
-              {effectiveMatches.length === 0 ? (
-                <Text className="mt-8 text-center text-sm text-zinc-500">
+              <GroupedCard>
+                {matches.map((match, index) => (
+                  <React.Fragment key={match.chunk_id}>
+                    {index > 0 && <HairlineDivider inset={60} />}
+                    <Pressable
+                      onPress={() =>
+                        router.push({ pathname: '/note', params: { path: match.path } })
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={match.path}
+                      style={({ pressed }) => [
+                        styles.noteRow,
+                        { opacity: pressed ? 0.6 : 1 },
+                      ]}
+                    >
+                      <View style={styles.tileIcon}>
+                        <FileText size={18} color={colors.textSecondary} strokeWidth={1.75} />
+                      </View>
+                      <View style={styles.noteContent}>
+                        <Text numberOfLines={1} style={styles.noteName}>
+                          {match.path.replace(/\.md$/i, '')}
+                          <Text style={styles.noteExt}>.md</Text>
+                        </Text>
+                        <Text numberOfLines={1} style={styles.previewText}>
+                          {match.content.slice(0, 80)}
+                        </Text>
+                      </View>
+                      <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
+                    </Pressable>
+                  </React.Fragment>
+                ))}
+              </GroupedCard>
+              {matches.length === 0 ? (
+                <Text style={styles.emptyText}>
                   No matching notes found.
                 </Text>
               ) : null}
             </View>
           ) : notes.length === 0 ? (
-            <View className="mt-20 items-center justify-center px-6 gap-3">
-              <View className="h-16 w-16 items-center justify-center rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
-                <FileText size={28} color="#71717a" />
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <FileText size={32} color={colors.textSecondary} strokeWidth={1.5} />
               </View>
-              <Text className="text-base font-semibold text-zinc-900 dark:text-white">
-                No notes indexed yet
+              <Text style={styles.emptyTitle}>No notes yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Add markdown notes to your vault or tap + to create one.
               </Text>
-              <Text className="text-xs text-zinc-500 text-center max-w-xs">
-                Configure your vault in environment or tap Sync to index your markdown notes into the vector store.
-              </Text>
+              <PillButton
+                label="Create note"
+                onPress={() => setNewOpen(true)}
+                variant="primary"
+                style={{ marginTop: space.md }}
+              />
             </View>
           ) : (
             grouped.map(([folder, folderNotes]) => (
-              <View key={folder} className="gap-2">
-                <View className="flex-row items-center gap-1.5 px-1">
-                  <Folder size={14} color="#71717a" />
-                  <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                    {folder}
-                  </Text>
+              <View key={folder} style={{ gap: space.xs }}>
+                <View style={styles.folderHeader}>
+                  <Folder size={14} color={colors.textSecondary} />
+                  <Text style={styles.sectionLabel}>{folder}</Text>
                 </View>
-                <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] overflow-hidden">
-                  {folderNotes.map((note, index) => (
-                    <Pressable
-                      key={note.id}
-                      onPress={() =>
-                        router.push({ pathname: '/note', params: { path: note.path } })
-                      }
-                      className={`flex-row items-center justify-between px-4 py-3 active:bg-zinc-100 dark:active:bg-[#18181e] ${
-                        index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''
-                      }`}
-                    >
-                      <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
-                        <FileText size={16} color="#71717a" />
-                        <View className="flex-1 min-w-0">
-                          <Text numberOfLines={1} className="text-sm font-semibold text-zinc-900 dark:text-white">
-                            {note.title ?? note.path}
-                          </Text>
-                          <Text numberOfLines={1} className="text-xs text-zinc-400 mt-0.5">
-                            {note.path}
-                          </Text>
-                        </View>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
+                <GroupedCard>
+                  {folderNotes.map((note, index) => {
+                    const rawName = note.title || note.path.split('/').pop() || note.path;
+                    const baseName = rawName.replace(/\.md$/i, '');
+                    return (
+                      <React.Fragment key={note.id}>
+                        {index > 0 && <HairlineDivider inset={60} />}
+                        <Pressable
+                          onPress={() =>
+                            router.push({ pathname: '/note', params: { path: note.path } })
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={note.title ?? note.path}
+                          style={({ pressed }) => [
+                            styles.noteRow,
+                            { opacity: pressed ? 0.6 : 1 },
+                          ]}
+                        >
+                          <View style={styles.tileIcon}>
+                            <FileText size={18} color={colors.textSecondary} strokeWidth={1.75} />
+                          </View>
+                          <View style={styles.noteContent}>
+                            <Text numberOfLines={1} style={styles.noteName}>
+                              {baseName}
+                              <Text style={styles.noteExt}>.md</Text>
+                            </Text>
+                            <Text numberOfLines={1} style={styles.noteSubtitle}>
+                              {formatNoteDate(note.updated_at)}
+                            </Text>
+                          </View>
+                          <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
+                        </Pressable>
+                      </React.Fragment>
+                    );
+                  })}
+                </GroupedCard>
               </View>
             ))
           )}
         </ScrollView>
       )}
 
-      {/* New note */}
+      {/* New Note Modal */}
       <Modal visible={newOpen} transparent animationType="fade" onRequestClose={() => setNewOpen(false)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full max-w-md rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#121215] p-5 gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-base font-bold text-zinc-900 dark:text-white">New note</Text>
-              <Pressable onPress={() => setNewOpen(false)} accessibilityRole="button">
-                <X size={18} color="#71717a" />
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Note</Text>
+              <Pressable
+                onPress={() => setNewOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <X size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
               autoFocus
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white"
-              placeholder="Note title"
-              placeholderTextColor="#71717a"
+              style={styles.modalInput}
+              placeholder="Note title or path (e.g. Ideas/Project)"
+              placeholderTextColor={colors.textSecondary}
               value={newTitle}
               onChangeText={setNewTitle}
               onSubmitEditing={() => void handleCreate()}
               returnKeyType="done"
             />
-            <Pressable
+            <PillButton
+              label={creating ? 'Creating…' : 'Create note'}
               onPress={() => void handleCreate()}
               disabled={creating || !newTitle.trim()}
-              className="rounded-2xl bg-zinc-900 dark:bg-white py-3 items-center active:opacity-80 disabled:opacity-40"
-            >
-              {creating ? (
-                <Spinner size="sm" color="default" />
-              ) : (
-                <Text className="text-sm font-bold text-white dark:text-zinc-900">Create note</Text>
-              )}
-            </Pressable>
+              variant="primary"
+            />
           </View>
         </View>
       </Modal>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  initialsAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initialsText: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  noticeBox: {
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  noticeText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  center: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  folderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: space.xs,
+  },
+  sectionLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 12,
+  },
+  tileIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.tile,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noteContent: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  noteName: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  noteExt: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textTertiary,
+  },
+  noteSubtitle: {
+    fontSize: 13,
+    lineHeight: 16,
+    color: colors.textSecondary,
+  },
+  previewText: {
+    fontSize: 13,
+    lineHeight: 16,
+    color: colors.textSecondary,
+  },
+  emptyContainer: {
+    marginTop: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.xs,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.sm,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: space.md,
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlay,
+    paddingHorizontal: space.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: radius.sheet,
+    backgroundColor: colors.surfaceRaised,
+    padding: space.xl,
+    gap: space.md,
+    ...shadow.floating,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalInput: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: 12,
+    fontSize: 17,
+    color: colors.textPrimary,
+  },
+});

@@ -105,7 +105,7 @@ Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes
 9. Token usage is cumulative: a run that parks on an approval keeps what it already spent, and the resume adds to it. Consult tokens are charged to the member turn and therefore to the group's cumulative budget.
 
 ## 4. Security model
-- Single allowed user; every API route verifies the Supabase JWT and `ALLOWED_USER_ID`. RLS on all tables as defense in depth.
+- One app account; Supabase Auth accepts email/password and a database trigger rejects additional users. Every API route verifies the Supabase JWT; RLS and explicit `user_id` filters scope data.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.
 - **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list.
 - Canvas actions are a fixed enum; no eval, no model-supplied code. WebView HTML is sandboxed (no network, no native bridge).

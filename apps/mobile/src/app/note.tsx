@@ -5,16 +5,19 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, FileText, Link2, Pencil, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, FileText, Link2, Pencil, Trash2 } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
+import { colors, radius, shadow, space } from '@/theme';
 import { deleteNote, fetchNote, saveNote } from '@/lib/knowledge';
 
 export default function NoteScreen() {
@@ -31,6 +34,14 @@ export default function NoteScreen() {
   const [draftPath, setDraftPath] = useState(path ?? '');
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/notes' as never);
+    }
+  }, [router]);
 
   const load = useCallback(async () => {
     if (!path) return;
@@ -71,12 +82,11 @@ export default function NoteScreen() {
     setNotice(null);
     try {
       await saveNote(nextPath, content);
-      // A rename leaves the old file behind — remove it.
       if (nextPath !== path) {
         try {
           await deleteNote(path);
         } catch (error) {
-          console.warn('[notes] could not remove the old note:', error);
+          console.warn('[notes] could not remove old note:', error);
         }
         router.replace({ pathname: '/note', params: { path: nextPath } });
       }
@@ -98,150 +108,118 @@ export default function NoteScreen() {
         style: 'destructive',
         onPress: () => {
           void deleteNote(path)
-            .then(() => router.back())
+            .then(() => handleBack())
             .catch((err) => setNotice(err instanceof Error ? err.message : String(err)));
         },
       },
     ]);
-  }, [path, router]);
+  }, [handleBack, path]);
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="flex-1 bg-white dark:bg-[#09090b]"
+      style={styles.screen}
     >
+      {/* 6.1 Floating AppHeader */}
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Back
-            </Typography>
-          </Pressable>
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Go back"
+          />
         }
         center={
-          <Typography type="body-sm" weight="semibold" numberOfLines={1} className="text-zinc-900 dark:text-white">
+          <Text numberOfLines={1} style={styles.headerTitle}>
             {editing ? 'Edit note' : (note?.note.title ?? path ?? 'Note')}
-          </Typography>
+          </Text>
         }
         right={
           editing ? (
-            <View className="flex-row items-center gap-1">
-              <Pressable
-                onPress={() => void handleSave()}
-                disabled={saving}
-                accessibilityRole="button"
-                accessibilityLabel="Save note"
-                className="h-8.5 px-3 flex-row items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 active:opacity-75"
-              >
-                {saving ? (
-                  <Spinner size="sm" color="default" />
-                ) : (
-                  <>
-                    <Check size={13} color="#10b981" />
-                    <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                      Save
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
+            <PillButton
+              label={saving ? 'Saving…' : 'Save'}
+              onPress={() => void handleSave()}
+              disabled={saving}
+              variant="primary"
+            />
           ) : (
-            <View className="flex-row items-center gap-1">
-              <Pressable
+            <View style={styles.headerActions}>
+              <RoundButton
+                icon={Pencil}
                 onPress={() => setEditing(true)}
-                accessibilityRole="button"
                 accessibilityLabel="Edit note"
-                className="h-8.5 w-8.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-              >
-                <Pencil size={13} color="#71717a" />
-              </Pressable>
-              <Pressable
+              />
+              <RoundButton
+                icon={Trash2}
                 onPress={handleDelete}
-                accessibilityRole="button"
                 accessibilityLabel="Delete note"
-                className="h-8.5 w-8.5 items-center justify-center rounded-full border border-red-500/25 bg-red-500/10 active:opacity-75"
-              >
-                <Trash2 size={13} color="#ef4444" />
-              </Pressable>
+              />
             </View>
           )
         }
       />
 
       {notice ? (
-        <View className="mx-4 mt-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2.5">
-          <Text className="text-xs text-red-500 dark:text-red-400">{notice}</Text>
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeText}>{notice}</Text>
         </View>
       ) : null}
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : editing ? (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 12 }}
+          contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.md }}
           keyboardShouldPersistTaps="handled"
         >
-          <View className="gap-1.5">
-            <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Path (rename or move)
-            </Text>
+          <View style={{ gap: space.xs }}>
+            <Text style={styles.fieldLabel}>Path</Text>
             <TextInput
-              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white"
+              style={styles.pathInput}
               value={draftPath}
               onChangeText={setDraftPath}
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="folder/note.md"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textSecondary}
             />
           </View>
 
-          <View className="gap-1.5">
-            <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Markdown
-            </Text>
+          <View style={{ gap: space.xs }}>
+            <Text style={styles.fieldLabel}>Markdown</Text>
             <TextInput
-              className="min-h-[320px] rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3.5 py-3 text-sm text-zinc-900 dark:text-white leading-5"
+              style={styles.contentInput}
               value={content}
               onChangeText={setContent}
               multiline
               textAlignVertical="top"
               placeholder="# Title\n\nWrite in markdown…"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textSecondary}
             />
           </View>
-
-          <Text className="text-[11px] text-zinc-400">
-            Saving commits the note to your vault immediately — no approval needed for edits you
-            make yourself.
-          </Text>
         </ScrollView>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 20 }}
+          contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.lg }}
         >
           {error ? (
-            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
-              <Text className="text-sm text-red-500 text-center">{error}</Text>
+            <View style={styles.noticeBox}>
+              <Text style={styles.noticeText}>{error}</Text>
             </View>
           ) : null}
 
           {note ? (
             <>
               {/* Note Header Title */}
-              <View className="gap-1 border-b border-zinc-200 dark:border-white/10 pb-4">
-                <Text className="text-2xl font-bold text-zinc-900 dark:text-white leading-8">
+              <View style={styles.noteTitleSection}>
+                <Text style={styles.noteTitle}>
                   {note.note.title ?? note.note.path}
                 </Text>
-                <View className="flex-row items-center gap-1.5 mt-1">
-                  <FileText size={13} color="#71717a" />
-                  <Text className="text-xs text-zinc-400">
+                <View style={styles.notePathRow}>
+                  <FileText size={16} color={colors.textSecondary} strokeWidth={1.75} />
+                  <Text style={styles.notePathText}>
                     {note.note.path}
                   </Text>
                 </View>
@@ -249,21 +227,21 @@ export default function NoteScreen() {
 
               {/* Tappable Wikilinks */}
               {note.links.length > 0 ? (
-                <View className="gap-2">
-                  <View className="flex-row items-center gap-1.5">
-                    <Link2 size={13} color="#71717a" />
-                    <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Linked Notes
-                    </Text>
+                <View style={{ gap: space.sm }}>
+                  <View style={styles.notePathRow}>
+                    <Link2 size={16} color={colors.textSecondary} strokeWidth={1.75} />
+                    <Text style={styles.fieldLabel}>Linked Notes</Text>
                   </View>
-                  <View className="flex-row flex-wrap gap-1.5">
+                  <View style={styles.linksRow}>
                     {note.links.map((link) => (
                       <Pressable
                         key={link}
                         onPress={() => openPath(link)}
-                        className="rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-3 py-1 active:bg-zinc-100"
+                        accessibilityRole="button"
+                        accessibilityLabel={`Link to ${link}`}
+                        style={({ pressed }) => [styles.linkPill, { opacity: pressed ? 0.6 : 1 }]}
                       >
-                        <Text className="text-xs font-medium text-purple-600 dark:text-purple-400">
+                        <Text style={styles.linkText}>
                           [[{link}]]
                         </Text>
                       </Pressable>
@@ -273,11 +251,11 @@ export default function NoteScreen() {
               ) : null}
 
               {/* Note Body */}
-              <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-5">
-                <Text className="text-base text-zinc-800 dark:text-zinc-200 leading-7">
+              <GroupedCard style={{ paddingVertical: space.lg }}>
+                <Text style={styles.noteBodyText}>
                   {note.content}
                 </Text>
-              </View>
+              </GroupedCard>
             </>
           ) : null}
         </ScrollView>
@@ -285,3 +263,118 @@ export default function NoteScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+    gap: space.sm,
+  },
+  headerTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  noticeBox: {
+    marginHorizontal: space.lg,
+    marginTop: space.xs,
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  noticeText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.recording,
+  },
+  fieldLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    fontWeight: '400',
+  },
+  pathInput: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: 12,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+  },
+  contentInput: {
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+    minHeight: 280,
+  },
+  noteTitleSection: {
+    paddingBottom: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
+    gap: space.xs,
+  },
+  noteTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  notePathRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  notePathText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  linksRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  linkPill: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  linkText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.link,
+    textDecorationLine: 'underline',
+  },
+  noteBodyText: {
+    fontSize: 17,
+    lineHeight: 24,
+    color: colors.textPrimary,
+  },
+});

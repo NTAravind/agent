@@ -1,611 +1,239 @@
-# Agent — Mobile App Screen Catalog
+# design.md: Design Language for the App (Expo / React Native , Android first )
 
-> **Design reference** for the Expo mobile app (`apps/mobile`). Every route in `src/app/` is a screen. This document captures the current implementation state (Phases 0–7 complete, Phase 8 pending) so a designer can audit, redline, or hand off.
+This file is the single source of truth for UI. Follow it exactly. If something is not covered here, choose the quieter, plainer, more monochrome option. Do not invent new styles.
 
----
+## 1. Principles
 
-## Global Patterns
+1. **Monochrome UI, colorful characters.** Chrome, text, buttons and surfaces are white, light gray, black and gray. The only saturated color on screen comes from the agent "marks" (the little colored blob characters). Never add color elsewhere.
+2. **Soft and quiet.** Big radii, no borders, hairline dividers only, very soft shadows. Nothing glows, shines or gradients.
+3. **Native iOS feel.** System font, SF Symbols-style outline icons, bottom sheets, pill inputs, floating round buttons.
+4. **Generous space.** Large touch targets (44pt minimum), roomy rows, 17pt body text.
+5. **Calm copy.** Short, human, lowercase-friendly sentences. No hype, no "magic" language.
 
-| Pattern | Details |
-|---------|---------|
-| **Navigation** | Expo Router v5, stack + tabs. Root `_layout.tsx` holds the tab bar (Chat, Agents, Canvas, Notes, Settings). Deep links: `chat?threadId=…`, `chat?agentId=…`, `agents/[id]`, `agents/[id]/edit`, `canvas/[id]`, `run/[id]`, `note/[id]`. |
-| **Header** | `AppHeader` (translucent frosted blur with `expo-blur`, hairline border, left / center / right slots). Chat has two contexts: free chat (menu · ModelPicker capsule · new chat) and agent chat (back · avatar+name capsule · search+details). Icons are Lucide React Native via `constants/icons.ts`. |
-| **Colors** | Grok Obsidian Palette: deep pitch-black background (`#000000`/`#09090b`), dark graphite surfaces (`#121215`/`#18181b`), ultra-thin translucent borders (`rgba(255, 255, 255, 0.08)` / `#27272a`), pure white text, subtle glowing indicators. |
-| **Typography** | HeroUI Native `Typography` variants: `heading` (32), `title` (24), `body` (16), `body-xs` (12). Weight: `semibold` for labels, `medium` for body. |
-| **Spacing** | 4 pt base. `gap-1` (4), `gap-2` (8), `gap-3` (12), `p-3` (12), `p-4` (16), `p-5` (20). |
-| **Radius** | `rounded-xl` (12) for cards, `rounded-3xl` (24) for floating capsule containers, `rounded-full` for chips/pills and buttons. |
-| **Shadows/Elevation** | Subtle: `shadow-sm` on cards, `shadow-lg` on modals/sheets. No heavy elevation. |
-| **Motion** | Modal slide-up (300 ms), sheet drag-handle, `active:opacity-60` on pressable rows. Smooth pulse for streaming/thinking. |
-| **Empty States** | Grok-inspired centered glowing geometric emblem + bold prompt *"What do you want to explore?"* + categorized capability pills (DeepSearch, Think, Quick Answer, Agent Task). |
-| **Loading** | `Spinner` (HeroUI) for full-screen; inline skeleton rows for lists; glowing pulse and elapsed thinking badge for reasoning models. |
-| **Error** | Inline red `Typography` under field; toast for transient errors; full-screen "Something went wrong" with retry. |
-| **Accessibility** | All interactive: `accessibilityRole`, `accessibilityLabel`, `accessibilityHint`. Dynamic Type supported (system font scale). |
+## 2. Hard Rules: Do NOT
 
----
+- No "AI-looking" colors: no purple/indigo/violet-to-blue gradients, no neon, no glowing or colored shadows, no mesh gradients, no rainbow borders.
+- No "AI-looking" icons: no sparkles (✨ or ✦), no magic wand, no robot, no brain, no chip, no lightning bolt "AI" badge, no star-burst, no "AI" or "beta" labels.
+- No emoji as icons or decoration in UI.
+- No filled or duotone icon packs, no Material ripple look, no heavy 3D or skeuomorphic effects.
+- No borders around cards or inputs (use fill color only). Hairline dividers inside grouped lists are allowed.
+- No new accent color for buttons, links or highlights beyond the ones defined below.
+- No dark navy, slate-blue or tinted grays. Grays are neutral.
+- No gradient fills on buttons, cards, avatars or marks. Marks are flat color.
+- No full-width bottom tab bar or Material-style FAB. Navigation uses the floating round buttons described below.
 
-## Tab Bar (Root Layout)
+## 3. Color Tokens
 
-**Route:** `src/app/_layout.tsx` → renders 5 tabs.
+Values were sampled from the reference screens. Treat as exact.
 
-| Tab | Icon | Label | Screen |
-|-----|------|-------|--------|
-| 1 | `message-square` | **Chat** | `chat.tsx` |
-| 2 | `bot` | **Agents** | `agents.tsx` |
-| 3 | `layout-dashboard` | **Canvas** | `canvas.tsx` |
-| 4 | `file-text` | **Notes** | `notes.tsx` |
-| 5 | `settings` | **Settings** | `settings.tsx` |
+```ts
+export const colors = {
+  // Surfaces
+  background: '#FCFCFC',      // screen background (near white, not pure white)
+  surface: '#F3F3F3',         // cards, grouped rows, agent bubbles, input fields
+  surfaceRaised: '#FFFFFF',   // floating round buttons, header pill, sheets, option list
+  overlay: 'rgba(0,0,0,0.20)',// dim behind bottom sheets (page turns light gray)
 
-**Visual:** iOS: native tab bar (sf-symbols). Android: bottom navigation with labels. Active tint = `accent`. Inactive = `muted`.
+  // Text
+  textPrimary: '#0A0A0A',
+  textSecondary: '#8E8E93',   // section labels, previews, timestamps, placeholders
+  textTertiary: '#B5B5BA',    // file extensions, disabled
 
----
+  // Lines
+  divider: '#E2E2E4',         // hairline (StyleSheet.hairlineWidth), inset from the left edge
 
-## 1. Chat — `src/app/chat.tsx`
+  // Actions
+  primary: '#111111',         // primary buttons, user bubble, send button
+  onPrimary: '#FFFFFF',
+  link: '#2F6BDB',            // text actions ("Add member", "Reset to default") and hyperlinks
+  success: '#4CAF6A',         // check mark on a selected option, online status dot
+  recording: '#E8404A',       // recording square + timer text only
+  recordingBg: '#FBE9EA',     // recording pill background
 
-**Purpose:** Conversational interface with the current agent. Multi-turn, streaming, attachments, model/agent switching. Also serves as the **per-agent chat** when opened with `chat?agentId=…` (or a thread that belongs to an agent).
-
-### Layout Zones
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader                            │  ← sticky
-│  free chat: ☰ · ModelPicker · ＋     │
-│  agent ctx: ← · [avatar] Name · 🔍 🛏│
-│  agent ctx adds: model picker pill   │
-├─────────────────────────────────────┤
-│                                     │
-│         Message List (ScrollView)   │  ← auto-scroll to bottom
-│  ┌───────────────────────────────┐  │
-│  │ MessageBubble (user)          │  │  right-aligned bubble
-│  │ MessageBubble (assistant)     │  │  avatar left + content
-│  │   ├─ Markdown + syntax hl     │  │
-│  │   ├─ Tool call chips          │  │
-│  │   ├─ Canvas cards (inline)    │  │
-│  │   ├─ Approval cards           │  │
-│  │   └─ [View task] button       │  │  → run/[id] when a run is active
-│  └───────────────────────────────┘  │
-│                                     │
-├─────────────────────────────────────┤
-│ Attachment Preview Row (horizontal) │  ← only when attachments exist
-├─────────────────────────────────────┤
-│ Composer (grows with text)          │  ← sticky bottom
-│  [+]  [text input]  [send]          │
-│  AgentPicker only in free chat      │
-└─────────────────────────────────────┘
+  // Agent mark palette (the ONLY decorative color in the app)
+  mark: {
+    black:  '#000000',
+    brown:  '#8B6743',
+    red:    '#E8404A',
+    orange: '#EE7230',
+    amber:  '#F0A030',
+    green:  '#5BC87C',
+    teal:   '#52B8A8',
+    blue:   '#3B82F6',
+    purple: '#8B5CF6',
+    pink:   '#EC4899',
+    gray:   '#777777',
+  },
+};
 ```
 
-### Header contexts
+Notes:
+- `link` blue is for text actions and hyperlinks only (underline hyperlinks inside message text). Never use it as a fill.
+- Mark colors are picked by the user per agent. They never appear on buttons, headers or backgrounds.
 
-| Context | Trigger | Left | Center | Right |
-|---------|---------|------|--------|-------|
-| **Free chat** | default | `menu` (threads) | ModelPicker | new chat `＋` |
-| **Agent chat** | `chat?agentId=…` or a thread with an agent | `chevron-left` (back) | rounded-square agent avatar + name (`body` semibold) | `search` (in-thread, TODO(backend)) + details icon (`SLEEP_ICON` constant in `constants/icons.ts`) |
+## 4. Typography
 
-In agent context the model picker moves to a small bordered pill under the header (capability preserved), and the `AgentPicker` row above the composer is hidden — the agent is fixed by the context.
+System font only (San Francisco on iOS). Do not load custom fonts.
 
-### Key Components
+| Role | Size / line | Weight | Color |
+|---|---|---|---|
+| Screen/agent name (settings card) | 24 / 30 | 600 | textPrimary |
+| Sheet title (e.g. "Google Calendar") | 24 / 30 | 600 | textPrimary |
+| List row title (chat list name, settings rows) | 20 / 26 | 500 | textPrimary |
+| Body / message text | 17 / 22 | 400 | textPrimary |
+| Secondary line (preview, description, subtitle) | 17 / 22 | 400 | textSecondary |
+| Section label ("Character", "Routines", "Includes") | 15 / 20 | 400 | textSecondary |
+| Timestamp / meta / right-aligned type label | 15 / 20 | 400 | textSecondary |
+| Tag pill text | 15 / 20 | 400 | textSecondary |
 
-| Component | Visual Spec |
-|-----------|-------------|
-| **ModelPicker** | Pill capsule button, shows current model label + chevron. Opens bottom sheet modal. |
-| **AgentPicker** | Sleek horizontal pill row (free chat only) with micro-avatars. |
-| **Composer** | Floating capsule container (`rounded-3xl`) with dark glass background, subtle border, embedded mode toggles (DeepSearch, Think, Task), leading `[+]` attachment button, multiline text input, and high-contrast circular send button (pure white circle with black arrow). |
-| **Attachment Preview** | Horizontal scroll, 56×56 rounded-xl thumbnails. Image = preview; PDF/doc = file icon + name. Tap ⨉ to remove. |
-| **MessageBubble** | User: right-aligned, compact dark graphite capsule (`#1c1c21`, `rounded-2xl`). Assistant: left, full-bleed natural text, no boxy container, with 24pt agent avatar alongside. Includes Grok-style collapsible "Thinking" accordion drawer (`✦ Thought for 4s ▾`), tool chips, sleek numbered citation pills, inline canvas cards, and action bar (Copy, Share, View task). |
-| **Tool Chip** | Rounded pill, muted bg, icon + label. Collapsible: tap → expands JSON args/result. |
-| **Canvas Card** | Inline 320×200 preview of canvas spec (stat/chart/markdown). Tap → pushes Canvas detail. |
-| **Approval Card** | Amber border, warning icon. Shows agent name, tool, summary, args (expandable). Buttons: Approve (primary), Deny (ghost). |
+- Sentence case everywhere ("Add routine", "Reset to default", "Ask SLMob"). No ALL CAPS, no letter-spacing tweaks.
+- File names show the extension in `textTertiary` (e.g. `week-meal-prep` + `.md`).
+- Single-line previews truncate with an ellipsis (`numberOfLines={1}`).
+- In search results, the matched term is bold (700) inside secondary text.
 
-### States
+## 5. Spacing, Radius, Elevation
 
-| State | Handling |
-|-------|----------|
-| **Empty** | Centered: "New chat" illustration + suggestions chips (tap → pre-fills composer). |
-| **Streaming** | Assistant bubble shows token-by-token. Skeleton shimmer on code blocks. |
-| **Error** | Inline red toast under composer; message shows "Retry" action. |
-| **Offline** | Banner "You're offline — messages will send when reconnected". |
+```ts
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 
----
+export const radius = {
+  pill: 999,      // inputs, tags, buttons, header pill, round buttons
+  card: 24,       // grouped settings cards, bubbles, attachment card
+  inner: 20,      // option list inside a bubble
+  sheet: 32,      // bottom sheets and popovers (top corners)
+  tile: 10,       // small icon tiles (file icon, A-E badges)
+};
 
-## 2. Agents — `src/app/agents.tsx`
-
-**Purpose:** Browse, search and manage agents; quick access to each agent's chat. Each agent = persona + model + tools + MCP servers.
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│ [User Avatar]              (🔍) (＋)│  ← Profile avatar left, circular search & add buttons right
-├─────────────────────────────────────┤
-│   (🟣 68)      (💧 68)      (☁️ 68)   │  ← Top quick-access pinned creature avatars
-│ Chief of Staff    EA     Inbox Mgr  │     centered labels below
-├─────────────────────────────────────┤
-│ [Teal Sq] Sales Outbound    8:41 AM │  ← Clean contact conversation rows
-│           Outreach drafts queued…   │     organic creature avatar (48pt) + name +
-│ [Brwn O]  Talent Scout      8:22 AM │     activity preview + relative timestamp
-│           Shortlist of 6 candidates…│
-│ [Orng E]  Growth Marketer   8:05 AM │
-│           A/B copy variants ready…  │
-│ [Red P]   Customer Support Yesterday│
-│           12 tickets resolved…      │
-│ [Pink T]  Expense Manager  Yesterday│
-│           Receipts coded — one needs│
-│ [Purp S]  Invoice Collector  Tuesday│
-│           Pulled 9 invoices from…   │
-│ [Grn C]   Apartment Hunter   Tuesday│
-│           3 new listings match…     │
-└─────────────────────────────────────┘
+export const shadow = {
+  floating: {     // round buttons, header pill, popovers
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 0, // do not use Android elevation look
+  },
+};
 ```
 
-### Top Bar & Quick-Access Row
-
-- **Top Bar**: User profile avatar on left, circular Search (`🔍`) and Create (`+`) action buttons on right.
-- **Top Pinned Creatures**: 3 prominent organic creature avatars (`AgentTile`, 68×68pt) evenly spaced with agent titles centered below.
-- **Creature Avatars**: Organic SVG shapes (circle, droplet, cloud, squircle, egg, pill, triangle) featuring distinctive angled character eye-markings and accent badges (droplets, dots).
-
-### Contact List Rows
-
-- Full-bleed vertical list with clean spacing.
-- Each `AgentListRow`: 48pt creature avatar, agent name in bold (`text-[16px]`), activity/message preview (`text-[14px] text-zinc-500`), and clean relative timestamp (`8:41 AM`, `Yesterday`, `Tuesday`).
-- **Tap →** opens that agent's chat: `/chat?agentId=…`.
-- **Swipe left / Long press →** reveals row actions: pause/resume (server-backed, flips from the active run's `paused` status), skip (`TODO(backend)`), notifications (local mute).
-
-### States
-
-| State | Handling |
-|-------|----------|
-| **Loading** | `Skeleton` (shimmer) tiles in the quick-access row + 5 skeleton rows in the panel. |
-| **Empty** | "Create your first agent" CTA → `/agents/new/edit`. |
-| **Error** | Inline error message + **Retry** button. |
-| **Search** | HeroUI `BottomSheet` + `SearchField`; filters by name, role or active-run goal; result rows show avatar + name + activity. |
-
----
-
-## 3. Agent Overview — `src/app/agents/[id].tsx` + Editor `agents/[id]/edit.tsx`
-
-**Purpose:** `agents/[id]` is the agent **overview** (identity, quick actions, info, tools, danger zone). The full configuration form lives at `agents/[id]/edit.tsx` (create flow: `agents/new` redirects to `agents/new/edit`).
-
-### Overview layout (`agents/[id].tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader (← · Name · ⋯)            │
-├─────────────────────────────────────┤
-│          (breathing room)           │
-│           [ avatar 96 ]             │  ← centered
-│            Agent 1 (h2)             │
-│        [ Active: goal chip ]        │  ← only while a run is active
-├─────────────────────────────────────┤
-│ ┌─ surface sheet, rounded-t-2xl ──┐ │  ~2/3 of the screen
-│ │ ┌─────┐┌─────┐┌─────┐┌─────┐   │ │  quick actions (4 tiles)
-│ │ │⏸pause││🔔  ││🛌  ││🧠  │   │ │  rounded-xl, border=accent when on
-│ │ └─────┘└─────┘└─────┘└─────┘   │ │
-│ │ AGENT INFO            [Edit]    │ │  name · role · model · supervisor
-│ │ ─────────────────────────────── │ │
-│ │ TOOLS      [Edit tools][Add int]│ │  toolCount summary chip
-│ │ DANGER ZONE  [Duplicate][Delete]│ │  destructive + confirmation
-│ └─────────────────────────────────┘ │
-└─────────────────────────────────────┘
-```
-
-- **Quick actions** (`AgentQuickActions`): pause/resume (server-backed per active run; tile disabled when there is no active run) · notifications (`TODO(backend)`, local) · sleep/wake (`SLEEP_ICON`, same glyph as the chat header details button; `POST /api/agents/:id/sleep|wake` — pauses all of the agent's tasks and blocks new ones) · memory on/off (`brain`/`brain-off`, `TODO(backend)` local). Each is an `accessibilityRole="switch"` tile with active border (`accent`), icon and caption; disabled tiles dim to `opacity-40` with `accessibilityState.disabled`. Sleep state comes from `agent.isSleeping` and also shows a `💤 Sleeping` chip under the name.
-- **Tools sheet**: `Edit tools` opens a HeroUI `BottomSheet` summarising enabled tools (per-tool toggles live on each MCP integration's screen — `TODO(backend)` for per-agent tool prefs); **Add integrations** routes to the MCP Store (`mcp.tsx`).
-- **Danger zone**: Duplicate (`TODO(backend)`) and Delete (confirmation dialog → `DELETE /api/agents/:id`) — moved here from the list's long-press menu. The `⋯` header menu repeats Edit/Duplicate/Delete as a fallback.
-
-### Editor (`agents/[id]/edit.tsx`)
-
-Unchanged from the previous phase — the full form moved here without rewriting it.
-
-### Sections (ScrollView)
-
-| Section | Fields | Visual |
-|---------|--------|--------|
-| **Identity** | Avatar picker (Emoji/Icon/Upload tabs + 8 color swatches), Name (required), Role (optional) | Avatar large (56) top-center. Name input full-width. Role placeholder "e.g. Senior Researcher". |
-| **Model** | Primary model picker (ModelPicker), Fallback order (chips, max 5) | Primary = large pill. Fallbacks = numbered chips; tap to add/remove. |
-| **Supervisor** | Toggle "This agent orchestrates specialists". When on: hides Model/Tools (inherited from children). | Card with switch + helper text "Supervisors delegate to other agents". |
-| **Instructions** | Instructions textarea (maps to `system_prompt`) | Multiline input. |
-| **Danger Zone** | Delete agent (red, confirmation dialog). | Separated, red button. |
-
-### Avatar Picker Modal
-
-Three tabs: **Emoji** (grid 4×4), **Icon** (glyph grid), **Upload** (signed URL → Supabase Storage `avatars` bucket). Color swatch row (8) below emoji/icon.
-
----
-
-## 4. Canvas List — `src/app/canvas.tsx`
-
-**Purpose:** Gallery of saved canvases (dashboards/reports).
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("Canvas" + [+] create)   │
-├─────────────────────────────────────┤
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ │  ← 2-col grid (phone) / 3-col (tablet)
-│  │ Canvas  │ │ Canvas  │ │ Canvas  │ │
-│  │ Card    │ │ Card    │ │ Card    │ │
-│  └─────────┘ └─────────┘ └─────────┘ │
-└─────────────────────────────────────┘
-```
-
-### Canvas Card
-
-- **Aspect:** 16:10 preview (rendered from spec — first component snapshot or placeholder).
-- **Overlay:** Title (truncated 2 lines), updated-at (relative time).
-- **Tap →** `canvas/[id].tsx` (detail). Long press → duplicate / delete.
-
-### Empty
-
-"No canvases yet" + "Create dashboard" CTA.
-
----
-
-## 5. Canvas Detail — `src/app/canvas/[id].tsx`
-
-**Purpose:** Full-screen native rendering of a canvas spec. Pull-to-refresh re-runs data sources.
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader (title + [⋯] menu)        │  ← sticky
-├─────────────────────────────────────┤
-│                                     │
-│  Canvas Renderer (ScrollView)       │  ← components flow vertically
-│  ┌───────────────────────────────┐  │
-│  │ Stat / Metric                 │  │
-│  │ Chart (line/bar/pie)          │  │
-│  │ Table (sticky header, sort)   │  │
-│  │ Markdown                      │  │
-│  │ Image                         │  │
-│  │ Button (action)               │  │
-│  │ Tabs                          │  │
-│  │ Stack (h/v)                   │  │
-│  └───────────────────────────────┘  │
-│                                     │
-└─────────────────────────────────────┘
-```
-
-### Component Visuals
-
-| Component | Spec |
-|-----------|------|
-| **Stat** | Large number (heading), label (muted), trend sparkline optional. Card `p-4`. |
-| **Chart** | Reanimated/Victory Native. Legend bottom. Tooltip on press. Responsive width. |
-| **Table** | Sticky header, horizontal scroll if needed. Row hover (web) / press highlight (native). |
-| **Markdown** | `react-native-markdown-render`. Links open in-app browser. |
-| **Image** | Full-width, aspect preserved. Tap → fullscreen zoom. |
-| **Button** | Accent primary. `onPress` → `open_url` / `run_agent` / `refresh_canvas`. |
-| **Tabs** | Segmented control (HeroUI). Lazy-mount panels. |
-| **Stack** | Flex direction `row`/`col`, gap-3. Children any component. |
-
-### Header Menu (⋯)
-
-- **Refresh** — re-runs data sources (POST `/api/canvases/:id/refresh`).
-- **Ask about this** — opens Chat with canvas as context.
-- **Edit spec** — JSON editor modal (dev only).
-- **Delete** — confirm → DELETE.
-
----
-
-## 6. Notes — `src/app/notes.tsx` + `src/app/note.tsx`
-
-**Purpose:** Obsidian-style markdown vault with wikilinks, backlinks, hybrid search.
-
-### Notes List (`notes.tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("Notes" + [🔍] search)   │
-├─────────────────────────────────────┤
-│ Folder Tree (collapsible)           │  ← left 30% on tablet, modal drawer on phone
-├─────────────────────────────────────┤
-│ Note List (filtered)                │
-│  ┌───────────────────────────────┐  │
-│  │ NoteRow                       │  │
-│  │  Title                        │  │
-│  │  Folder • updated 2h ago      │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-### Note Detail (`note/[id].tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader (title + [⋯] edit/delete) │
-├─────────────────────────────────────┤
-│                                     │
-│ Markdown Body (ScrollView)          │
-│  - Wikilinks [[title]] → tap pushes │
-│    note/[id] (or creates new)       │
-│  - Images render inline             │
-│  - Code blocks syntax highlighted   │
-│                                     │
-├─────────────────────────────────────┤
-│ Backlinks Section                   │
-│  "Linked from:" + list of notes     │
-└─────────────────────────────────────┘
-```
-
-### Edit Mode
-
-- Swap to textarea (monospace, 16). Save = confirm dialog. Cancel = discard.
-- Toolbar: **B** **I** `#` `[]` `` ` `` ````` `🔗` (insert wikilink picker).
-
-### Search Modal (🔍)
-
-- Full-screen. Debounced query → hybrid search (FTS + vector). Results = list with snippet highlight. Tap → opens note.
-
----
-
-## 7. Runs / Tasks — `src/app/run.tsx` + `src/app/runs.tsx`
-
-**Purpose:** Durable agent runs (background, survive app close). Timeline + specialist children.
-
-### Run List (`runs.tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("Runs")                  │
-├─────────────────────────────────────┤
-│  ┌───────────────────────────────┐  │
-│  │ RunRow                        │  │
-│  │  [avatar] Goal (truncated)    │  │
-│  │  status • model • 2m ago      │  │
-│  │  [chevron]                    │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-**Status chips:** `queued` (muted), `running` (accent pulse), `succeeded` (green), `failed` (red), `cancelled` (muted).
-
-### Run Detail (`run/[id].tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader (goal + status chip)      │
-├─────────────────────────────────────┤
-│                                     │
-│ Timeline (vertical, ScrollView)     │
-│  ┌───────────────────────────────┐  │
-│  │ Node Event                    │  │
-│  │  [agent avatar] Plan          │  │
-│  │  10:23 AM  •  1.2s            │  │
-│  │  └─ Tool: search (✓)          │  │
-│  │  └─ Tool: fetch_page (✓)      │  │
-│  └───────────────────────────────┘  │
-│  ┌───────────────────────────────┐  │
-│  │ Node Event                    │  │
-│  │  [agent avatar] Act           │  │
-│  │  10:24 AM  •  3.1s            │  │
-│  └───────────────────────────────┘  │
-│                                     │
-├─────────────────────────────────────┤
-│ Specialists Section (supervisor only)│
-│  ┌───────────────────────────────┐  │
-│  │ Specialist Card               │  │
-│  │  [avatar] Name • status       │  │
-│  │  Tap → child run detail       │  │
-│  └───────────────────────────────┘  │
-├─────────────────────────────────────┤
-│ Final Result (markdown card)        │
-└─────────────────────────────────────┘
-```
-
-**Visual language:**
-- Timeline: connecting line left of avatar (2px, `border` color).
-- Tool chips inside node: icon + name + status (✓ green, ✗ red, ⏳ amber).
-- Specialist cards show child run status inline.
-
----
-
-## 8. MCP Store — `src/app/mcp.tsx` + `src/app/mcp/[id].tsx`
-
-**Purpose:** Browse, connect, and manage remote MCP servers.
-
-### Marketplace List (`mcp.tsx`)
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("MCP Store")             │
-├─────────────────────────────────────┤
-│ Search Bar                          │
-├─────────────────────────────────────┤
-│  ┌───────────────────────────────┐  │
-│  │ Server Card                   │  │
-│  │  [icon 48] Name               │  │
-│  │  Description (2 lines)        │  │
-│  │  Auth: [badge]  Free: [badge] │  │
-│  │  [Connect] / [Manage]         │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-**Auth badges:** `None` (gray), `API Key` (blue), `OAuth` (purple). **Free badge:** green "Free" / gray "Paid".
-
-### Connect Flow
-
-1. Tap **Connect** → permission sheet (list of tools, each with "Require approval" default from server manifest).
-2. **API Key** → secure text input (Expo SecureStore).
-3. **OAuth** → opens system browser (PKCE + DCR). Returns to `mcp/oauth/callback`.
-4. Success → server card shows **Manage** (opens detail).
-
-### Server Detail (`mcp/[id].tsx`)
-
-- Connection status (Connected / Error / Expired).
-- Tool list with per-tool enable + approval toggles.
-- **Setup Instructions** card (if listing has `instructions` markdown).
-- Disconnect button (destructive).
-
----
-
-## 9. Memories — `src/app/memories.tsx`
-
-**Purpose:** View / delete durable memories extracted from chats.
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("Memories")              │
-├─────────────────────────────────────┤
-│  ┌───────────────────────────────┐  │
-│  │ MemoryRow                     │  │
-│  │  Content (2 lines)            │  │
-│  │  Thread • 3 days ago          │  │
-│  │  [🗑] delete                  │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-**Empty:** "No memories yet — they appear after chats finish."
-
----
-
-## 10. Settings — `src/app/settings.tsx`
-
-**Purpose:** Account, defaults, theme, vault status.
-
-### Sections
-
-| Section | Controls |
-|---------|----------|
-| **Account** | Email (read-only), **Sign out** (destructive button). |
-| **Defaults** | Default model picker, Fallback order (reorderable). |
-| **Memory** | List + delete (same as Memories screen). |
-| **Vault** | Repo status (last sync, branch), **Sync now** button. |
-| **Appearance** | Theme: Light / Dark / System (segmented). |
-| **About** | Version, build, links to GitHub / Privacy. |
-
----
-
-## 11. Auth — `src/app/auth/sign-in.tsx`
-
-**Purpose:** Supabase Auth (GitHub OAuth only, single allowed account).
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│         (centered, max-w 360)       │
-│  ┌───────────────────────────────┐  │
-│  │ Logo / App Name               │  │
-│  │ "Agent"                       │  │
-│  ├───────────────────────────────┤  │
-│  │ [GitHub] Continue with GitHub │  │  ← primary, full-width
-│  │                               │  │
-│  │ "Only the allowed account     │  │
-│  │  can sign in." (muted, xs)    │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-**Post-OAuth:** Redirects to `/` (chat). If not allowed → 403 screen with "Contact admin".
-
----
-
-## 12. Threads — `src/app/threads.tsx`
-
-**Purpose:** Thread list drawer (also accessible from Chat header).
-
-### Layout
-
-```
-┌─────────────────────────────────────┐
-│ AppHeader ("Threads" + [+] new)     │
-├─────────────────────────────────────┤
-│  ┌───────────────────────────────┐  │
-│  │ ThreadRow                     │  │
-│  │  [agent avatar] Title         │  │
-│  │  model • 3 messages • 2h ago  │  │
-│  │  [⋯] rename / delete          │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-**Tap →** opens Chat with `threadId`. **New** → generates UUID, navigates to Chat empty state.
-
----
-
-## Component Catalog (Reusable)
-
-| Component | Location | Props / Variants |
-|-----------|----------|------------------|
-| `AppHeader` | `src/components/app-header.tsx` | `left`, `center`, `right`, `bottomInset` |
-| `AgentPicker` | `src/components/agent-picker.tsx` | `agents`, `selectedId`, `onSelect` |
-| `ModelPicker` | `src/components/model-picker.tsx` | `models`, `selectedId`, `onSelect` |
-| `ModelBadges` | `src/components/model-picker.tsx` | `model` (shows provider + capability pills) |
-| `MessageBubble` | `src/components/message-bubble.tsx` | `role`, `parts`, `modelLabel`, `agent`, `runId`, `onViewTask` |
-| `Composer` | `src/components/composer.tsx` | `value`, `onChangeText`, `onSend`, `attachments`, `onAttach*` |
-| `AgentAvatar` | `src/components/agent-avatar.tsx` | `avatar`, `size` (24–96), `shape` (`circle` \| `rounded`) |
-| `AgentTile` | `src/components/agent-tile.tsx` | `agent`, `onPress`, `isPersonal` — 76pt quick-access tile |
-| `AgentListRow` | `src/components/agent-list-row.tsx` | `agent`, `activeRun`, `onPress`, `onActionPress`, `isActionsOpen`, `onActionsToggle` |
-| `AgentRowActions` | `src/components/agent-row-actions.tsx` | `isOpen`, `onClose`, `onActionPress` (`pause` \| `skip` \| `notify`), `disabled` |
-| `AgentQuickActions` | `src/components/agent-quick-actions.tsx` | `agentName`, `isPaused`, `pauseDisabled`, `notificationsEnabled`, `isSleeping`, `memoryEnabled` + toggles |
-| `AgentDetailSection` | `src/components/agent-detail-section.tsx` | `label`, `children`, `action`, `secondaryAction` |
-| `AgentSearch` | `src/components/agent-search.tsx` | `agents`, `runs`, `onSelect`, `onClose`, `isOpen` (HeroUI BottomSheet + SearchField) |
-| `SLEEP_ICON` / `CHAT_HEADER_ICONS` / `SCREEN_ICONS` | `src/constants/icons.ts` | centralised Lucide icon constants (swap one to change both screens) |
-| `CanvasRenderer` | `src/components/canvas/` | `spec` (zod-validated) |
-| `StatCard`, `ChartCard`, `TableCard`, `MarkdownCard`, `ImageCard`, `ButtonCard`, `TabsCard`, `StackCard` | `src/components/canvas/` | Component-specific props |
-| `ApprovalCard` | `src/components/approval-card.tsx` | `approval`, `onApprove`, `onDeny` |
-
----
-
-## Icon Set
-
-- **Primary:** Lucide React Native (`lucide-react-native`, tree-shaken). Used everywhere: headers, row actions, quick actions, empty states. Icon constants live in `src/constants/icons.ts`; colors come from HeroUI `useThemeColor` so light and dark both work.
-- **Provider logos:** Custom SVG in `assets/provider-logos/` (google, groq, openrouter, mistral, deepseek, huggingface, cohere). Shown in model picker + dashboard.
-
----
-
-## Responsive Breakpoints
-
-| Breakpoint | Layout Changes |
-|------------|----------------|
-| **Phone** (< 768) | Single column. Tabs bottom. Drawers for folder tree, thread list. Canvas grid = 1 col. |
-| **Tablet** (≥ 768) | Two-column: sidebar (folders/threads/agents) + detail. Canvas grid = 2–3 cols. Modal → popover. |
-| **Desktop Web** (≥ 1024) | Persistent sidebar. Full canvas renderer width. |
-
----
-
-## Motion & Interaction Checklist
-
-- [ ] Modal slide-up (300 ms, ease-out)
-- [ ] Sheet drag-to-dismiss
-- [ ] List item press ripple (`active:opacity-60`)
-- [ ] Skeleton shimmer (1.5s loop)
-- [ ] Streaming token animation (no layout shift)
-- [ ] Pull-to-refresh (canvas, notes, threads)
-- [ ] Reorder drag (fallback models, specialist priority)
-- [ ] Toast slide-in/out (top, 2.5s)
-
----
-
-## Dark Mode Tokens
-
-| Token | Light | Dark |
-|-------|-------|------|
-| `background` | `#FFFFFF` | `#0A0A0B` |
-| `surface` | `#F4F4F5` | `#18181B` |
-| `foreground` | `#18181B` | `#FAFAFA` |
-| `muted` | `#71717A` | `#A1A1AA` |
-| `accent` | `#2563EB` | `#3B82F6` |
-| `border` | `#E4E4E7` | `#27272A` |
-| `destructive` | `#DC2626` | `#EF4444` |
-
----
-
-## Open Design Questions (Phase 8+)
-
-| Feature | Decision Needed |
-|---------|-----------------|
-| **Website Monitors** | Card layout in Canvas? Separate "Monitors" tab? Notification design? |
-| **Image Generation** | Inline in Chat composer? Separate "Create" tab? Gallery view? |
-| **Voice** | Push-to-talk vs always-listening? Waveform visual? Transcript bubbles? |
-| **Code Sandbox** | Terminal UI? File tree? Output preview? |
-| **X Data** | Tweet card design? Thread view? Search composer? |
-
----
-
-*Generated from `docs/spec/UI_UX_SPEC.md` + live code audit (2026-11-20). Screens reflect Phases 0–7 implementation.*
+- Screen horizontal padding: **16**.
+- Vertical gap between message bubbles: **10**.
+- Grouped card inner padding: 16 horizontal, rows at least 56 tall.
+- Section label sits 8 above its card and is inset 16 from the card edge.
+- Cards have no border and no shadow (flat `surface` fill). Only floating elements get a shadow.
+
+## 6. Components
+
+### 6.1 Floating header (all screens)
+- No navigation bar background. Content scrolls underneath; add a soft fade at the top (background color to transparent, about 120pt tall) using `expo-linear-gradient` with background-to-transparent only (never colored).
+- Left: round **back button**, 44x44, `surfaceRaised`, chevron-left icon, `floating` shadow.
+- Center (chat screens): a **title pill**, `surfaceRaised`, pill radius, height 44, containing the agent mark (28pt) + agent name (20/500). `floating` shadow.
+- Right: round 44x44 button (desktop/monitor icon on chat, `ellipsis` on settings and sheets).
+- Settings screens show the back button and ellipsis only, with the large agent mark centered below.
+- A header with a primary action (e.g. Instructions) puts a black pill **Save** button on the right (see 6.2) instead of the round icon.
+
+### 6.2 Buttons
+- **Primary pill**: height 44, horizontal padding 24, `primary` fill, white 17/600 text, pill radius ("Save").
+- **Secondary / completed pill**: `surface` fill, `textPrimary` 17/600 text ("Added" state of a connector). No border.
+- **Text action**: `link` color, 17/400, leading outline icon when relevant ("+ Add routine", "Add member", "Reset to default"). No background.
+- **Round icon button**: 44x44 `surfaceRaised` with `floating` shadow. Inside sheets, round buttons use `surface` fill and no shadow (close X on the left, ellipsis on the right, both 44x44).
+- Pressed state: opacity 0.6 (`Pressable`). No ripple, no scale bounce, no color change.
+
+### 6.3 Chat bubbles
+- **Agent message**: `surface` fill, radius 24, padding 16 horizontal / 14 vertical, text 17/22 `textPrimary`, max width about 85% of the screen, left aligned. Several consecutive agent messages stack as separate bubbles with a 10 gap.
+- **User message**: `primary` (#111) fill, white text, radius 24, right aligned, max width about 80%.
+- **Reply/quote reference**: small `textSecondary` 15pt single line with a curved reply arrow icon, placed directly above the bubble it relates to (right aligned above a user bubble, left aligned above an agent bubble). Text truncates with an ellipsis.
+- **Hyperlinks** inside text: `link` color with underline.
+- **File attachment card**: `surface` fill, radius 24, padding 12 horizontal, with a 44x44 `tile` icon block (slightly darker gray, file-type glyph such as "M↓"), file name 20/500 with the extension in `textTertiary`, and file size below in 15pt `textSecondary`.
+
+### 6.4 Quick-reply options inside an agent bubble
+- Agent bubble contains the question (17/22), then a white (`surfaceRaised`) list with radius 20 and no shadow.
+- Each row is 60 tall with a leading letter badge (A, B, C...): 32x32, radius 10, `surface` fill, `textSecondary` 15pt letter. Then the option text 20/400.
+- Rows are separated by a hairline divider inset from the left.
+- After a choice is made, the list collapses to only the chosen row, badge replaced by nothing, with a `success` green check icon on the right. Other options disappear.
+
+### 6.5 Composer
+- Row at the bottom with safe-area padding: a round **+** button (44, `surfaceRaised`, floating shadow) and a pill text field (`surfaceRaised`, floating shadow, height 52, placeholder "Ask {AgentName}" in `textSecondary`).
+- Right inside the field: a small mic button, 36x36 circle, `surface` fill, `textSecondary` mic icon.
+- **Recording state**: the mic is replaced by a pill with `recordingBg`, a small `recording` red rounded square (stop), and a timer `0:10` in `recording` color; next to it a round **send** button, 40x40, `primary` fill with a white arrow-up icon.
+- **+ menu**: a popover above the button, `surfaceRaised`, radius 32, `floating` shadow, rows with a 28pt outline icon plus label 20/400: "Attach Image", "Take Photo", "Choose File". No dividers, 16 vertical padding per row.
+
+### 6.6 Grouped settings cards
+- `surface` fill, radius 24, rows separated by hairline dividers that start after the leading icon (not edge to edge).
+- Row: leading icon or mark (about 28pt), title 20/400, trailing chevron-right in `textTertiary`.
+- Name/description card: first line is the name centered 24/600, hairline, second line centered 17 `textSecondary` (e.g. "Meal prepping").
+- Section label above the card: 15pt `textSecondary`.
+- Helper caption below a card: 15pt `textSecondary`, inset 16 (e.g. "How this agent's mark looks everywhere").
+- Routine row: leading outline clock icon (purple-ish tinted stroke is NOT allowed; use `textSecondary` stroke), title 20/400, subtitle 17 `textSecondary` ("Every Sunday at 8:41 AM"), chevron. Empty state is "No routines yet" in `textSecondary`, followed by a "+ Add routine" text action.
+- Text editor screen (Instructions): a `surface` card, radius 24, min height about 220, padding 16, 17/22 text. Save is the black pill in the header.
+
+### 6.7 Character picker (settings)
+- Inside a grouped card, section 1: grid of **color swatches**, 36pt circles, 20 gap, wrapping rows, using the `mark` palette in this order: black, brown, red, orange, amber, green, teal, blue, purple, pink, gray.
+- Hairline divider.
+- Section 2: row of **shape options** rendered in the currently selected color, about 36pt: circle, soft ellipse/blob, rounded square, pill, triangle, hexagon, cloud, drop.
+- The selected swatch or shape gets a 2pt `#C8C8CC` ring with a 4pt gap (a ring around it, not a fill change).
+- Hairline divider, then a "Reset to default" text action in `link` color.
+
+### 6.8 Bottom sheet (e.g. connector detail)
+- Slides up, top radius 32, `background` fill with a very subtle fade, page behind dimmed with `overlay`.
+- Top row: round close button (X) left, round ellipsis button right (both `surface`, 44).
+- Content: 56pt app icon (rounded square, as supplied by the service), title 24/600, domain/subtitle 17 `textSecondary` beneath, description 17/22 `textSecondary`.
+- "Includes" label (15 `textSecondary`) over a `surface` card with a row: "1 connector" left, "View source ↗" right in `textSecondary`.
+- Bottom: centered pill button 44 tall ("Added" state as secondary pill).
+- Use a native-feeling sheet (`expo-router` formSheet or `@gorhom/bottom-sheet`), never a centered modal.
+
+### 6.9 Search
+- Opens as a large sheet (same style as 6.8). Top row: round close button, a pill search field (`surface`, magnifier icon in `textSecondary`, query in 20/400, small gray circular clear button on the right), and a round filter button (three horizontal lines of decreasing length icon).
+- Result row: avatar or mark (60pt) on the left, title 20/500, subtitle 17 `textSecondary` single line (matched term in bold), and a right-aligned type label ("Group", "Agent", "Message") in 15 `textSecondary`.
+- No dividers between results; use about 24pt vertical rhythm.
+
+### 6.10 Chat list (home)
+- Top row: a 44pt initials avatar on the left (circle, `#E5E5E7` fill, initials in `textSecondary` 20/500, thin white ring) and two round buttons on the right (search, plus), 44 each, `surfaceRaised`, floating shadow.
+- Row: mark/avatar 64pt on the left, then name 20/500 followed by an optional **tag pill** (`surface`, pill radius, 15 `textSecondary`, padding 12x4, truncates with an ellipsis), timestamp 15 `textSecondary` right aligned, and a one-line preview 17 `textSecondary` below.
+- Rows are about 120pt apart with no dividers and no card backgrounds.
+- Group chats show a cluster of up to 3 marks arranged as a triangle (one on top, two below) in one 64pt avatar slot.
+- **Status dot**: 14pt circle `success` color with a 3pt white ring at the bottom-right of the avatar, shown when the agent is active.
+
+## 7. Agent Marks (the characters)
+
+Every agent has a flat-colored shape with two small white slanted highlight marks near the upper right, reading as eyes. This is the only illustrative element in the product.
+
+- Shapes: circle, blob (soft ellipse), rounded square (squircle), pill, triangle (heavily rounded corners), hexagon (rounded), cloud (three overlapping circles), drop (teardrop).
+- Fill: a flat color from the `mark` palette. Black marks use a pure black fill.
+- Highlights: two short, rounded, white strokes (about 12% of the shape width long, 6% wide) tilted about 20 degrees, sitting close together at the upper right. In small sizes they stay visible, never smaller than 2pt.
+- Sizes: 28 (header pill), 36 (picker), 64 (chat list), about 120 (settings hero), 100 inside group clusters at relative scale.
+- Implement with `react-native-svg` as a single `<AgentMark shape color size />` component. No gradients, no shadows, no outlines.
+- Inside the small group-chat cluster, marks are slightly smaller, never overlapping except for a tiny tuck between the two lower marks.
+
+## 8. Iconography
+
+- Use SF Symbols on iOS through `expo-symbols` (`SymbolView`) with the `regular` weight, and a fallback of `lucide-react-native` at `strokeWidth={1.75}` for Android and web. Keep one style: outline, rounded caps, uniform stroke.
+- Sizes: 24 in headers and rows, 28 in popover menus, 20 inline with text.
+- Color: `textPrimary` by default, `textSecondary` for decorative or secondary icons, `textTertiary` for chevrons.
+- Allowed icons (plain, functional): chevron-left, chevron-right, close (X), ellipsis, plus, magnifier, filter, mic, stop (square), arrow-up, check, desktop/monitor, clock, document/text, photo-on-rectangle, camera, folder, person-plus, reply arrow, external link arrow.
+- Forbidden: anything on the list in section 2. When unsure, use plain text instead of an icon.
+
+## 9. Motion and Feedback
+
+- Use `react-native-reanimated` with short, calm easing (200 to 250 ms, ease-out). Sheets use a spring with no overshoot.
+- Pressed feedback: opacity only. Light haptic (`expo-haptics`, `ImpactFeedbackStyle.Light`) on option selection, send, and swatch/shape selection.
+- Typing/loading: three small `textTertiary` dots in an agent bubble, or a plain text status. No shimmer gradients, no sparkle animations, no glowing pulse.
+
+## 10. Expo Implementation Notes
+
+- Stack: Expo (SDK current), `expo-router`, `react-native-reanimated`, `react-native-gesture-handler`, `react-native-svg`, `expo-symbols`, `expo-blur`, `expo-linear-gradient`, `expo-haptics`, `react-native-safe-area-context`.
+- Centralize tokens in `theme.ts` (colors, space, radius, shadow, type) and never hardcode hex values or sizes in components.
+- Required shared components: `AgentMark`, `RoundButton`, `PillButton`, `TextAction`, `Bubble`, `OptionList`, `GroupedCard` (+ `GroupedRow`), `SectionLabel`, `TagPill`, `Composer`, `SheetHeader`.
+- Header blur is optional; if used, `expo-blur` `BlurView` with `tint="light"` and low intensity, never tinted with color.
+- Respect safe areas (top 59 on notched devices), keep the composer above the keyboard with `KeyboardAvoidingView`.
+- Light mode is the reference. If dark mode is added later, invert to near-black surfaces with neutral grays only, keep marks identical, and keep the same rules from section 2.
+
+## 11. Pre-Merge Checklist
+
+- [ ] The only colorful pixels on the screen belong to agent marks, the green check/status dot, link text, or the recording state.
+- [ ] No gradient fills, glows or colored shadows anywhere.
+- [ ] No sparkle/wand/robot/brain icons or emoji in UI.
+- [ ] Every card, bubble and pill uses a radius from the token list, with no borders.
+- [ ] Body text is 17/22 system font, in sentence case.
+- [ ] Floating round buttons are 44pt, white, softly shadowed.
+- [ ] Primary actions are black pills; text actions are link blue with no background.
+- [ ] Bottom sheets (not centered modals) are used for detail, search and pickers.

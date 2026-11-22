@@ -24,7 +24,7 @@ cp apps/mobile/.env.example apps/mobile/.env
 ```
 
 Then follow [`docs/runbook-phase-0.md`](docs/runbook-phase-0.md) for the account-level steps
-(Supabase, GitHub OAuth, Vercel, Inngest, provider API keys).
+(Supabase email/password auth, one-account migration, Vercel, Inngest, provider API keys).
 
 ## Commands
 
@@ -38,7 +38,7 @@ Then follow [`docs/runbook-phase-0.md`](docs/runbook-phase-0.md) for the account
 | `npm test` | Provider-layer unit tests (resolver, capability gate, fallback ordering) |
 | `npm run check:providers --workspace api` | Live check: same prompt on Google/Groq/OpenRouter + forced-429 fallback |
 | `node scripts/check-env.mjs` | Lists env vars that are still missing |
-| `node scripts/verify-setup.mjs --remote` | End-to-end setup verification (Supabase, allow-list, deployed API, Inngest) |
+| `node scripts/verify-setup.mjs --remote` | End-to-end setup verification (Supabase, single account, deployed API, Inngest) |
 
 ## Endpoints
 

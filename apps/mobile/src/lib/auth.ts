@@ -1,11 +1,10 @@
 import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 
 import { supabase } from '@/lib/supabase';
 
 /**
- * The deep link the OAuth provider redirects back to.
+ * The deep link used for email-confirmation redirects.
  *
  * Native (Expo Go / dev build): `exp://<host>:8081/--/auth/callback`, where
  * <host> is the machine running `expo start` (127.0.0.1 on a simulator, your
@@ -24,32 +23,7 @@ export const authRedirectUrl =
     ? `${globalThis.location?.origin ?? ''}/auth/callback`
     : Linking.createURL('/auth/callback'));
 
-export async function signInWithGitHub(): Promise<void> {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'github',
-    options: {
-      redirectTo: authRedirectUrl,
-      skipBrowserRedirect: true,
-    },
-  });
-
-  if (error) throw error;
-  if (!data.url) throw new Error('Supabase did not return an OAuth URL.');
-
-  const result = await WebBrowser.openAuthSessionAsync(data.url, authRedirectUrl);
-
-  if (result.type === 'success' && 'url' in result) {
-    const code = new URL(result.url).searchParams.get('code');
-    if (code) await exchangeCode(code);
-    return;
-  }
-
-  if (result.type === 'cancel') {
-    throw new Error('Sign-in was cancelled.');
-  }
-}
-
-/** Exchanges the PKCE code from the OAuth redirect for a session. */
+/** Exchanges the PKCE code from an email confirmation redirect for a session. */
 export async function exchangeCode(code: string): Promise<void> {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) throw error;
@@ -57,11 +31,6 @@ export async function exchangeCode(code: string): Promise<void> {
 
 /**
  * Email + password sign-in.
- *
- * This is the path that works in Expo Go: it needs no redirect at all, so it
- * is not affected by Expo Go's inability to handle custom OAuth schemes
- * (https://docs.expo.dev/guides/authentication/). GitHub OAuth stays enabled
- * for development builds, where `agentapp://auth/callback` works.
  */
 export async function signInWithEmail(email: string, password: string): Promise<void> {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -70,7 +39,21 @@ export async function signInWithEmail(email: string, password: string): Promise<
 
 /** Creates an account with an email + password (email confirmation is off on
  *  a fresh Supabase project unless you turn it on). */
-export async function signUpWithEmail(email: string, password: string): Promise<void> {
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) throw error;
+export async function signUpWithEmail(email: string, password: string): Promise<boolean> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: authRedirectUrl },
+  });
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("only one account is supported")) {
+      throw new Error("This app already has an account. Sign in with that account.");
+    }
+    if (message.includes("database error saving new user")) {
+      throw new Error("This app supports one account. If it already exists, sign in with it.");
+    }
+    throw error;
+  }
+  return !data.session;
 }

@@ -1,22 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Spinner, Typography } from 'heroui-native';
-import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Spinner } from 'heroui-native';
+import {
+  Alert as RNAlert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ArrowLeft,
   Blocks,
-  CheckCircle2,
+  Check,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Cloud,
-  Globe,
   Search,
   ShieldCheck,
-  Zap,
+  X,
 } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
+import { IntegrationIcon } from '@/components/integration-icon';
+import { colors, radius, shadow, space } from '@/theme';
 import {
   connectComposioToolkit,
   fetchComposioCatalog,
@@ -181,32 +192,43 @@ export default function MarketplaceScreen() {
   const emptyRows = tab === 'built-in' ? servers : toolkits;
   const showSpinner = loading && emptyRows.length === 0 && !error;
 
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/more');
+    }
+  }, [router]);
+
   return (
-    <View className="flex-1 bg-[#0B0C0E]">
+    <View style={styles.screen}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
             accessibilityLabel="Go back"
-          >
-            <ArrowLeft size={20} color="#fff" />
-          </Pressable>
+          />
         }
         center={
-          <Typography type="h4" className="font-semibold text-white tracking-tight">
+          <Text style={styles.headerTitle}>
             Integrations
-          </Typography>
+          </Text>
         }
       />
 
       {showSpinner ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 14 }}
+          contentContainerStyle={{
+            paddingHorizontal: space.lg,
+            paddingTop: space.sm,
+            paddingBottom: insets.bottom + 32,
+            gap: space.md,
+          }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
@@ -215,221 +237,242 @@ export default function MarketplaceScreen() {
                 setRefreshing(true);
                 void load();
               }}
-              tintColor="#fff"
+              tintColor={colors.textPrimary}
             />
           }
         >
           {/* Segmented Tab Switcher */}
-          <View className="flex-row rounded-full border border-white/10 bg-white/5 p-1">
+          <View style={styles.tabSwitcher}>
             <Pressable
               onPress={() => switchTab('built-in')}
-              className={`flex-1 items-center justify-center rounded-full py-2 ${
-                tab === 'built-in' ? 'bg-white shadow-sm' : ''
-              }`}
+              style={[
+                styles.tabSegment,
+                tab === 'built-in' && styles.tabSegmentActive,
+                tab === 'built-in' && shadow.floating,
+              ]}
             >
-              <Typography
-                type="body-sm"
-                className={`font-semibold ${tab === 'built-in' ? 'text-black' : 'text-white/60'}`}
+              <Text
+                style={[
+                  styles.tabSegmentText,
+                  tab === 'built-in' && styles.tabSegmentTextActive,
+                ]}
               >
                 Built-in
-              </Typography>
+              </Text>
             </Pressable>
             <Pressable
               onPress={() => switchTab('composio')}
-              className={`flex-1 items-center justify-center rounded-full py-2 ${
-                tab === 'composio' ? 'bg-white shadow-sm' : ''
-              }`}
+              style={[
+                styles.tabSegment,
+                tab === 'composio' && styles.tabSegmentActive,
+                tab === 'composio' && shadow.floating,
+              ]}
             >
-              <Typography
-                type="body-sm"
-                className={`font-semibold ${tab === 'composio' ? 'text-black' : 'text-white/60'}`}
+              <Text
+                style={[
+                  styles.tabSegmentText,
+                  tab === 'composio' && styles.tabSegmentTextActive,
+                ]}
               >
-                Composio {composioTotal > 0 ? `(${composioTotal})` : ''}
-              </Typography>
+                {`Composio ${composioTotal > 0 ? `(${composioTotal})` : ''}`}
+              </Text>
             </Pressable>
           </View>
 
-          {/* Search Input */}
-          <View className="flex-row items-center rounded-full border border-white/10 bg-[#16171B] px-4 py-2.5">
-            <Search size={16} color="rgba(255,255,255,0.4)" />
+          {/* Pill Search Input */}
+          <View style={styles.searchBar}>
+            <Search size={16} color={colors.textSecondary} strokeWidth={1.75} />
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder={tab === 'built-in' ? 'Search integrations…' : 'Search 1,700+ Composio apps…'}
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              className="ml-2.5 flex-1 text-sm text-white"
+              placeholderTextColor={colors.textSecondary}
+              style={styles.searchInput}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
-              clearButtonMode="while-editing"
             />
+            {query ? (
+              <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear search">
+                <X size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Category Chips Scroll */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContainer}
+          >
             {(tab === 'built-in' ? CATEGORIES : ['all', ...composioCategories]).map((item) => {
               const active = category === item;
               return (
                 <Pressable
                   key={item}
                   onPress={() => setCategory(item)}
-                  className={`rounded-full px-3.5 py-1.5 border ${
-                    active
-                      ? 'border-white bg-white'
-                      : 'border-white/10 bg-white/5 active:bg-white/10'
-                  }`}
+                  style={[
+                    styles.chip,
+                    active && styles.chipActive,
+                  ]}
                 >
-                  <Typography
-                    type="body-xs"
-                    className={`font-medium capitalize ${active ? 'text-black font-semibold' : 'text-white/70'}`}
+                  <Text
+                    style={[
+                      styles.chipText,
+                      active && styles.chipTextActive,
+                    ]}
                   >
                     {item}
-                  </Typography>
+                  </Text>
                 </Pressable>
               );
             })}
             <Pressable
               onPress={() => setShowConnected((current) => !current)}
-              className={`flex-row items-center gap-1.5 rounded-full px-3.5 py-1.5 border ${
-                showConnected
-                  ? 'border-emerald-500/40 bg-emerald-500/20'
-                  : 'border-white/10 bg-white/5 active:bg-white/10'
-              }`}
+              style={[
+                styles.chip,
+                showConnected && styles.chipActive,
+              ]}
             >
               <View
-                className={`h-2 w-2 rounded-full ${showConnected ? 'bg-emerald-400' : 'bg-white/30'}`}
+                style={[
+                  styles.connectedDot,
+                  { backgroundColor: showConnected ? colors.onPrimary : colors.success },
+                ]}
               />
-              <Typography
-                type="body-xs"
-                className={`font-medium ${showConnected ? 'text-emerald-300 font-semibold' : 'text-white/70'}`}
+              <Text
+                style={[
+                  styles.chipText,
+                  showConnected && styles.chipTextActive,
+                ]}
               >
                 Connected
-              </Typography>
+              </Text>
             </Pressable>
           </ScrollView>
 
           {/* Warning Notice if Composio Not Configured */}
           {tab === 'composio' && !composioConfigured ? (
-            <View className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-              <Typography type="body-sm" className="font-semibold text-amber-300">
+            <View style={styles.noticeBox}>
+              <Text style={styles.noticeTitle}>
                 Composio is not configured
-              </Typography>
-              <Typography type="body-xs" className="mt-1 text-amber-300/80">
+              </Text>
+              <Text style={styles.noticeSubtitle}>
                 Set COMPOSIO_API_KEY in the API server environment to unlock 1,700+ app toolkits.
-              </Typography>
+              </Text>
             </View>
           ) : null}
 
           {/* Total Indicator */}
           {tab === 'composio' && composioConfigured && composioTotal > toolkits.length ? (
-            <Typography type="body-xs" className="px-1 text-white/40">
-              Showing {toolkits.length} of {composioTotal} toolkits — refine search to filter.
-            </Typography>
+            <Text style={styles.counterText}>
+              {`Showing ${toolkits.length} of ${composioTotal} toolkits — refine search to filter.`}
+            </Text>
           ) : null}
 
           {/* Error Notice */}
           {error ? (
-            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
-              <Typography type="body-sm" className="text-red-400">
-                {error}
-              </Typography>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
           {/* Empty State */}
           {emptyRows.length === 0 && !error ? (
-            <View className="mt-14 items-center justify-center px-6">
-              <View className="h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-4">
-                <Blocks size={28} color="rgba(255,255,255,0.4)" />
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <Blocks size={32} color={colors.textSecondary} strokeWidth={1.5} />
               </View>
-              <Typography type="h4" className="text-center font-semibold text-white mb-1.5">
+              <Text style={styles.emptyTitle}>
                 No integrations found
-              </Typography>
-              <Typography type="body-sm" className="text-center text-white/50 leading-relaxed max-w-[280px]">
+              </Text>
+              <Text style={styles.emptySubtitle}>
                 {tab === 'built-in'
                   ? 'No built-in services match your filter. Try clearing the search or category.'
                   : 'Try typing a different app name like GitHub, Slack, Notion, or Gmail.'}
-              </Typography>
+              </Text>
             </View>
           ) : null}
 
           {/* Built-in Servers List */}
           {tab === 'built-in' && servers.length > 0 ? (
-            <View className="gap-2.5">
-              {servers.map((server) => {
+            <GroupedCard>
+              {servers.map((server, index) => {
                 const isConn = server.connected;
                 return (
-                  <Pressable
-                    key={server.id}
-                    onPress={() => router.push(`/mcp/${server.id}`)}
-                    className="rounded-2xl border border-white/5 bg-[#131418] p-4 active:scale-[0.99] transition-transform"
-                  >
-                    <View className="flex-row items-center gap-3">
-                      <View className="h-11 w-11 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
-                        <Cloud size={20} color="#22D3EE" />
+                  <React.Fragment key={server.id}>
+                    {index > 0 && <HairlineDivider inset={68} />}
+                    <Pressable
+                      onPress={() => router.push(`/mcp/${server.id}`)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${server.name}`}
+                      style={({ pressed }) => [
+                        styles.integrationRow,
+                        { opacity: pressed ? 0.6 : 1 },
+                      ]}
+                    >
+                      <View style={styles.tileIcon}>
+                        {server.iconUrl ? (
+                          <IntegrationIcon uri={server.iconUrl} size={28} />
+                        ) : (
+                          <Cloud size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                        )}
                       </View>
-                      <View className="flex-1">
-                        <View className="flex-row items-center gap-2">
-                          <Typography type="h5" className="font-semibold text-white" numberOfLines={1}>
+                      <View style={styles.integrationContent}>
+                        <View style={styles.titleRow}>
+                          <Text numberOfLines={1} style={styles.integrationName}>
                             {server.name}
-                          </Typography>
+                          </Text>
                           {server.isVerified ? (
-                            <ShieldCheck size={15} color="#38BDF8" />
+                            <ShieldCheck size={14} color={colors.textSecondary} strokeWidth={2} />
                           ) : null}
                         </View>
-                        <Typography type="body-xs" className="mt-0.5 text-white/50" numberOfLines={2}>
+                        <Text numberOfLines={2} style={styles.integrationDesc}>
                           {server.description || 'Vendor-hosted remote MCP server.'}
-                        </Typography>
-                        <View className="mt-2 flex-row items-center gap-2">
-                          <View className="rounded-md bg-white/10 px-1.5 py-0.5">
-                            <Typography type="body-xs" className="text-white/60">
+                        </Text>
+                        <View style={styles.tagRow}>
+                          <View style={styles.tagPill}>
+                            <Text style={styles.tagText}>
                               {AUTH_LABEL[server.authType] ?? server.authType}
-                            </Typography>
+                            </Text>
                           </View>
                           {server.isFreeTier ? (
-                            <View className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 border border-emerald-500/20">
-                              <Typography type="body-xs" className="text-emerald-400">
-                                free tier
-                              </Typography>
+                            <View style={styles.tagPill}>
+                              <Text style={styles.tagText}>free tier</Text>
                             </View>
                           ) : null}
                         </View>
                       </View>
-                      <View className="items-end gap-1">
+
+                      <View style={styles.actionColumn}>
                         {isConn ? (
-                          <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1">
-                            <CheckCircle2 size={12} color="#34D399" />
-                            <Typography type="body-xs" className="font-medium text-emerald-400">
-                              Active
-                            </Typography>
+                          <View style={styles.activePill}>
+                            <Check size={12} color={colors.success} strokeWidth={2.5} />
+                            <Text style={styles.activeText}>Active</Text>
                           </View>
                         ) : server.connectionStatus ? (
-                          <View className="flex-row items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1">
-                            <Clock size={12} color="#FBBF24" />
-                            <Typography type="body-xs" className="font-medium text-amber-400">
-                              {server.connectionStatus}
-                            </Typography>
+                          <View style={styles.statusPill}>
+                            <Clock size={12} color={colors.textSecondary} strokeWidth={2} />
+                            <Text style={styles.statusText}>{server.connectionStatus}</Text>
                           </View>
                         ) : (
-                          <View className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
-                            <Typography type="body-xs" className="text-white/60">
-                              Connect
-                            </Typography>
-                            <ChevronRight size={12} color="rgba(255,255,255,0.4)" />
+                          <View style={styles.connectPill}>
+                            <Text style={styles.connectText}>Connect</Text>
+                            <ChevronRight size={14} color={colors.textSecondary} strokeWidth={1.75} />
                           </View>
                         )}
                       </View>
-                    </View>
-                  </Pressable>
+                    </Pressable>
+                  </React.Fragment>
                 );
               })}
-            </View>
+            </GroupedCard>
           ) : null}
 
           {/* Composio Toolkits List */}
           {tab === 'composio' && toolkits.length > 0 ? (
-            <View className="gap-2.5">
-              {toolkits.map((item) => {
+            <GroupedCard>
+              {toolkits.map((item, index) => {
                 const isConnecting = connecting === item.toolkit;
                 const isConn = item.connected;
                 const actionText = isConn
@@ -437,64 +480,324 @@ export default function MarketplaceScreen() {
                   : (ACTION_LABEL[item.connectionStatus ?? ''] ?? 'Connect');
 
                 return (
-                  <Pressable
-                    key={item.toolkit}
-                    disabled={isConnecting}
-                    onPress={() => void onPressToolkit(item)}
-                    className="rounded-2xl border border-white/5 bg-[#131418] p-4 active:scale-[0.99] transition-transform"
-                  >
-                    <View className="flex-row items-center gap-3">
-                      <View className="h-11 w-11 items-center justify-center rounded-xl border border-purple-500/20 bg-purple-500/10">
-                        <Zap size={20} color="#C084FC" />
+                  <React.Fragment key={item.toolkit}>
+                    {index > 0 && <HairlineDivider inset={68} />}
+                    <Pressable
+                      disabled={isConnecting}
+                      onPress={() => void onPressToolkit(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${item.name}`}
+                      style={({ pressed }) => [
+                        styles.integrationRow,
+                        { opacity: pressed ? 0.6 : 1 },
+                      ]}
+                    >
+                      {/*
+                        The integration's own logo. When Composio has no logo
+                        for a toolkit the tile is simply left empty — no
+                        stand-in icon is invented for it.
+                      */}
+                      <View style={styles.tileIcon}>
+                        <IntegrationIcon uri={item.logo} size={28} />
                       </View>
-                      <View className="flex-1">
-                        <View className="flex-row items-center gap-2">
-                          <Typography type="h5" className="font-semibold text-white" numberOfLines={1}>
+                      <View style={styles.integrationContent}>
+                        <View style={styles.titleRow}>
+                          <Text numberOfLines={1} style={styles.integrationName}>
                             {item.name}
-                          </Typography>
+                          </Text>
                           {item.toolCount > 0 ? (
-                            <View className="rounded-md bg-white/10 px-1.5 py-0.5">
-                              <Typography type="body-xs" className="text-white/60">
-                                {item.toolCount} tools
-                              </Typography>
+                            <View style={styles.tagPill}>
+                              <Text style={styles.tagText}>{`${item.toolCount} tools`}</Text>
                             </View>
                           ) : null}
                         </View>
-                        <Typography type="body-xs" className="mt-0.5 text-white/50" numberOfLines={2}>
+                        <Text numberOfLines={2} style={styles.integrationDesc}>
                           {item.description || 'Composio toolkit integration.'}
-                        </Typography>
-                        <Typography type="body-xs" className="mt-1.5 text-white/40">
+                        </Text>
+                        <Text numberOfLines={1} style={styles.authText}>
                           {item.authSchemes.length > 0 ? item.authSchemes.join(' · ') : 'managed auth'}
-                        </Typography>
+                        </Text>
                       </View>
 
-                      <View className="items-end">
+                      <View style={styles.actionColumn}>
                         {isConnecting ? (
                           <Spinner size="sm" color="default" />
                         ) : isConn ? (
-                          <View className="flex-row items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1">
-                            <CheckCircle2 size={12} color="#34D399" />
-                            <Typography type="body-xs" className="font-medium text-emerald-400">
-                              Connected
-                            </Typography>
+                          <View style={styles.activePill}>
+                            <Check size={12} color={colors.success} strokeWidth={2.5} />
+                            <Text style={styles.activeText}>Active</Text>
                           </View>
                         ) : (
-                          <View className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 active:bg-white/20">
-                            <Typography type="body-xs" className="font-semibold text-white">
-                              {actionText}
-                            </Typography>
-                            <ChevronRight size={12} color="#fff" />
+                          <View style={styles.connectPill}>
+                            <Text style={styles.connectText}>{actionText}</Text>
+                            <ChevronRight size={14} color={colors.textSecondary} strokeWidth={1.75} />
                           </View>
                         )}
                       </View>
-                    </View>
-                  </Pressable>
+                    </Pressable>
+                  </React.Fragment>
                 );
               })}
-            </View>
+            </GroupedCard>
           ) : null}
         </ScrollView>
       )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    padding: 3,
+  },
+  tabSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    paddingVertical: 8,
+  },
+  tabSegmentActive: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  tabSegmentText: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  tabSegmentTextActive: {
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  chipsContainer: {
+    gap: space.xs,
+    paddingVertical: 2,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  chipTextActive: {
+    color: colors.onPrimary,
+    fontWeight: '600',
+  },
+  connectedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: radius.pill,
+  },
+  noticeBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: space.md,
+    gap: 2,
+  },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  noticeSubtitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  counterText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    paddingHorizontal: 4,
+  },
+  errorBox: {
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.card,
+    padding: space.md,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.recording,
+    textAlign: 'center',
+  },
+  emptyContainer: {
+    marginTop: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.xs,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.sm,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  integrationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 14,
+  },
+  tileIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.tile,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  integrationContent: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  integrationName: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  integrationDesc: {
+    fontSize: 13,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  tagPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  authText: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  actionColumn: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  activePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  activeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  connectPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  connectText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+});

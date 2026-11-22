@@ -14,7 +14,6 @@ const serverVars = [
   ["SUPABASE_URL", "apps/api"],
   ["SUPABASE_ANON_KEY", "apps/api"],
   ["SUPABASE_SERVICE_ROLE_KEY", "apps/api"],
-  ["ALLOWED_USER_ID", "apps/api"],
   ["INNGEST_EVENT_KEY", "apps/api"],
   ["INNGEST_SIGNING_KEY", "apps/api"],
   ["GOOGLE_GENERATIVE_AI_API_KEY", "apps/api"],

@@ -40,7 +40,6 @@ const required = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "ALLOWED_USER_ID",
   "INNGEST_EVENT_KEY",
   "INNGEST_SIGNING_KEY",
   "EXPO_PUBLIC_API_BASE_URL",
@@ -62,29 +61,42 @@ if (!placeholder(env.SUPABASE_URL) && !placeholder(env.SUPABASE_ANON_KEY)) {
   }
 }
 
-// 3. Service role key works + allow-listed user exists
+// 3. Service role key works + exactly one account exists
 if (!placeholder(env.SUPABASE_SERVICE_ROLE_KEY) && !placeholder(env.SUPABASE_URL)) {
   try {
-    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users?per_page=50`, {
-      headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
-    const body = await res.json().catch(() => null);
-    const users = Array.isArray(body?.users) ? body.users : [];
-    if (!res.ok) {
-      fail("Service role key", `admin/users returned ${res.status}`);
+    const perPage = 100;
+    const users = [];
+    let page = 1;
+    let listingError = null;
+    while (true) {
+      const res = await fetch(
+        `${env.SUPABASE_URL}/auth/v1/admin/users?per_page=${perPage}&page=${page}`,
+        {
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        },
+      );
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        listingError = `admin/users returned ${res.status}`;
+        break;
+      }
+      const batch = Array.isArray(body?.users) ? body.users : [];
+      users.push(...batch);
+      if (batch.length < perPage) break;
+      page += 1;
+    }
+
+    if (listingError) {
+      fail("Service role key", listingError);
     } else if (users.length === 0) {
-      fail("Allow-list", "no users in Supabase yet — sign in through the app first");
+      fail("Single account", "no users in Supabase yet — create the first account through the app");
+    } else if (users.length > 1) {
+      fail("Single account", `expected one Supabase user, found ${users.length}`);
     } else {
-      const allowed = users.find((u) => u.id === env.ALLOWED_USER_ID);
-      if (allowed) ok("Allow-list", `matches ${allowed.email ?? allowed.id}`);
-      else
-        fail(
-          "Allow-list",
-          `ALLOWED_USER_ID does not match any user. Found: ${users.map((u) => `${u.email} (${u.id})`).join(", ")}`
-        );
+      ok("Single account", "exactly one Supabase Auth user exists");
     }
   } catch (err) {
     fail("Service role key", String(err));

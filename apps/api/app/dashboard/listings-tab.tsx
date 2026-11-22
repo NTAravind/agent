@@ -41,8 +41,8 @@ import { Textarea } from "@/components/ui/textarea";
 /**
  * Dashboard tab: full CRUD for marketplace listings (`mcp_servers`).
  * Create/edit/delete + enable/disable, plus the `instructions` field that the
- * mobile integration screen shows before connecting. Admin-gated server-side
- * (ALLOWED_USER_ID); this component just forwards the dashboard session.
+ * mobile integration screen shows before connecting. The API requires a
+ * signed-in session; single-account Auth enforcement is handled by Supabase.
  */
 
 type Listing = {

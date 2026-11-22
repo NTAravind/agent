@@ -1,13 +1,23 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, Check, Clock, ListTodo, MapPin, Plus, Sparkles } from 'lucide-react-native';
+import { CalendarDays, Check, Clock, ListTodo, MapPin, Plus } from 'lucide-react-native';
 import type { CalendarEvent, Task, TaskList } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
+import { colors, radius, shadow, space } from '@/theme';
 import {
   endOfDayIso,
   formatHeaderDate,
@@ -100,15 +110,14 @@ export default function TodayScreen() {
 
   const handleToggle = useCallback(
     async (task: Task) => {
+      const nextStatus = task.status === 'done' ? 'open' : 'done';
       setTasks((current) =>
         current.map((item) =>
-          item.id === task.id
-            ? { ...item, status: task.status === 'done' ? 'open' : 'done' }
-            : item,
+          item.id === task.id ? { ...item, status: nextStatus } : item,
         ),
       );
       try {
-        await updateTask(task.id, { status: task.status === 'done' ? 'open' : 'done' });
+        await updateTask(task.id, { status: nextStatus });
       } catch (error) {
         setNotice(error instanceof Error ? error.message : String(error));
         void load();
@@ -169,31 +178,30 @@ export default function TodayScreen() {
   }, [draft, lists, saving]);
 
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
       <AppHeader
         center={
-          <View className="items-center">
-            <Typography type="body-sm" weight="semibold" className="text-zinc-900 dark:text-white">
-              Today
-            </Typography>
-            <Text className="text-[10px] text-zinc-400">{formatHeaderDate()}</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Today</Text>
+            <Text style={styles.headerDate}>{formatHeaderDate()}</Text>
           </View>
         }
         right={
-          <Pressable
+          <RoundButton
+            icon={ListTodo}
             onPress={() => router.push('/tasks')}
-            accessibilityRole="button"
-            accessibilityLabel="Open tasks"
-            className="h-8.5 px-3 flex-row items-center gap-1.5 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:opacity-75"
-          >
-            <ListTodo size={13} color="#71717a" />
-            <Text className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Tasks</Text>
-          </Pressable>
+            accessibilityLabel="Open all tasks"
+          />
         }
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 18 }}
+        contentContainerStyle={{
+          paddingHorizontal: space.lg,
+          paddingTop: space.sm,
+          paddingBottom: insets.bottom + 100, // accommodate pill dock
+          gap: space.lg,
+        }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -202,17 +210,17 @@ export default function TodayScreen() {
               setRefreshing(true);
               void load();
             }}
-            tintColor="#8b5cf6"
+            tintColor={colors.textPrimary}
           />
         }
       >
-        {/* Quick add */}
-        <View className="flex-row items-center gap-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-3.5 py-2.5">
-          <Plus size={16} color="#71717a" />
+        {/* Quick add pill */}
+        <View style={styles.quickAddRow}>
+          <Plus size={18} color={colors.textSecondary} strokeWidth={1.75} />
           <TextInput
-            className="flex-1 text-sm text-zinc-900 dark:text-white"
+            style={styles.quickAddInput}
             placeholder="Add a task for today…"
-            placeholderTextColor="#71717a"
+            placeholderTextColor={colors.textSecondary}
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={() => void handleQuickAdd()}
@@ -223,166 +231,136 @@ export default function TodayScreen() {
             disabled={saving || !draft.trim()}
             accessibilityRole="button"
             accessibilityLabel="Add task"
-            className="h-7 w-7 items-center justify-center rounded-full bg-zinc-900 dark:bg-white active:opacity-70 disabled:opacity-30"
+            style={({ pressed }) => [
+              styles.quickAddButton,
+              { opacity: pressed ? 0.6 : draft.trim() ? 1 : 0.4 },
+            ]}
           >
             {saving ? (
               <Spinner size="sm" color="default" />
             ) : (
-              <Check size={14} color="#ffffff" />
+              <Check size={14} color={colors.onPrimary} strokeWidth={2.5} />
             )}
           </Pressable>
         </View>
 
         {notice ? (
-          <View className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3.5 py-2.5">
-            <Text className="text-xs text-sky-500 dark:text-sky-400">{notice}</Text>
+          <View style={styles.noticeBox}>
+            <Text style={styles.noticeText}>{notice}</Text>
           </View>
         ) : null}
 
         {loading ? (
-          <View className="py-16 items-center justify-center">
+          <View style={styles.center}>
             <Spinner size="lg" color="default" />
           </View>
         ) : (
           <>
             {/* Events today */}
-            <View className="gap-2">
-              <View className="flex-row items-center gap-1.5 px-1">
-                <CalendarDays size={14} color="#71717a" />
-                <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  Schedule
-                </Text>
-              </View>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Schedule" />
               {events.length === 0 ? (
-                <View className="rounded-2xl border border-dashed border-zinc-200 dark:border-white/10 px-4 py-5 items-center">
-                  <Text className="text-xs text-zinc-500">Nothing scheduled today.</Text>
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyText}>Nothing scheduled today.</Text>
                   <Pressable
                     onPress={() => router.push('/calendar')}
-                    className="mt-2 rounded-full border border-zinc-200 dark:border-white/10 px-3 py-1 active:opacity-70"
+                    style={styles.openCalendarPill}
                   >
-                    <Text className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">
-                      Open calendar
-                    </Text>
+                    <Text style={styles.openCalendarText}>Open calendar</Text>
                   </Pressable>
                 </View>
               ) : (
-                <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] overflow-hidden">
+                <GroupedCard>
                   {events.map((event, index) => (
-                    <Pressable
-                      key={`${event.id}-${event.startsAt}`}
-                      onPress={() => router.push('/calendar')}
-                      className={`flex-row items-center gap-3 px-4 py-3 active:bg-zinc-100 dark:active:bg-[#18181e] ${
-                        index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''
-                      }`}
-                    >
-                      <View className="w-14">
-                        <Text className="text-xs font-bold text-zinc-900 dark:text-white">
-                          {formatTime(event.startsAt)}
-                        </Text>
-                        <Text className="text-[10px] text-zinc-400">
-                          {formatTime(event.endsAt)}
-                        </Text>
-                      </View>
-                      <View className="flex-1 min-w-0">
-                        <View className="flex-row items-center gap-1.5">
-                          <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
+                    <React.Fragment key={`${event.id}-${event.startsAt}`}>
+                      {index > 0 && <HairlineDivider inset={72} />}
+                      <Pressable
+                        onPress={() => router.push('/calendar')}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${event.title} at ${formatTime(event.startsAt)}`}
+                        style={({ pressed }) => [
+                          styles.eventRow,
+                          { opacity: pressed ? 0.6 : 1 },
+                        ]}
+                      >
+                        <View style={styles.timeColumn}>
+                          <Text style={styles.eventTimeStart}>
+                            {formatTime(event.startsAt)}
+                          </Text>
+                          <Text style={styles.eventTimeEnd}>
+                            {formatTime(event.endsAt)}
+                          </Text>
+                        </View>
+                        <View style={styles.eventContent}>
+                          <Text numberOfLines={1} style={styles.eventTitle}>
                             {event.title}
                           </Text>
-                          {event.createdBy === 'agent' ? (
-                            <View className="rounded-full bg-violet-500/15 px-1.5 py-0.5">
-                              <Text className="text-[9px] font-bold text-violet-500">AI</Text>
+                          {event.location ? (
+                            <View style={styles.locationRow}>
+                              <MapPin size={12} color={colors.textSecondary} />
+                              <Text numberOfLines={1} style={styles.locationText}>
+                                {event.location}
+                              </Text>
                             </View>
                           ) : null}
-                          {event.rrule ? (
-                            <Text className="text-[10px] font-semibold text-zinc-400">↻</Text>
-                          ) : null}
                         </View>
-                        {event.location ? (
-                          <View className="flex-row items-center gap-1 mt-0.5">
-                            <MapPin size={11} color="#71717a" />
-                            <Text className="text-[11px] text-zinc-500">{event.location}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    </Pressable>
+                      </Pressable>
+                    </React.Fragment>
                   ))}
-                </View>
+                </GroupedCard>
               )}
             </View>
 
             {/* Overdue */}
             {overdue.length > 0 ? (
-              <View className="gap-2">
-                <View className="flex-row items-center gap-1.5 px-1">
-                  <Clock size={14} color="#ef4444" />
-                  <Text className="text-xs font-semibold uppercase tracking-wider text-red-500">
-                    Overdue
-                  </Text>
-                </View>
-                <View className="rounded-2xl border border-red-500/20 bg-red-500/5 overflow-hidden">
+              <View style={{ gap: space.xs }}>
+                <SectionLabel text="Overdue" />
+                <GroupedCard>
                   {overdue.map((task, index) => (
-                    <View
-                      key={task.id}
-                      className={index > 0 ? 'border-t border-red-500/10' : ''}
-                    >
+                    <React.Fragment key={task.id}>
+                      {index > 0 && <HairlineDivider inset={48} />}
                       <TaskRow
                         task={task}
                         onToggle={(t) => void handleToggle(t)}
                         listName={listNames.get(task.listId)}
                       />
-                    </View>
+                    </React.Fragment>
                   ))}
-                </View>
+                </GroupedCard>
               </View>
             ) : null}
 
             {/* Due today */}
-            <View className="gap-2">
-              <View className="flex-row items-center gap-1.5 px-1">
-                <ListTodo size={14} color="#71717a" />
-                <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  Due today
-                </Text>
-              </View>
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Due today" />
               {dueToday.length === 0 ? (
-                <View className="rounded-2xl border border-dashed border-zinc-200 dark:border-white/10 px-4 py-5 items-center">
-                  <Text className="text-xs text-zinc-500">No tasks due today.</Text>
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyText}>No tasks due today.</Text>
                 </View>
               ) : (
-                <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] overflow-hidden">
+                <GroupedCard>
                   {dueToday.map((task, index) => (
-                    <View
-                      key={task.id}
-                      className={
-                        index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''
-                      }
-                    >
+                    <React.Fragment key={task.id}>
+                      {index > 0 && <HairlineDivider inset={48} />}
                       <TaskRow
                         task={task}
                         onToggle={(t) => void handleToggle(t)}
                         listName={listNames.get(task.listId)}
                       />
-                    </View>
+                    </React.Fragment>
                   ))}
-                </View>
+                </GroupedCard>
               )}
             </View>
 
-            {/* Suggestions from memory extraction */}
+            {/* Suggestions */}
             {suggestions.length > 0 ? (
-              <View className="gap-2">
-                <View className="flex-row items-center gap-1.5 px-1">
-                  <Sparkles size={14} color="#a855f7" />
-                  <Text className="text-xs font-semibold uppercase tracking-wider text-fuchsia-500">
-                    Suggested
-                  </Text>
-                </View>
-                <View className="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 overflow-hidden">
+              <View style={{ gap: space.xs }}>
+                <SectionLabel text="Suggested" />
+                <GroupedCard>
                   {suggestions.map((task, index) => (
-                    <View
-                      key={task.id}
-                      className={index > 0 ? 'border-t border-fuchsia-500/10' : ''}
-                    >
+                    <React.Fragment key={task.id}>
+                      {index > 0 && <HairlineDivider inset={48} />}
                       <TaskRow
                         task={task}
                         onToggle={(t) => void handleToggle(t)}
@@ -390,37 +368,28 @@ export default function TodayScreen() {
                         onDismiss={(t) => void handleDismiss(t)}
                         listName={listNames.get(task.listId)}
                       />
-                    </View>
+                    </React.Fragment>
                   ))}
-                </View>
+                </GroupedCard>
               </View>
             ) : null}
 
             {/* Upcoming */}
             {upcoming.length > 0 ? (
-              <View className="gap-2">
-                <View className="flex-row items-center gap-1.5 px-1">
-                  <Clock size={14} color="#71717a" />
-                  <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                    Upcoming
-                  </Text>
-                </View>
-                <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] overflow-hidden">
+              <View style={{ gap: space.xs }}>
+                <SectionLabel text="Upcoming" />
+                <GroupedCard>
                   {upcoming.map((task, index) => (
-                    <View
-                      key={task.id}
-                      className={
-                        index > 0 ? 'border-t border-zinc-100 dark:border-white/5' : ''
-                      }
-                    >
+                    <React.Fragment key={task.id}>
+                      {index > 0 && <HairlineDivider inset={48} />}
                       <TaskRow
                         task={task}
                         onToggle={(t) => void handleToggle(t)}
                         listName={listNames.get(task.listId)}
                       />
-                    </View>
+                    </React.Fragment>
                   ))}
-                </View>
+                </GroupedCard>
               </View>
             ) : null}
           </>
@@ -429,3 +398,126 @@ export default function TodayScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerCenter: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  headerDate: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
+    paddingVertical: 10,
+  },
+  quickAddInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  quickAddButton: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  noticeText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  center: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.lg,
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  openCalendarPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  openCalendarText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  eventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: 12,
+  },
+  timeColumn: {
+    width: 56,
+  },
+  eventTimeStart: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  eventTimeEnd: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textSecondary,
+  },
+  eventContent: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  eventTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  locationText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+});

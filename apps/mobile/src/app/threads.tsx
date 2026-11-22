@@ -1,13 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { Button, Spinner, Typography } from 'heroui-native';
+import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Search, Sparkles, Trash2, Users, X } from 'lucide-react-native';
+import { ChevronLeft, MessageSquare, Plus, Search, Trash2, Users, X } from 'lucide-react-native';
 import type { Thread } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { PillButton, RoundButton } from '@/components/design-system';
+import { colors, radius, shadow, space } from '@/theme';
 import { deleteThread, fetchThreads } from '@/lib/models';
 
 function formatThreadDate(dateStr?: string | null): string {
@@ -31,16 +33,27 @@ function formatThreadDate(dateStr?: string | null): string {
 export default function ThreadsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
-  const load = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
-    if (mode === 'refresh') setRefreshing(true);
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/chat' as never);
+    }
+  }, [router]);
+
+  const load = useCallback(async (type?: 'refresh') => {
+    if (type === 'refresh') setRefreshing(true);
+    else setLoading(true);
     try {
-      setThreads(await fetchThreads());
+      const data = await fetchThreads();
+      setThreads(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -57,35 +70,34 @@ export default function ThreadsScreen() {
   );
 
   const filteredThreads = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return threads;
+    if (!query.trim()) return threads;
+    const lower = query.toLowerCase();
     return threads.filter(
       (t) =>
-        (t.title ?? '').toLowerCase().includes(q) ||
-        (t.agent?.name ?? '').toLowerCase().includes(q) ||
-        (t.group?.name ?? '').toLowerCase().includes(q) ||
-        (t.model ?? '').toLowerCase().includes(q),
+        t.title?.toLowerCase().includes(lower) ||
+        t.agent?.name.toLowerCase().includes(lower) ||
+        t.group?.name.toLowerCase().includes(lower),
     );
-  }, [threads, query]);
+  }, [query, threads]);
 
-  // A group conversation is not an ordinary chat: it runs through the group
-  // pipeline, so it opens the group screen instead of the chat screen.
-  const openThread = useCallback(
-    (thread: Thread) => {
-      const groupId = thread.group_id ?? thread.group?.id;
-      if (groupId) {
-        router.push({ pathname: '/groups/[id]', params: { id: groupId } } as never);
-        return;
-      }
-      router.push({ pathname: '/chat', params: { threadId: thread.id } });
-    },
-    [router],
-  );
+  const openThread = (thread: Thread) => {
+    if (thread.group_id) {
+      router.push({
+        pathname: '/groups/[id]',
+        params: { id: thread.group_id, threadId: thread.id },
+      });
+      return;
+    }
+    router.push({
+      pathname: '/chat',
+      params: { threadId: thread.id, agentId: thread.agent_id ?? undefined },
+    });
+  };
 
   const handleDelete = useCallback((thread: Thread) => {
     RNAlert.alert(
-      'Delete conversation?',
-      `Delete "${thread.title ?? 'Untitled'}"? This cannot be undone.`,
+      'Delete conversation',
+      `Delete “${thread.title ?? 'Untitled'}”? Messages cannot be recovered.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -100,106 +112,88 @@ export default function ThreadsScreen() {
   }, [load]);
 
   return (
-    <View className="flex-1 bg-white dark:bg-[#09090b]">
+    <View style={styles.screen}>
       <AppHeader
         left={
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
             accessibilityLabel="Close"
-            className="px-2 py-1 active:opacity-60"
-          >
-            <Typography type="body" className="text-zinc-500 dark:text-zinc-400">
-              Close
-            </Typography>
-          </Pressable>
+          />
         }
         center={
-          <Typography type="body" weight="semibold" className="text-zinc-900 dark:text-white">
-            Conversations
-          </Typography>
+          <Text style={styles.headerTitle}>Conversations</Text>
         }
         right={
-          <Pressable
+          <RoundButton
+            icon={Plus}
             onPress={() => router.push('/chat')}
-            accessibilityRole="button"
             accessibilityLabel="New chat"
-            className="h-8.5 w-8.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 active:bg-zinc-100 dark:active:bg-white/10"
-          >
-            <Plus size={16} color="#71717a" />
-          </Pressable>
+          />
         }
       />
 
-      {/* Search Bar */}
-      <View className="px-4 py-2">
-        <View className="flex-row items-center rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] px-3 py-2 gap-2">
-          <Search size={16} color="#71717a" />
+      {/* Pill Search Bar */}
+      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.xs }}>
+        <View style={styles.searchBar}>
+          <Search size={18} color={colors.textSecondary} />
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder="Search conversations…"
-            placeholderTextColor="#71717a"
-            className="flex-1 text-sm text-zinc-900 dark:text-white"
+            placeholderTextColor={colors.textSecondary}
+            style={styles.searchInput}
           />
           {query ? (
-            <Pressable onPress={() => setQuery('')} className="p-1">
-              <X size={14} color="#71717a" />
+            <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear">
+              <X size={16} color={colors.textSecondary} />
             </Pressable>
           ) : null}
         </View>
       </View>
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
+        <View style={styles.center}>
           <Spinner size="lg" color="default" />
         </View>
       ) : (
         <ScrollView
           contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 4,
-            paddingBottom: insets.bottom + 24,
-            gap: 8,
+            paddingHorizontal: space.lg,
+            paddingTop: space.xs,
+            paddingBottom: insets.bottom + space.xxl,
+            gap: space.sm,
           }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => void load('refresh')}
-              tintColor="#8b5cf6"
+              tintColor={colors.textPrimary}
             />
           }
         >
           {error ? (
-            <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
-              <Typography type="body-sm" className="text-red-500 text-center">
-                {error}
-              </Typography>
-              <Button size="sm" variant="secondary" onPress={() => void load()} className="mt-2">
-                <Button.Label>Retry</Button.Label>
-              </Button>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+              <PillButton label="Retry" onPress={() => void load()} variant="secondary" style={{ marginTop: space.sm }} />
             </View>
           ) : null}
 
           {filteredThreads.length === 0 && !error ? (
-            <View className="mt-20 items-center justify-center px-6 gap-3">
-              <View className="h-16 w-16 items-center justify-center rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
-                <Sparkles size={28} color="#71717a" />
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <MessageSquare size={32} color={colors.textSecondary} strokeWidth={1.5} />
               </View>
-              <Text className="text-base font-semibold text-zinc-900 dark:text-white">
-                No conversations found
-              </Text>
-              <Text className="text-xs text-zinc-500 text-center max-w-xs">
+              <Text style={styles.emptyTitle}>No conversations found</Text>
+              <Text style={styles.emptySubtitle}>
                 {query ? 'Try a different search term.' : 'Start a new chat to explore ideas and run agent tasks.'}
               </Text>
-              <Button
-                size="md"
-                variant="primary"
-                className="rounded-full mt-2"
+              <PillButton
+                label="Start a conversation"
                 onPress={() => router.push('/chat')}
-              >
-                <Button.Label>Start a conversation</Button.Label>
-              </Button>
+                variant="primary"
+                style={{ marginTop: space.md }}
+              />
             </View>
           ) : null}
 
@@ -209,12 +203,15 @@ export default function ThreadsScreen() {
               onPress={() => openThread(thread)}
               accessibilityRole="button"
               accessibilityLabel={thread.title ?? 'Untitled thread'}
-              className="flex-row items-center rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#121215] p-3.5 active:bg-zinc-100 dark:active:bg-[#18181d]"
+              style={({ pressed }) => [
+                styles.threadCard,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
             >
-              <View className="mr-3">
+              <View style={{ marginRight: space.md }}>
                 {thread.group ? (
-                  <View className="h-10 w-10 items-center justify-center rounded-2xl border border-purple-500/20 bg-purple-500/10">
-                    <Users size={18} color="#a855f7" />
+                  <View style={styles.groupIconBox}>
+                    <Users size={20} color={colors.textPrimary} />
                   </View>
                 ) : thread.agent ? (
                   <AgentAvatar
@@ -223,43 +220,27 @@ export default function ThreadsScreen() {
                     size={40}
                   />
                 ) : (
-                  <View className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5">
-                    <Sparkles size={18} color="#a1a1aa" />
+                  <View style={styles.defaultAvatarBox}>
+                    <MessageSquare size={18} color={colors.textSecondary} />
                   </View>
                 )}
               </View>
 
-              <View className="flex-1 min-w-0 pr-2">
-                <Text
-                  numberOfLines={1}
-                  className="text-base font-semibold text-zinc-900 dark:text-white"
-                >
+              <View style={{ flex: 1, minWidth: 0, paddingRight: space.sm }}>
+                <Text numberOfLines={1} style={styles.threadTitle}>
                   {thread.title ?? 'Untitled conversation'}
                 </Text>
-                <View className="mt-1 flex-row items-center gap-2">
-                  <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                <View style={styles.threadMetaRow}>
+                  <Text style={styles.threadMetaText}>
                     {formatThreadDate(thread.updated_at)}
                   </Text>
                   {thread.group ? (
-                    <Text
-                      numberOfLines={1}
-                      className="text-xs font-medium text-purple-600 dark:text-purple-400"
-                    >
+                    <Text numberOfLines={1} style={styles.threadEntity}>
                       · {thread.group.name}
                     </Text>
                   ) : thread.agent ? (
-                    <Text
-                      numberOfLines={1}
-                      className="text-xs font-medium text-purple-600 dark:text-purple-400"
-                    >
+                    <Text numberOfLines={1} style={styles.threadEntity}>
                       · {thread.agent.name}
-                    </Text>
-                  ) : thread.model ? (
-                    <Text
-                      numberOfLines={1}
-                      className="text-xs text-zinc-400 dark:text-zinc-500"
-                    >
-                      · {thread.model.split(':').pop()}
                     </Text>
                   ) : null}
                 </View>
@@ -269,9 +250,9 @@ export default function ThreadsScreen() {
                 onPress={() => handleDelete(thread)}
                 accessibilityRole="button"
                 accessibilityLabel="Delete thread"
-                className="h-8 w-8 items-center justify-center rounded-full active:bg-zinc-200 dark:active:bg-white/10"
+                style={styles.deleteButton}
               >
-                <Trash2 size={15} color="#71717a" />
+                <Trash2 size={16} color={colors.recording} />
               </Pressable>
             </Pressable>
           ))}
@@ -280,3 +261,127 @@ export default function ThreadsScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    height: 44,
+    gap: space.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+  },
+  errorBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: space.md,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 15,
+    color: colors.recording,
+  },
+  emptyContainer: {
+    marginTop: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.xs,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: space.sm,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  threadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    padding: space.md,
+  },
+  groupIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  defaultAvatarBox: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threadTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  threadMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    marginTop: 4,
+  },
+  threadMetaText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  threadEntity: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textPrimary,
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

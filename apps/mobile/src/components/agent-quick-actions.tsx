@@ -1,8 +1,8 @@
 import type { LucideIcon } from 'lucide-react-native';
-import { Pressable, View } from 'react-native';
-import { Typography, useThemeColor } from 'heroui-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AGENT_OVERVIEW_ICONS, SLEEP_ICON } from '@/constants/icons';
+import { colors, radius, space } from '@/theme';
 
 type Props = {
   /** The agent these actions belong to (kept for future per-agent prefs). */
@@ -33,11 +33,9 @@ type QuickAction = {
 };
 
 /**
- * Quick-action row on the agent overview: 4 square rounded-xl tiles —
- * pause/resume (server-backed per active run), notifications, sleep/wake
- * (same glyph as the chat header details button) and memory on/off. Each
- * tile is a switch with an active state, an accessibility label and a
- * short caption.
+ * Quick-action row on the agent overview: 4 square tiles —
+ * pause/resume, notifications, sleep/wake, and memory on/off.
+ * Strict monochrome styling conforming to design.md.
  */
 export function AgentQuickActions({
   agentName,
@@ -51,10 +49,6 @@ export function AgentQuickActions({
   memoryEnabled,
   onMemoryToggle,
 }: Props) {
-  const foreground = useThemeColor('foreground');
-  const accent = useThemeColor('accent');
-  const border = useThemeColor('border');
-
   const actions: QuickAction[] = [
     {
       key: 'pause',
@@ -104,7 +98,7 @@ export function AgentQuickActions({
   ];
 
   return (
-    <View className="w-full flex-row gap-3">
+    <View style={styles.container}>
       {actions.map(({ key, icon: Icon, label, caption, active, onPress, disabled, hint }) => (
         <Pressable
           key={key}
@@ -119,25 +113,62 @@ export function AgentQuickActions({
               ? 'Currently on. Double tap to turn off.'
               : 'Currently off. Double tap to turn on.')
           }
-          className={`flex-1 aspect-square items-center justify-center gap-1 rounded-xl border ${
-            disabled ? 'opacity-40' : 'active:opacity-70'
-          }`}
-          style={{
-            backgroundColor: 'transparent',
-            borderColor: active ? accent : border,
-          }}
+          style={({ pressed }) => [
+            styles.tile,
+            active ? styles.tileActive : styles.tileInactive,
+            disabled && styles.tileDisabled,
+            pressed && !disabled && styles.tilePressed,
+          ]}
         >
-          <Icon size={22} color={active ? accent : foreground} strokeWidth={2} />
-          <Typography
-            type="body-xs"
-            color={active ? 'default' : 'muted'}
-            weight={active ? 'semibold' : 'normal'}
-            align="center"
+          <Icon
+            size={20}
+            color={active ? colors.onPrimary : colors.textPrimary}
+            strokeWidth={1.75}
+          />
+          <Text
+            style={[
+              styles.caption,
+              { color: active ? colors.onPrimary : colors.textSecondary },
+            ]}
           >
             {caption}
-          </Typography>
+          </Text>
         </Pressable>
       ))}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: space.sm,
+  },
+  tile: {
+    flex: 1,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.xs,
+    borderRadius: radius.card,
+  },
+  tileInactive: {
+    backgroundColor: colors.surface,
+  },
+  tileActive: {
+    backgroundColor: colors.primary,
+  },
+  tileDisabled: {
+    opacity: 0.35,
+  },
+  tilePressed: {
+    opacity: 0.6,
+  },
+  caption: {
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+});

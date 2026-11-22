@@ -1,8 +1,8 @@
-import { Pressable } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
-import { useThemeColor } from 'heroui-native';
 
 import { AGENT_LIST_ACTION_ICONS } from '@/constants/icons';
+import { colors, radius, space } from '@/theme';
 
 type ActionType = 'pause' | 'skip' | 'notify';
 
@@ -18,7 +18,7 @@ type Props = {
   runActionsDisabled?: boolean;
 };
 
-const ACTION_WIDTH = 56;
+const ACTION_WIDTH = 48;
 const TOTAL_WIDTH = ACTION_WIDTH * 3;
 
 /**
@@ -35,9 +35,6 @@ export function AgentRowActions({
   notificationsEnabled = true,
   runActionsDisabled = false,
 }: Props) {
-  const iconColor = useThemeColor('foreground');
-  const mutedColor = useThemeColor('muted');
-
   if (!isOpen) return null;
 
   const renderActionButton = (
@@ -68,10 +65,16 @@ export function AgentRowActions({
                 : 'Currently off'
               : undefined
       }
-      className="flex-1 items-center justify-center h-12 rounded-full active:opacity-60"
-      style={{ opacity: disabled ? 0.5 : 1 }}
+      style={({ pressed }) => [
+        styles.actionButton,
+        { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 },
+      ]}
     >
-      <Icon size={18} color={disabled ? mutedColor : iconColor} strokeWidth={2} />
+      <Icon
+        size={18}
+        color={disabled ? colors.textTertiary : colors.textPrimary}
+        strokeWidth={1.75}
+      />
     </Pressable>
   );
 
@@ -86,8 +89,7 @@ export function AgentRowActions({
     <Animated.View
       entering={SlideInRight.duration(200)}
       exiting={SlideOutRight.duration(200)}
-      className="flex-row items-center rounded-full border border-border bg-surface px-1"
-      style={{ width: TOTAL_WIDTH }}
+      style={styles.container}
     >
       {renderActionButton(
         isPaused ? 'Resume the run' : 'Pause the run',
@@ -110,3 +112,20 @@ export function AgentRowActions({
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    width: TOTAL_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.xs,
+  },
+  actionButton: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

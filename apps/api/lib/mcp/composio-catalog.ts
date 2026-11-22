@@ -1,4 +1,3 @@
-import { allowedUserId } from "@/lib/auth";
 import { requireComposioKey } from "@/lib/mcp/providers/composio";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isConfigured } from "@/lib/env";
@@ -323,7 +322,7 @@ export async function ensureComposioListing(toolkit: string): Promise<{ id: stri
         is_verified: true,
         is_free_tier: true,
         enabled: true,
-        created_by: allowedUserId() ?? null,
+        created_by: null,
       },
       { onConflict: "slug" },
     )

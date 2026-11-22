@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-import { Spinner, Typography } from 'heroui-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { exchangeCode } from '@/lib/auth';
+import { colors, radius, space, typography } from '@/theme';
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
@@ -33,19 +34,45 @@ export default function AuthCallbackScreen() {
   }, [code, router]);
 
   return (
-    <View className="flex-1 items-center justify-center bg-[#0B0C0E] px-6 gap-3">
+    <View style={styles.container}>
       {error ? (
-        <View className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 max-w-[320px]">
-          <Typography type="body-sm" className="text-center text-red-400">
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>
             {error}
-          </Typography>
+          </Text>
         </View>
       ) : (
         <Spinner size="lg" color="default" />
       )}
-      <Typography type="body-sm" className="text-white/60">
+      <Text style={styles.statusText}>
         Signing you in…
-      </Typography>
+      </Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+    paddingHorizontal: space.xl,
+    gap: space.md,
+  },
+  errorBox: {
+    borderRadius: radius.card,
+    backgroundColor: colors.recordingBg,
+    padding: space.lg,
+    maxWidth: 320,
+  },
+  errorText: {
+    ...typography.bodySecondary,
+    color: colors.recording,
+    textAlign: 'center',
+  },
+  statusText: {
+    ...typography.bodySecondary,
+    textAlign: 'center',
+  },
+});

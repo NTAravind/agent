@@ -2,6 +2,7 @@
 import type { Agent } from '@agent/shared';
 import { Pressable, Text, View } from 'react-native';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { colors, radius } from '@/theme';
 
 type Props = {
   agent: Agent;
@@ -18,26 +19,38 @@ export function AgentTile({ agent, onPress, isPersonal }: Props) {
         isPersonal ? `Personal agent: ${agent.name}` : agent.name
       }
       accessibilityHint="Opens chat with this agent"
-      className="items-center active:opacity-60"
-      style={{ width: 100 }}
+      style={{ width: 88, alignItems: 'center' }}
     >
       {/* Square avatar */}
       <View
-        className="items-center justify-center overflow-hidden rounded-xl bg-zinc-200 dark:bg-zinc-800"
-        style={{ width: 100, height: 100 }}
+        style={{
+          width: 88,
+          height: 88,
+          borderRadius: radius.card,
+          backgroundColor: colors.surface,
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
       >
         <AgentAvatar
           avatar={agent.avatar}
           name={agent.name}
-          size={80}
+          size={72}
         />
       </View>
 
       {/* Agent name */}
       <Text
         numberOfLines={1}
-        className="mt-1 text-center text-[9px] font-semibold text-zinc-900 dark:text-zinc-200"
-        style={{ width: 70 }}
+        style={{
+          marginTop: 6,
+          fontSize: 12,
+          fontWeight: '500',
+          color: colors.textPrimary,
+          textAlign: 'center',
+          width: 84,
+        }}
       >
         {isPersonal ? 'personal' : agent.name}
       </Text>

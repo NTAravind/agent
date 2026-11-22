@@ -1,8 +1,9 @@
 import type { AgentGroupMember, StoredMessage } from '@agent/shared';
-import { ArrowUpRight, GitBranch, Sparkles } from 'lucide-react-native';
-import { Pressable, Text, View } from 'react-native';
+import { ArrowUpRight, GitBranch } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { colors, radius, space } from '@/theme';
 
 type Props = {
   message: StoredMessage;
@@ -44,9 +45,9 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
 
   if (message.role === 'user') {
     return (
-      <View className="items-end my-1">
-        <View className="max-w-[88%] rounded-[22px] rounded-br-sm border border-white/10 bg-[#1c1c22] px-4 py-3 shadow-sm">
-          {text ? <Text className="text-base leading-6 text-white">{text}</Text> : null}
+      <View style={styles.userContainer}>
+        <View style={styles.userBubble}>
+          {text ? <Text style={styles.userText}>{text}</Text> : null}
         </View>
       </View>
     );
@@ -54,49 +55,49 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
 
   if (message.role === 'system' || message.role === 'tool') {
     return (
-      <View className="my-1 self-center rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-        <Text className="text-xs text-zinc-400">{text || message.role}</Text>
+      <View style={styles.systemPill}>
+        <Text style={styles.systemText}>{text || message.role}</Text>
       </View>
     );
   }
 
   return (
-    <View className="my-2 flex-row items-start gap-3">
-      <View className="mt-0.5">
+    <View style={styles.agentContainer}>
+      <View style={styles.avatarGutter}>
         {fromAgent ? (
           <AgentAvatar avatar={fromAgent.avatar} name={fromAgent.name} size={28} />
         ) : (
-          <View className="h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/10">
-            <Sparkles size={14} color="#ffffff" />
+          <View style={styles.fallbackAvatar}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>A</Text>
           </View>
         )}
       </View>
 
-      <View className="flex-1 gap-2.5">
+      <View style={styles.contentColumn}>
         {fromAgent ? (
-          <Text className="text-xs font-semibold text-zinc-300">{fromAgent.name}</Text>
+          <Text style={styles.authorLabel}>{fromAgent.name}</Text>
         ) : null}
 
         {message.handoff ? (
-          <View className="self-start rounded-2xl border border-violet-500/25 bg-violet-500/10 px-3 py-2.5">
-            <View className="flex-row items-center gap-2">
-              <GitBranch size={14} color="#c084fc" />
+          <View style={styles.handoffCard}>
+            <View style={styles.handoffHeader}>
+              <GitBranch size={14} color={colors.textSecondary} />
               {handoffFrom ? (
                 <AgentAvatar avatar={handoffFrom.avatar} name={handoffFrom.name} size={20} />
               ) : null}
-              <Text className="text-xs font-semibold text-violet-200">
+              <Text style={styles.handoffAgentText}>
                 {handoffFrom?.name ?? 'Agent'}
               </Text>
-              <ArrowUpRight size={12} color="#a78bfa" />
+              <ArrowUpRight size={12} color={colors.textSecondary} />
               {handoffTo ? (
                 <AgentAvatar avatar={handoffTo.avatar} name={handoffTo.name} size={20} />
               ) : null}
-              <Text className="text-xs font-semibold text-violet-200">
+              <Text style={styles.handoffAgentText}>
                 {handoffTo?.name ?? 'Agent'}
               </Text>
             </View>
             {message.handoff.task ? (
-              <Text className="mt-1.5 text-xs leading-5 text-violet-100/80">
+              <Text style={styles.handoffTask}>
                 {message.handoff.task}
               </Text>
             ) : null}
@@ -104,11 +105,13 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
         ) : null}
 
         {text && !message.handoff ? (
-          <Text className="text-base leading-6 text-white">{text}</Text>
+          <View style={styles.agentBubble}>
+            <Text style={styles.agentText}>{text}</Text>
+          </View>
         ) : null}
 
-        <View className="flex-row items-center justify-between gap-2 border-t border-white/5 pt-2">
-          <Text className="text-[11px] text-zinc-500">
+        <View style={styles.footerRow}>
+          <Text style={styles.timeText}>
             {new Date(message.created_at).toLocaleTimeString([], {
               hour: 'numeric',
               minute: '2-digit',
@@ -120,10 +123,10 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
               accessibilityRole="button"
               accessibilityLabel="View run timeline"
               accessibilityHint="Opens the run timeline for this group message"
-              className="flex-row items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 active:bg-white/10"
+              style={styles.runTimelinePill}
             >
-              <Text className="text-[11px] font-medium text-zinc-300">View run timeline</Text>
-              <ArrowUpRight size={11} color="#a1a1aa" />
+              <Text style={styles.runTimelineText}>View run timeline</Text>
+              <ArrowUpRight size={11} color={colors.textSecondary} />
             </Pressable>
           ) : null}
         </View>
@@ -131,3 +134,121 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  userContainer: {
+    alignItems: 'flex-end',
+    marginVertical: 4,
+  },
+  userBubble: {
+    maxWidth: '80%',
+    borderRadius: radius.card,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  userText: {
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.onPrimary,
+  },
+  systemPill: {
+    alignSelf: 'center',
+    marginVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  systemText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  agentContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
+    marginVertical: 6,
+  },
+  avatarGutter: {
+    marginTop: 2,
+  },
+  fallbackAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentColumn: {
+    flex: 1,
+    gap: space.xs,
+  },
+  authorLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  handoffCard: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.inner,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    gap: space.xs,
+  },
+  handoffHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  handoffAgentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  handoffTask: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  agentBubble: {
+    maxWidth: '85%',
+    alignSelf: 'flex-start',
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  agentText: {
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  timeText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  runTimelinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  runTimelineText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+});

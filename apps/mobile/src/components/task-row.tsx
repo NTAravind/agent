@@ -1,7 +1,9 @@
+import React from 'react';
 import type { Task } from '@agent/shared';
-import { Check, Circle, Sparkles, X } from 'lucide-react-native';
-import { Pressable, Text, View } from 'react-native';
+import { Check, Circle, X } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { colors, radius, space } from '@/theme';
 import { formatDayLabel, formatTime } from '@/lib/dates';
 
 export type TaskRowProps = {
@@ -18,15 +20,11 @@ export type TaskRowProps = {
   listName?: string;
 };
 
-const PRIORITY_COLORS: Record<number, string> = {
-  1: '#3b82f6',
-  2: '#f59e0b',
-  3: '#ef4444',
-};
-
 /**
- * One task in a list. Tapping the circle completes the task; the row shows
- * an "AI" badge for agent-created items and accept/dismiss for suggestions.
+ * One task in a list conforming to design.md:
+ * - Monochrome surfaces and text
+ * - Clean 17/22 body text with line-through when done
+ * - Clean circular checkbox
  */
 export function TaskRow({
   task,
@@ -38,63 +36,49 @@ export function TaskRow({
 }: TaskRowProps) {
   const done = task.status === 'done';
   const suggested = task.createdBy === 'suggested';
-  const agent = task.createdBy === 'agent';
 
   const dueLabel = task.dueAt
     ? `${formatDayLabel(task.dueAt)} · ${formatTime(task.dueAt)}`
     : null;
 
   return (
-    <View className="flex-row items-start gap-3 px-4 py-3">
+    <View style={styles.container}>
       <Pressable
         onPress={() => onToggle?.(task)}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: done }}
         accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
-        className="mt-0.5 active:opacity-60"
+        style={styles.checkboxTouch}
         hitSlop={8}
       >
         {done ? (
-          <View className="h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
-            <Check size={13} color="#ffffff" strokeWidth={3} />
+          <View style={styles.checkboxDone}>
+            <Check size={12} color={colors.onPrimary} strokeWidth={3} />
           </View>
         ) : (
-          <Circle size={20} color={suggested ? '#a855f7' : '#a1a1aa'} />
+          <Circle size={20} color={colors.textSecondary} strokeWidth={1.75} />
         )}
       </Pressable>
 
-      <Pressable onPress={() => onPress?.(task)} className="flex-1 min-w-0 gap-1">
-        <View className="flex-row items-center gap-1.5 flex-wrap">
+      <Pressable onPress={() => onPress?.(task)} style={styles.content}>
+        <View style={styles.titleRow}>
           <Text
-            className={`text-sm font-medium ${
-              done ? 'text-zinc-400 line-through' : 'text-zinc-900 dark:text-white'
-            }`}
+            style={[
+              styles.title,
+              done && styles.titleDone,
+            ]}
           >
             {task.title}
           </Text>
-          {agent ? (
-            <View className="rounded-full bg-violet-500/15 px-1.5 py-0.5">
-              <Text className="text-[9px] font-bold text-violet-500">AI</Text>
-            </View>
-          ) : null}
           {suggested ? (
-            <View className="rounded-full bg-fuchsia-500/15 px-1.5 py-0.5">
-              <Text className="text-[9px] font-bold text-fuchsia-500">SUGGESTED</Text>
+            <View style={styles.suggestedBadge}>
+              <Text style={styles.suggestedText}>Suggested</Text>
             </View>
-          ) : null}
-          {task.priority > 0 ? (
-            <View
-              style={{ backgroundColor: PRIORITY_COLORS[task.priority] ?? '#71717a' }}
-              className="h-1.5 w-1.5 rounded-full"
-            />
-          ) : null}
-          {task.rrule ? (
-            <Text className="text-[10px] font-semibold text-zinc-400">↻</Text>
           ) : null}
         </View>
 
         {dueLabel || listName ? (
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+          <Text style={styles.subtitle}>
             {dueLabel ?? ''}
             {dueLabel && listName ? ' · ' : ''}
             {listName ?? ''}
@@ -103,27 +87,99 @@ export function TaskRow({
       </Pressable>
 
       {suggested ? (
-        <View className="flex-row items-center gap-1">
+        <View style={styles.actions}>
           <Pressable
             onPress={() => onAccept?.(task)}
             accessibilityRole="button"
             accessibilityLabel={`Accept ${task.title}`}
-            className="h-7 w-7 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 active:opacity-70"
+            style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.6 : 1 }]}
           >
-            <Check size={14} color="#10b981" />
+            <Check size={14} color={colors.success} strokeWidth={2.5} />
           </Pressable>
           <Pressable
             onPress={() => onDismiss?.(task)}
             accessibilityRole="button"
             accessibilityLabel={`Dismiss ${task.title}`}
-            className="h-7 w-7 items-center justify-center rounded-full border border-zinc-300 dark:border-white/15 active:opacity-70"
+            style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.6 : 1 }]}
           >
-            <X size={14} color="#71717a" />
+            <X size={14} color={colors.textSecondary} strokeWidth={2} />
           </Pressable>
         </View>
-      ) : (
-        <Sparkles size={13} color="transparent" />
-      )}
+      ) : null}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+  },
+  checkboxTouch: {
+    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxDone: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  title: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textPrimary,
+  },
+  titleDone: {
+    color: colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  suggestedBadge: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  suggestedText: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 16,
+    color: colors.textSecondary,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

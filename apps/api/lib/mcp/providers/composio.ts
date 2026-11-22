@@ -691,8 +691,8 @@ export async function connectComposio(input: {
   const toolkits = configuredToolkits(input.server.config);
   const noAuth = isNoAuthListing(input.server.config);
 
-  // The Composio entity is ALWAYS the real per-user id: never a
-  // client-supplied value, never the admin allow-list id.
+  // The Composio entity is ALWAYS the authenticated user id: never a
+  // client-supplied value or a privileged id read from configuration.
   const entity = input.userId;
 
   const existing = await getConnectionForServer(input.userId, input.server.id);

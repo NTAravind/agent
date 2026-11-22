@@ -1,6 +1,6 @@
 import { apiError } from "@agent/shared";
 import { supabaseAnon } from "@/lib/supabase/client";
-import { optionalEnv, requiredEnv } from "@/lib/env";
+import { supabaseAdmin } from "@/lib/supabase/server";
 
 export class AuthError extends Error {
   constructor(
@@ -42,8 +42,8 @@ function requestOrigin(request: Request): string {
 }
 
 /**
- * Verifies the Supabase JWT on the request and enforces the single-user
- * allow-list (ALLOWED_USER_ID).
+ * Verifies the Supabase JWT on the request. A database trigger enforces the
+ * single-account policy; the API accepts any valid Supabase user.
  */
 export async function requireUser(request: Request): Promise<AuthedUser> {
   const token = bearerToken(request);
@@ -62,17 +62,14 @@ export async function requireUser(request: Request): Promise<AuthedUser> {
     throw new AuthError("unauthorized", "Invalid or expired access token.");
   }
 
-  const allowedUserId = requiredEnv("ALLOWED_USER_ID");
-  if (data.user.id !== allowedUserId) {
-    throw new AuthError(
-      "forbidden",
-      `This account is not allowed to use the API. Signed in as ${data.user.id}. ` +
-        `Sign in with the account configured in ALLOWED_USER_ID on this deployment.`,
-      403,
-    );
-  }
-
   return { id: data.user.id, email: data.user.email ?? null };
+}
+
+/** Returns the sole account for global GitHub-vault webhook events, if set up. */
+export async function getSoleUserId(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin().auth.admin.listUsers({ page: 1, perPage: 2 });
+  if (error) throw new Error(`Could not resolve the app account: ${error.message}`);
+  return data.users.length === 1 ? data.users[0]!.id : null;
 }
 
 /** Wraps a route handler so auth/server errors become the shared error envelope. */
@@ -97,5 +94,3 @@ export function toErrorResponse(error: unknown): Response {
   console.error("[api]", error);
   return apiError("internal_error", message, 500);
 }
-
-export const allowedUserId = (): string | undefined => optionalEnv("ALLOWED_USER_ID");

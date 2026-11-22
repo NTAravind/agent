@@ -1,32 +1,66 @@
 import type { Agent } from '@agent/shared';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert as RNAlert, ScrollView, View } from 'react-native';
-import { BottomSheet, Button, Chip, Spinner, Typography, useThemeColor } from 'heroui-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert as RNAlert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  FileText,
+  MoreHorizontal,
+  Plus,
+} from 'lucide-react-native';
 
-import { AppHeader } from '@/components/app-header';
-import { AgentAvatar as AgentAvatarBadge } from '@/components/agent-avatar';
-import { AgentQuickActions } from '@/components/agent-quick-actions';
-import { AgentDetailSection } from '@/components/agent-detail-section';
-import { SCREEN_ICONS } from '@/constants/icons';
-import { deleteAgent, fetchAgents, fetchRuns, pauseRun, resumeRun, sleepAgent, wakeAgent, type RunListItem } from '@/lib/agents';
+import {
+  AgentAvatar,
+  AgentMark,
+  CREATURE_SHAPES,
+  deriveCreatureConfig,
+  type CreatureShape,
+} from '@/components/agent-avatar';
+import {
+  GroupedCard,
+  HairlineDivider,
+  PillButton,
+  RoundButton,
+  SectionLabel,
+  TextAction,
+} from '@/components/design-system';
+import { RoutineListSheet } from '@/components/routine-sheet';
+import { colors, radius, shadow, space, typography } from '@/theme';
+import {
+  deleteAgent,
+  fetchAgents,
+  updateAgent,
+} from '@/lib/agents';
 
-/** Local-only quick-action prefs — TODO(backend) when per-agent prefs exist. */
-const INITIAL_PREFS = {
-  notificationsEnabled: true,
-  memoryEnabled: true,
-};
+// Exact order from design.md Section 3:
+// black, brown, red, orange, amber, green, teal, blue, purple, pink, gray
+const PALETTE_ORDER = [
+  colors.mark.black,
+  colors.mark.brown,
+  colors.mark.red,
+  colors.mark.orange,
+  colors.mark.amber,
+  colors.mark.green,
+  colors.mark.teal,
+  colors.mark.blue,
+  colors.mark.purple,
+  colors.mark.pink,
+  colors.mark.gray,
+];
 
-type LocalPrefs = typeof INITIAL_PREFS;
-
-/**
- * Agent overview / detail screen.
- * - Top: centered avatar + large name
- * - Bottom: rounded sheet panel with quick actions, agent info, tools
- * - Danger zone: Duplicate / Delete
- * The full editor lives at agents/[id]/edit.tsx.
- */
 export default function AgentDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -36,12 +70,21 @@ export default function AgentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<Agent | null>(null);
-  const [activeRun, setActiveRun] = useState<RunListItem | null>(null);
-  const [prefs, setPrefs] = useState<LocalPrefs>(INITIAL_PREFS);
-  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
-  const iconColor = useThemeColor('foreground');
+  const [selectedShape, setSelectedShape] = useState<CreatureShape>('triangle');
+  const [selectedColor, setSelectedColor] = useState<string>(colors.mark.green);
+  const [routineSheetOpen, setRoutineSheetOpen] = useState(false);
+  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
+  const [instructionText, setInstructionText] = useState('');
+  const [savingInstructions, setSavingInstructions] = useState(false);
 
-  // `/agents/new` is the create flow — it lands in the editor, not here.
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/agents' as never);
+    }
+  }, [router]);
+
   useEffect(() => {
     if (id === 'new') {
       router.replace('/agents/new/edit');
@@ -49,21 +92,24 @@ export default function AgentDetailScreen() {
   }, [id, router]);
 
   const load = useCallback(async () => {
-    if (id === 'new') return; // redirecting to the editor
+    if (id === 'new') return;
     try {
-      const [agents, runs] = await Promise.all([fetchAgents(), fetchRuns()]);
+      const agents = await fetchAgents();
       const found = agents.find((a) => a.id === id) ?? null;
       setAgent(found);
       if (!found) {
         setError('Agent not found');
         return;
       }
-      // Most recent non-finished run owned by this agent (agent_id is joined
-      // by GET /api/runs — no goal-name heuristic needed).
-      const agentRuns = runs.filter(
-        (r) => r.agent_id === found.id && !['succeeded', 'failed', 'cancelled'].includes(r.status),
+
+      const creature = deriveCreatureConfig(found.name, found.avatar?.color);
+      setSelectedShape(
+        CREATURE_SHAPES.includes(found.avatar?.value as CreatureShape)
+          ? (found.avatar?.value as CreatureShape)
+          : creature.shape,
       );
-      setActiveRun(agentRuns[0] ?? null);
+      setSelectedColor(found.avatar?.color ?? creature.color);
+      setInstructionText(found.instructions ?? '');
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -78,70 +124,74 @@ export default function AgentDetailScreen() {
     }, [load]),
   );
 
-  /** Pauses/resumes the agent's active task (server-backed, see lib/agents). */
-  const handlePauseToggle = useCallback(() => {
-    if (!activeRun) return;
-    const resuming = activeRun.status === 'paused';
-    void (async () => {
-      try {
-        if (resuming) await resumeRun(activeRun.id);
-        else await pauseRun(activeRun.id);
-        await load();
-      } catch (err) {
-        RNAlert.alert(
-          resuming ? 'Could not resume' : 'Could not pause',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    })();
-  }, [activeRun, load]);
-
-  /** Sleeps/wakes the agent: pauses all of its tasks + blocks new ones. */
-  const handleSleepToggle = useCallback(() => {
+  const handleUpdateAvatar = async (shape: CreatureShape, color: string) => {
     if (!agent) return;
-    const sleeping = agent.isSleeping;
-    void (async () => {
-      try {
-        if (sleeping) await wakeAgent(agent.id);
-        else await sleepAgent(agent.id);
-        await load();
-      } catch (err) {
-        RNAlert.alert(
-          sleeping ? 'Could not wake' : 'Could not sleep',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    })();
-  }, [agent, load]);
+    setSelectedShape(shape);
+    setSelectedColor(color);
 
-  const handleQuickAction = useCallback((key: keyof LocalPrefs) => {
-    // TODO(backend): notifications + memory are still optimistic local prefs
-    // (no per-agent preference endpoints yet).
-    setPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+    try {
+      await updateAgent(agent.id, {
+        avatar: {
+          type: 'icon',
+          value: shape,
+          color,
+        },
+      });
+    } catch {
+      // Background sync
+    }
+  };
 
-  const handleDuplicate = useCallback(() => {
-    // TODO(backend): POST /api/agents/:id/duplicate
-    RNAlert.alert(
-      'Duplicate Agent',
-      'This will create a copy of this agent. (TODO(backend): API not yet implemented)',
-    );
-  }, []);
+  const handleResetToDefault = async () => {
+    if (!agent) return;
+    const defaultCreature = deriveCreatureConfig(agent.name);
+    setSelectedShape(defaultCreature.shape);
+    setSelectedColor(defaultCreature.color);
 
-  const handleDelete = useCallback(() => {
+    try {
+      await updateAgent(agent.id, {
+        avatar: {
+          type: 'icon',
+          value: defaultCreature.shape,
+          color: defaultCreature.color,
+        },
+      });
+    } catch {
+      // Ignored
+    }
+  };
+
+  const handleSaveInstructions = async () => {
+    if (!agent) return;
+    setSavingInstructions(true);
+    try {
+      await updateAgent(agent.id, {
+        instructions: instructionText,
+      });
+      setAgent((prev) => (prev ? { ...prev, instructions: instructionText } : prev));
+      setInstructionsModalOpen(false);
+    } catch {
+      RNAlert.alert('Error', 'Failed to save instructions');
+    } finally {
+      setSavingInstructions(false);
+    }
+  };
+
+  const handleDelete = () => {
     RNAlert.alert(
       'Delete this agent?',
-      'MCP integrations attached to it are removed. Run history is kept.',
+      'MCP integrations attached to it will be removed. Run history is kept.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
+            if (!agent) return;
             void (async () => {
               try {
-                await deleteAgent(id);
-                router.back();
+                await deleteAgent(agent.id);
+                router.replace('/agents' as never);
               } catch (err) {
                 RNAlert.alert('Could not delete', err instanceof Error ? err.message : String(err));
               }
@@ -150,309 +200,397 @@ export default function AgentDetailScreen() {
         },
       ],
     );
-  }, [id, router]);
+  };
 
-  /** "⋯" fallback menu: edit / duplicate / delete (moved from the list's long-press). */
-  const handleMoreMenu = useCallback(() => {
-    RNAlert.alert(agent?.name ?? 'Agent', 'Manage this agent', [
-      {
-        text: 'Edit',
-        onPress: () => router.push({ pathname: '/agents/[id]/edit', params: { id } }),
-      },
-      { text: 'Duplicate', onPress: handleDuplicate },
-      { text: 'Delete', style: 'destructive', onPress: handleDelete },
+  const openMoreMenu = () => {
+    RNAlert.alert(agent?.name ?? 'Agent Options', undefined, [
+      { text: 'Edit Details', onPress: () => router.push({ pathname: '/agents/[id]/edit', params: { id } }) },
+      { text: 'Delete Agent', style: 'destructive', onPress: handleDelete },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [agent?.name, handleDelete, handleDuplicate, id, router]);
-
-  // `/agents/new` is mid-redirect to the editor.
-  if (id === 'new') return null;
+  };
 
   if (loading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center gap-3">
-        <Spinner />
-        <Typography type="body" color="muted">Loading agent...</Typography>
+      <View style={[styles.screen, styles.center]}>
+        <Spinner color="default" />
       </View>
     );
   }
 
-  if (error || !agent) {
+  if (!agent) {
     return (
-      <View className="flex-1 bg-background items-center justify-center px-6">
-        <Typography type="h3" weight="semibold" className="text-center mb-2">
-          {error ?? 'Agent not found'}
-        </Typography>
-        <Button variant="secondary" onPress={() => router.back()} className="mt-4">
-          <Button.Label>Back</Button.Label>
-        </Button>
+      <View style={[styles.screen, styles.center, { paddingHorizontal: space.lg }]}>
+        <Text style={styles.errorText}>{error ?? 'Agent not found'}</Text>
+        <PillButton label="Go back" onPress={handleBack} variant="secondary" style={{ marginTop: space.md }} />
       </View>
     );
   }
-
-  const modelLabel = agent.model ?? 'App default';
-  const toolsSummary = agent.toolCount > 0
-    ? `${agent.toolCount} MCP tool${agent.toolCount === 1 ? '' : 's'} enabled`
-    : 'No MCP tools enabled';
 
   return (
-    <View className="flex-1 bg-background">
-      {/* Header */}
-      <AppHeader
-        left={
-          <Button
-            size="md"
-            variant="ghost"
-            isIconOnly
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            accessibilityHint="Returns to the previous screen"
-          >
-            <SCREEN_ICONS.back size={22} color={iconColor} />
-          </Button>
-        }
-        center={
-          <Typography type="body" weight="semibold">
-            {agent.name}
-          </Typography>
-        }
-        right={
-          <Button
-            size="md"
-            variant="ghost"
-            isIconOnly
-            onPress={handleMoreMenu}
-            accessibilityRole="button"
-            accessibilityLabel="More actions"
-            accessibilityHint="Opens edit, duplicate and delete options"
-          >
-            <SCREEN_ICONS.more size={22} color={iconColor} />
-          </Button>
-        }
-      />
+    <View style={styles.screen}>
+      {/* 6.1 Settings Floating Header: round back button + round ellipsis only */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + space.sm }]}>
+        <RoundButton
+          icon={ChevronLeft}
+          onPress={handleBack}
+          accessibilityLabel="Go back"
+        />
+
+        <RoundButton
+          icon={MoreHorizontal}
+          onPress={openMoreMenu}
+          accessibilityLabel="More options"
+        />
+      </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: space.lg,
+          paddingTop: space.sm,
+          paddingBottom: insets.bottom + space.xxl,
+          gap: space.xl,
+        }}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Top area: centered avatar + name with breathing room */}
-        <View className="items-center justify-center px-6 py-10 gap-3">
-          <AgentAvatarBadge avatar={agent.avatar} name={agent.name} size={96} />
-          <Typography type="h2" weight="bold" className="text-center">
-            {agent.name}
-          </Typography>
-          {agent.isSleeping && (
-            <Chip variant="soft" size="sm" color="default">
-              <Chip.Label>💤 Sleeping</Chip.Label>
-            </Chip>
-          )}
-          {activeRun && (
-            <Chip
-              variant="soft"
-              size="sm"
-              color={activeRun.status === 'paused' ? 'default' : 'warning'}
-            >
-              <Chip.Label>
-                {activeRun.status === 'paused'
-                  ? `Paused: ${activeRun.goal}`
-                  : `Active: ${activeRun.goal}`}
-              </Chip.Label>
-            </Chip>
-          )}
+        {/* Large Centered Hero Mark (~120pt) */}
+        <View style={styles.heroMarkContainer}>
+          <AgentAvatar
+            forcedShape={selectedShape}
+            forcedColor={selectedColor}
+            size={120}
+          />
         </View>
 
-        {/* Bottom sheet panel */}
-        <View className="bg-surface rounded-t-2xl shadow-lg flex-1 pt-6 px-4 gap-6">
-          {/* Quick actions row */}
-          <View className="w-full">
-            <AgentQuickActions
-              agentName={agent.name}
-              isPaused={activeRun?.status === 'paused'}
-              pauseDisabled={!activeRun}
-              onPauseToggle={handlePauseToggle}
-              notificationsEnabled={prefs.notificationsEnabled}
-              onNotificationsToggle={() => handleQuickAction('notificationsEnabled')}
-              isSleeping={agent.isSleeping}
-              onSleepToggle={handleSleepToggle}
-              memoryEnabled={prefs.memoryEnabled}
-              onMemoryToggle={() => handleQuickAction('memoryEnabled')}
+        {/* Agent Name & Role Card */}
+        <View style={styles.nameCard}>
+          <Text style={styles.agentNameText}>{agent.name}</Text>
+          <Text style={styles.agentRoleText}>{agent.role || 'Personal Assistant'}</Text>
+        </View>
+
+        {/* 6.7 Character Customizer */}
+        <View>
+          <SectionLabel text="Character" />
+          <GroupedCard style={{ paddingVertical: space.lg, gap: space.lg }}>
+            {/* 1. Palette: 11 circles, 36pt each, with 2pt #C8C8CC ring separated by 4pt gap */}
+            <View style={styles.swatchesRow}>
+              {PALETTE_ORDER.map((color) => {
+                const isSelected = selectedColor.toLowerCase() === color.toLowerCase();
+                return (
+                  <Pressable
+                    key={color}
+                    onPress={() => void handleUpdateAvatar(selectedShape, color)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Color ${color}`}
+                    style={styles.swatchTouch}
+                  >
+                    <View
+                      style={[
+                        styles.selectionRing,
+                        isSelected && styles.selectionRingActive,
+                      ]}
+                    >
+                      <View style={[styles.swatchCircle, { backgroundColor: color }]} />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <HairlineDivider inset={0} />
+
+            {/* 2. Shapes: 8 shape previews, 36pt each, rendered in selected color with white eyes */}
+            <View style={styles.shapesRow}>
+              {CREATURE_SHAPES.map((shape) => {
+                const isSelected = selectedShape === shape;
+                return (
+                  <Pressable
+                    key={shape}
+                    onPress={() => void handleUpdateAvatar(shape, selectedColor)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Shape ${shape}`}
+                    style={styles.shapeTouch}
+                  >
+                    <View
+                      style={[
+                        styles.selectionRing,
+                        isSelected && styles.selectionRingActive,
+                      ]}
+                    >
+                      <AgentMark shape={shape} color={selectedColor} size={36} />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <HairlineDivider inset={0} />
+
+            {/* 3. Caption: "How this agent's mark looks everywhere" (15pt, textSecondary, centered) */}
+            <Text style={styles.captionText}>
+              How this agent&apos;s mark looks everywhere
+            </Text>
+
+            {/* 4. Link: "Reset to default" in link color, centered, 17/400 */}
+            <Pressable
+              onPress={() => void handleResetToDefault()}
+              accessibilityRole="button"
+              accessibilityLabel="Reset to default character"
+              style={{ alignItems: 'center' }}
+            >
+              <Text style={styles.resetLinkText}>Reset to default</Text>
+            </Pressable>
+          </GroupedCard>
+        </View>
+
+        {/* 6.6 Instructions Grouped Card */}
+        <View>
+          <GroupedCard>
+            <Pressable
+              onPress={() => setInstructionsModalOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open instructions"
+              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <View style={styles.navRowLeft}>
+                <FileText size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                <Text style={styles.rowTitle}>Instructions</Text>
+              </View>
+              <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
+            </Pressable>
+          </GroupedCard>
+        </View>
+
+        {/* 6.9 Routines Section */}
+        <View>
+          <SectionLabel text="Routines" />
+          <GroupedCard>
+            <Pressable
+              onPress={() => setRoutineSheetOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Weekly meal prep routine"
+              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <View style={styles.navRowLeft}>
+                <Clock size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                <View>
+                  <Text style={styles.rowTitle}>Weekly meal prep</Text>
+                  <Text style={styles.routineMeta}>Every Sunday at 9:00 PM</Text>
+                </View>
+              </View>
+              <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
+            </Pressable>
+          </GroupedCard>
+
+          {/* Text action below the card: "+ Add routine" in link color */}
+          <View style={{ marginTop: space.sm, paddingHorizontal: space.lg }}>
+            <TextAction
+              icon={Plus}
+              label="Add routine"
+              onPress={() => setRoutineSheetOpen(true)}
             />
-          </View>
-
-          {/* Agent info section */}
-          <AgentDetailSection
-            label="Agent info"
-            action={
-              <Button
-                size="sm"
-                variant="secondary"
-                onPress={() => router.push({ pathname: '/agents/[id]/edit', params: { id } })}
-                accessibilityLabel="Edit agent info"
-              >
-                <Button.Label>Edit</Button.Label>
-              </Button>
-            }
-          >
-            <View className="gap-2">
-              <View className="flex-row justify-between">
-                <Typography type="body" color="muted">Name</Typography>
-                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
-                  {agent.name}
-                </Typography>
-              </View>
-              <View className="flex-row justify-between">
-                <Typography type="body" color="muted">Role</Typography>
-                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
-                  {agent.role ?? '—'}
-                </Typography>
-              </View>
-              <View className="flex-row justify-between">
-                <Typography type="body" color="muted">Model</Typography>
-                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
-                  {modelLabel}
-                </Typography>
-              </View>
-              <View className="flex-row justify-between">
-                <Typography type="body" color="muted">Fallback</Typography>
-                <Typography type="body" weight="semibold" numberOfLines={1} className="max-w-[60%]" align="end">
-                  {agent.fallbackModels.length > 0 ? agent.fallbackModels.join(', ') : '—'}
-                </Typography>
-              </View>
-              <View className="flex-row justify-between">
-                <Typography type="body" color="muted">Supervisor</Typography>
-                <Typography type="body" weight="semibold">
-                  {agent.isSupervisor ? 'Yes' : 'No'}
-                </Typography>
-              </View>
-              {agent.instructions ? (
-                <View className="gap-0.5 pt-1">
-                  <Typography type="body" color="muted">Instructions</Typography>
-                  <Typography type="body-sm" numberOfLines={2}>
-                    {agent.instructions}
-                  </Typography>
-                </View>
-              ) : null}
-            </View>
-          </AgentDetailSection>
-
-          {/* Tools section */}
-          <AgentDetailSection
-            label="Tools"
-            action={
-              <Button
-                size="sm"
-                variant="secondary"
-                onPress={() => setToolsSheetOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Edit tools"
-                accessibilityHint="Opens a sheet summarising this agent's enabled tools"
-              >
-                <Button.Label>Edit tools</Button.Label>
-              </Button>
-            }
-            secondaryAction={
-              <Button
-                size="sm"
-                variant="secondary"
-                onPress={() => router.push('/mcp')}
-                accessibilityRole="button"
-                accessibilityLabel="Add integrations"
-                accessibilityHint="Opens the MCP Store to browse integrations"
-              >
-                <Button.Label>Add integrations</Button.Label>
-              </Button>
-            }
-          >
-            <View className="gap-2">
-              <Typography type="body" color="muted">{toolsSummary}</Typography>
-              {agent.toolCount > 0 && (
-                <View className="flex-row flex-wrap gap-2">
-                  <Chip variant="soft" size="sm">
-                    <Chip.Label>MCP Tools Enabled</Chip.Label>
-                  </Chip>
-                </View>
-              )}
-            </View>
-          </AgentDetailSection>
-
-          {/* Danger zone */}
-          <View className="gap-2 w-full">
-            <Typography type="body-xs" color="muted" weight="semibold" className="text-center">
-              DANGER ZONE
-            </Typography>
-            <View className="flex-row gap-3">
-              <Button
-                variant="secondary"
-                onPress={handleDuplicate}
-                className="flex-1"
-                accessibilityLabel="Duplicate this agent"
-              >
-                <Button.Label>Duplicate</Button.Label>
-              </Button>
-              <Button
-                variant="danger"
-                onPress={handleDelete}
-                className="flex-1"
-                accessibilityLabel="Delete this agent"
-              >
-                <Button.Label>Delete</Button.Label>
-              </Button>
-            </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Tools sheet: summary + link to the integration screens.
-          Per-agent tool toggles are not in the API yet — the per-tool
-          permission UI lives on each MCP integration screen. */}
-      <BottomSheet
-        isOpen={toolsSheetOpen}
-        onOpenChange={(open: boolean) => setToolsSheetOpen(open)}
+      {/* Routine Detail Sheet */}
+      <RoutineListSheet
+        visible={routineSheetOpen}
+        onClose={() => setRoutineSheetOpen(false)}
+        agentId={agent.id}
+      />
+
+      {/* Instructions Sheet / Modal conforming to 6.1 & 6.2 */}
+      <Modal
+        visible={instructionsModalOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setInstructionsModalOpen(false)}
       >
-        <BottomSheet.Portal>
-          <BottomSheet.Overlay />
-          <BottomSheet.Content enableDynamicSizing={false} snapPoints={['45%']}>
-            <BottomSheet.Close accessibilityLabel="Close tools sheet" />
-            <BottomSheet.Title>Tools</BottomSheet.Title>
-            <BottomSheet.Description>
-              {toolsSummary}
-            </BottomSheet.Description>
+        <View style={[styles.modalScreen, { paddingTop: insets.top + space.md }]}>
+          {/* Header with back button on left, Save pill on right */}
+          <View style={styles.modalHeader}>
+            <RoundButton
+              icon={ChevronLeft}
+              onPress={() => setInstructionsModalOpen(false)}
+              inSheet
+              accessibilityLabel="Close"
+            />
+            <Text style={styles.modalTitle}>Instructions</Text>
+            <PillButton
+              label={savingInstructions ? 'Saving…' : 'Save'}
+              onPress={() => void handleSaveInstructions()}
+              disabled={savingInstructions}
+              variant="primary"
+            />
+          </View>
 
-            <View className="gap-4 px-4 pb-6">
-              <Typography type="body-sm" color="muted">
-                Tool permissions are managed per integration. Enable, disable or require
-                approval for individual tools on each integration&apos;s screen.
-              </Typography>
-
-              {agent.toolCount > 0 ? (
-                <View className="flex-row flex-wrap gap-2">
-                  <Chip variant="soft" size="sm">
-                    <Chip.Label>{agent.toolCount} MCP tool{agent.toolCount === 1 ? '' : 's'} enabled</Chip.Label>
-                  </Chip>
-                </View>
-              ) : (
-                <Typography type="body-sm" color="muted">
-                  No tools enabled yet — connect an integration to give this agent tools.
-                </Typography>
-              )}
-
-              <Button
-                variant="primary"
-                onPress={() => {
-                  setToolsSheetOpen(false);
-                  router.push('/mcp');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Manage integrations"
-                accessibilityHint="Opens the MCP Store to browse and connect integrations"
-              >
-                <Button.Label>Manage integrations</Button.Label>
-              </Button>
-            </View>
-          </BottomSheet.Content>
-        </BottomSheet.Portal>
-      </BottomSheet>
+          {/* Grouped Surface Card with text input */}
+          <View style={{ paddingHorizontal: space.lg, marginTop: space.lg }}>
+            <GroupedCard style={{ paddingVertical: space.md, minHeight: 220 }}>
+              <TextInput
+                multiline
+                value={instructionText}
+                onChangeText={setInstructionText}
+                placeholder="How this agent behaves, answers, and reasons..."
+                placeholderTextColor={colors.textSecondary}
+                style={styles.modalTextInput}
+                textAlignVertical="top"
+                autoFocus
+              />
+            </GroupedCard>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+  },
+  heroMarkContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: space.md,
+  },
+  nameCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    paddingVertical: space.lg,
+    paddingHorizontal: space.xl,
+  },
+  agentNameText: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  agentRoleText: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    marginTop: space.xs,
+  },
+  swatchesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.xs,
+  },
+  swatchTouch: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
+  },
+  selectionRing: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectionRingActive: {
+    borderColor: '#C8C8CC',
+  },
+  swatchCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  shapesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.xs,
+  },
+  shapeTouch: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
+  },
+  captionText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  resetLinkText: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.link,
+  },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 56,
+  },
+  navRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+  },
+  rowTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  routineMeta: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  modalScreen: {
+    flex: 1,
+    backgroundColor: colors.surfaceRaised,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
+  },
+  modalTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalTextInput: {
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+    minHeight: 180,
+  },
+  errorText: {
+    fontSize: 17,
+    color: colors.textSecondary,
+  },
+});

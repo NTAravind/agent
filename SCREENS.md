@@ -37,27 +37,21 @@ Active tint = `accent`, inactive = `muted`. iOS uses native tab bar; Android use
 ```
 ┌─────────────────────────────────────┐
 │ AppHeader                           │  ← sticky
-│  free chat: ☰ · ModelPicker · ＋    │
-│  agent ctx: ← · (avatar Name) · 🔍 🛏│  ← avatar+name → contact card
-│  agent ctx adds: model pill below   │
+│  free chat: ☰ · ModelPicker · 🖥    │
+│  agent ctx: ← · [avatar Name] · 🖥  │  ← pill opens agent contact card; 🖥 opens canvas
 ├─────────────────────────────────────┤
 │ Message List (ScrollView)           │  ← auto-scroll
-│  User: right bubble                 │
-│  Assistant: left avatar + content   │
-│  Tool parts → chips                 │
-│  Canvas cards inline                │
+│  User: solid black rounded bubble   │
+│  Assistant: soft pale grey card     │
+│  Reply quote: ↩ quoted snippet      │
+│  Artifact pill: [M↓] file.md 3.1 KB │
+│  Interactive Choice: [A] [B] -> [✓] │
+│  Task bubbles (agent runs)          │
 │  Approval cards                     │
-│  [View task] right-aligned          │
-│  ┌ Task bubbles (agent runs) ─────┐ │  ← live: status, current step,
-│  │ goal · status · step · tools   │ │     tool chips, View task (right)
-│  │                  [View task]   │ │     polled every 3–4s
-│  └────────────────────────────────┘ │
 ├─────────────────────────────────────┤
-│ Attachment preview row (horizontal) │
-├─────────────────────────────────────┤
-│ Composer (grows)                    │  ← sticky bottom
-│  [+]  [text]  [send]                │
-│  AgentPicker only in free chat      │
+│ Composer (Floating Island)          │  ← sticky bottom
+│  (+)  [Ask AgentName...]  (↑)       │
+│  (+) opens [Attach / Camera / File] │
 └─────────────────────────────────────┘
 ```
 
@@ -93,46 +87,38 @@ While an agent chat is open:
 
 ## 2. Agents List — `src/app/agents.tsx`
 
-**Purpose:** Browse, search, create agents; quick-access to each agent's chat.
+**Purpose:** Browse, search, create agents & groups; direct access to each conversation.
 
-### Layout
+### Layout (Inspired by reference screen medias.png)
 
 ```
 ┌─────────────────────────────────────┐
-│ AppHeader ("Agents" h2 · 🔍)        │  ← left-aligned title, search only
+│ (SL) profile         (Q) search (+) │  ← user avatar monogram + circular action buttons
 ├─────────────────────────────────────┤
-│ QUICK ACCESS                        │  ← horizontal scroll
-│  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌──┐  │
-│  │🟦76│ │    │ │    │ │    │ │＋ │  │  rounded-2xl tiles (76pt)
-│  └─┬──┘ └─┬──┘ └─┬──┘ └─┬──┘ └──┘  │
-│  Personal  A1  A2  A3  New        │
-├─────────────────────────────────────┤
-│ ALL AGENTS (surface panel,         │
-│ ┌─────────────────────────────────┐ │  rounded-t-2xl)
-│ │ [44] Name                       │ │
-│ │      current activity (muted)   │ │  thin dividers, no cards
+│ CONVERSATION & AGENT FEED           │
+│ ┌─────────────────────────────────┐ │
+│ │ [Creature•] SLMob [Meal prep]   │ │  timestamp (right)
+│ │   Told them: every Sunday 8:41… │ │  message / activity preview
 │ │ ─────────────────────────────── │ │
+│ │ [Cluster] UX Research, Design…  │ │  overlapping trio for groups
+│ │   Group chat                    │ │
+│ │ ─────────────────────────────── │ │
+│ │ [Creature] Design [Proposes UI] │ │
+│ │   Yes. Drop the screenshot…     │ │
 │ └─────────────────────────────────┘ │
-├─────────────────────────────────────┤
-│ New task (kept for backwards compat)│
-│ Runs list                           │
 └─────────────────────────────────────┘
 ```
 
-### Pinned / quick-access row
-- **Order:** personal agent (first non-supervisor, marked with accent dot) → other agents → **New** tile (`plus` icon).
-- **Tile:** 76×76 `rounded-2xl` surface, rounded-square avatar (`shape="rounded"`), label below (`body-xs` semibold).
-- **Tap →** `/chat?agentId=<id>`.
-
-### Agent list panel
-- One large `surface` panel with `rounded-t-2xl` top radius.
-- **Rows:** 44pt circular avatar, name (`body` semibold), one-line truncated activity subtitle (`body-xs` muted) = active run's goal → role → "Idle".
-- **Row actions** (pause/resume · skip · notifications): **swipe left** (gesture-handler) or **long-press** (fallback). Slides in a `rounded-full` surface/border pill with three icon buttons. Only one row open; tap elsewhere or scroll closes it. **Pause/Resume is server-backed** (`POST /api/runs/:id/pause|resume` on the agent's active run; the pill flips from the run's `paused` status) — skip stays `TODO(backend)`, notifications is a local mute toggle.
-- **Tap row →** `/chat?agentId=<id>`.
+### Feed items
+- **Single Agents:** 48pt organic creature avatar with active status green dot indicator, Agent Name, role pill tag (e.g. `[Meal prepping]`), subtitle / last message preview, and right-aligned timestamp (`10:51 PM`).
+- **Group Chats:** `ClusterAvatar` (overlapping trio of creature marks), group title, "Group chat" subtitle, and right-aligned timestamp.
+- **Row actions** (pause/resume · skip · notifications): swipe left or long-press.
+- **Tap row →** `/chat?agentId=<id>` (or `/groups/[id]` for groups).
 
 ### Header actions
-- **🔍 Search** → HeroUI `BottomSheet` + `SearchField` (filters by name, role, or the active run's goal — matched via the run's `agent_id`).
-- Creation lives in the **New** quick-access tile (and the empty-state CTA) — the header stays search-only.
+- **User Avatar (left):** Monogram circle ("SL") navigating to Settings.
+- **🔍 Search (right):** Opens full-screen search sheet matching `medi4a.png` with categorized results: **Group**, **Agent**, **Message**.
+- **＋ Add (right):** Quick action to create a new agent (`/agents/new/edit`).
 
 ### Run ↔ agent matching
 `GET /api/runs` joins `agent_id` + the agent summary on every row, so list subtitles, search results and the overview's "Active:" chip all match runs by `agent_id` (the old goal-substring heuristic is gone).
@@ -146,30 +132,36 @@ While an agent chat is open:
 
 ---
 
-## 3. Agent Overview — `src/app/agents/[id].tsx`
+## 3. Agent Overview & Character Customizer — `src/app/agents/[id].tsx`
 
-**Purpose:** Read-only summary + quick controls. The full editor lives at `agents/[id]/edit.tsx`.
+**Purpose:** Live character customization + agent summary. Directly inspired by reference screen 838950d6da052755aa2622e7ca59828b.png.
 
-### Layout
+### Layout (Inspired by reference screen 838950d6da052755aa2622e7ca59828b.png)
 
 ```
 ┌─────────────────────────────────────┐
-│ AppHeader (← · Name · ⋯)            │
+│ (←) back                   (⋯) more │  ← circular action buttons
 ├─────────────────────────────────────┤
-│          (breathing room)           │
-│           [ avatar 96 ]             │  ← centered
-│            Agent 1 (h2)             │
-│        [ Active: goal chip ]        │  ← only if run active
-├─────────────────────────────────────┤
-│ ┌─ surface sheet, rounded-t-2xl ──┐ │  ~2/3 screen
-│ │ ┌─────┐┌─────┐┌─────┐┌─────┐   │ │  quick actions (4 tiles)
-│ │ │⏸  ││🔔  ││🛌  ││🧠  │   │ │  rounded-xl, accent border when on
-│ │ └─────┘└─────┘└─────┘└─────┘   │ │
-│ │ AGENT INFO            [Edit]    │ │  name · role · model · fallback ·
-│ │ ─────────────────────────────── │ │  supervisor · instructions (2 lines)
-│ │ TOOLS      [Edit tools][Add int]│ │  toolCount chip + sheet
-│ │ DANGER ZONE  [Duplicate][Delete]│ │  destructive + confirm
+│            [ creature 96 ]          │  ← large centered animated mark
+│     ┌─────────────────────────┐     │
+│     │      SLMob (bold)       │     │  ← name & role card
+│     │      Meal prepping      │     │
+│     └─────────────────────────┘     │
+│                                     │
+│ CHARACTER                           │
+│ ┌─────────────────────────────────┐ │
+│ │ (•)(•)(•)(•)(•)(•)(•)(•)(•)(•)  │ │  ← 11-color palette swatches with active ring
+│ │ ─── ─── ─── ─── ─── ─── ─── ─── │ │
+│ │ (●) (▲) (■) (☁) (⬢) (💧) (🥚)  │ │  ← 8 creature shapes with active ring
+│ │ ─────────────────────────────── │ │
+│ │ Reset to default (blue link)    │ │
 │ └─────────────────────────────────┘ │
+│ How this agent's mark looks everywhere│
+│                                     │
+│ [ 📄 Instructions               > ] │  ← opens instructions modal (media3.png)
+│                                     │
+│ ROUTINES                            │
+│ [ 🕒 Weekly meal prep           > ] │  ← Every Sunday at 8:41 AM
 └─────────────────────────────────────┘
 ```
 
@@ -352,9 +344,10 @@ Three tabs: **Emoji** (4×4 grid), **Icon** (glyph grid), **Upload** (signed URL
 ---
 
 ## 12. Auth — `src/app/auth/sign-in.tsx`
-**Purpose:** Supabase Auth (GitHub OAuth only, single allowed account).
-- Centered card, max-w 360: logo, **Continue with GitHub** (primary full-width), muted note "Only the allowed account can sign in."
-- Post-OAuth → `/` (chat). Not allowed → 403 screen "Contact admin".
+**Purpose:** Supabase Auth with email/password and one account.
+- Centered card, max-w 360: logo, email/password fields, **Sign In** and **Create Account** modes.
+- The first account is created by email/password. Subsequent signups receive a message to sign in with the existing account; there is no GitHub sign-in action.
+- Successful sign-in → `/` (chat).
 
 ---
 

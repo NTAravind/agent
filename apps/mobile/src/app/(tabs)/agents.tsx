@@ -6,18 +6,20 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Button, Skeleton, Typography } from 'heroui-native';
+import { Skeleton, Typography } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Search } from 'lucide-react-native';
 
-import { AgentTile } from '@/components/agent-tile';
 import { AgentListRow } from '@/components/agent-list-row';
 import { AgentSearch } from '@/components/agent-search';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { RoundButton, PillButton } from '@/components/design-system';
+import { colors, radius, shadow, space, typography } from '@/theme';
 import {
   fetchAgents,
   fetchRuns,
@@ -26,6 +28,7 @@ import {
   type Agent,
   type RunListItem,
 } from '@/lib/agents';
+import { fetchGroups, type AgentGroup } from '@/lib/groups';
 import { useSession } from '@/lib/session';
 
 export default function AgentsScreen() {
@@ -35,6 +38,7 @@ export default function AgentsScreen() {
 
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +48,14 @@ export default function AgentsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [nextRuns, nextAgents] = await Promise.all([
-        fetchRuns(),
-        fetchAgents(),
+      const [nextRuns, nextAgents, nextGroups] = await Promise.all([
+        fetchRuns().catch(() => []),
+        fetchAgents().catch(() => []),
+        fetchGroups().catch(() => []),
       ]);
       setRuns(nextRuns);
       setAgents(nextAgents);
+      setGroups(nextGroups);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -64,23 +70,6 @@ export default function AgentsScreen() {
       void load();
     }, [load]),
   );
-
-  // Top pinned agents (supervisor first, or first 3 agents)
-  const pinnedAgents = useMemo(() => {
-    if (agents.length <= 1) return [];
-    // Prioritize supervisor agents or the first 3 agents
-    const supervisors = agents.filter((a) => a.isSupervisor);
-    const nonSupervisors = agents.filter((a) => !a.isSupervisor);
-    return [...supervisors, ...nonSupervisors].slice(0, 3);
-  }, [agents]);
-
-  // List agents (if there are pinned agents, show the rest or all)
-  const listAgents = useMemo(() => {
-    if (agents.length <= 3) return agents;
-    // Show agents not in the pinned row
-    const pinnedIds = new Set(pinnedAgents.map((a) => a.id));
-    return agents.filter((a) => !pinnedIds.has(a.id));
-  }, [agents, pinnedAgents]);
 
   // Active run map by agent id
   const activeRunByAgent = useMemo(() => {
@@ -109,11 +98,16 @@ export default function AgentsScreen() {
     [expandedRowId, router],
   );
 
+  const handleGroupPress = useCallback(
+    (group: AgentGroup) => {
+      router.push({ pathname: '/groups/[id]', params: { id: group.id } });
+    },
+    [router],
+  );
+
   const handleRowAction = useCallback(
     (action: 'pause' | 'skip' | 'notify', agentId: string) => {
       if (action === 'pause') {
-        // Real pause/resume of the agent's active run — the API flips the run
-        // status; the graph stops (or continues) at its next step boundary.
         const run = activeRunByAgent.get(agentId) ?? null;
         if (!run) return;
         const resuming = run.status === 'paused';
@@ -145,54 +139,54 @@ export default function AgentsScreen() {
     [activeRunByAgent, load],
   );
 
-  const userInitial = session?.user.email?.[0]?.toUpperCase() ?? '👤';
+  const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-white dark:bg-[#09090b]"
+      style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Top Header matching reference design */}
+      {/* 6.10 Floating header: round initials avatar (44x44) on left, round search + round plus on right with floating shadow */}
       <View
-        className="flex-row items-center justify-between px-5 pb-3"
-        style={{ paddingTop: insets.top + 8 }}
+        style={[
+          styles.headerBar,
+          { paddingTop: insets.top + space.sm },
+        ]}
       >
-        {/* Left: User Avatar */}
+        {/* Left: User initials avatar (44x44, surfaceRaised, floating shadow) */}
         <Pressable
-          onPress={() => router.push('/settings' as any)}
+          onPress={() => router.push('/more')}
           accessibilityRole="button"
           accessibilityLabel="Open settings"
-          className="h-10 w-10 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/10 active:opacity-75"
+          style={({ pressed }) => [
+            styles.initialsAvatar,
+            shadow.floating,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
         >
-          <Text className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-            {userInitial}
-          </Text>
+          <Text style={styles.initialsText}>{userInitial}</Text>
         </Pressable>
 
-        {/* Right: Search & Create Round Action Buttons */}
-        <View className="flex-row items-center gap-2.5">
-          <Pressable
+        {/* Right: Round search and plus buttons */}
+        <View style={styles.headerRight}>
+          <RoundButton
+            icon={Search}
             onPress={() => setSearchOpen(true)}
-            accessibilityRole="button"
             accessibilityLabel="Search agents"
-            className="h-9.5 w-9.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 shadow-sm active:bg-zinc-100 dark:active:bg-white/10"
-          >
-            <Search size={17} color="#71717a" />
-          </Pressable>
-
-          <Pressable
+          />
+          <RoundButton
+            icon={Plus}
             onPress={() => router.push('/agents/new/edit')}
-            accessibilityRole="button"
             accessibilityLabel="Create agent"
-            className="h-9.5 w-9.5 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 shadow-sm active:bg-zinc-100 dark:active:bg-white/10"
-          >
-            <Plus size={19} color="#71717a" />
-          </Pressable>
+          />
         </View>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{
+          paddingTop: space.sm,
+          paddingBottom: insets.bottom + 100, // accommodate pill dock
+        }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -201,70 +195,72 @@ export default function AgentsScreen() {
               setRefreshing(true);
               void load();
             }}
-            tintColor="#8b5cf6"
+            tintColor={colors.textPrimary}
           />
         }
         onScrollBeginDrag={() => setExpandedRowId(null)}
       >
-        {/* Pinned Creatures Row (only shown when there are real agents to pin) */}
-        {pinnedAgents.length > 0 && (
-          <View className="my-2 px-4 py-2">
-            <View className="flex-row items-center justify-around">
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <View key={i} className="items-center gap-2" style={{ width: 92 }}>
-                    <Skeleton variant="shimmer" className="h-17 w-17 rounded-3xl" />
-                    <Skeleton variant="shimmer" className="h-3.5 w-16 rounded-full" />
-                  </View>
-                ))
-              ) : (
-                pinnedAgents.map((agent) => (
-                  <AgentTile
-                    key={agent.id}
-                    agent={agent}
-                    onPress={() => handleRowPress(agent)}
-                  />
-                ))
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Real Agent Contact List */}
         {loading ? (
-          <View className="mt-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <View key={i} className="flex-row items-center px-4 py-3.5 gap-3.5">
-                <Skeleton variant="shimmer" className="h-12 w-12 rounded-2xl" />
-                <View className="flex-1 gap-1.5">
-                  <Skeleton variant="shimmer" className="h-4 w-40 rounded-full" />
-                  <Skeleton variant="shimmer" className="h-3 w-64 rounded-full" />
+          <View style={{ marginTop: space.sm }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <View key={i} style={styles.loadingRow}>
+                <Skeleton variant="shimmer" style={styles.skeletonAvatar} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Skeleton variant="shimmer" style={{ height: 16, width: 140, borderRadius: 8 }} />
+                  <Skeleton variant="shimmer" style={{ height: 14, width: 220, borderRadius: 8 }} />
                 </View>
               </View>
             ))}
           </View>
-        ) : agents.length === 0 ? (
-          /* Clean Empty State when user has no agents yet */
-          <View className="flex-1 items-center justify-center px-6 py-20">
-            <View className="h-20 w-20 items-center justify-center rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 mb-4 shadow-sm">
-              <AgentAvatar size={52} name="Agent" />
+        ) : agents.length === 0 && groups.length === 0 ? (
+          /* Empty state */
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyAvatarBox}>
+              <AgentAvatar size={48} name="Agent" />
             </View>
-            <Typography type="h3" weight="semibold" className="text-center text-zinc-900 dark:text-white mb-2">
-              No agents yet
-            </Typography>
-            <Typography type="body-sm" className="text-center text-zinc-500 dark:text-zinc-400 mb-6 max-w-xs">
-              Create custom agents with their own model, personality, and MCP tools to automate research and workflows.
-            </Typography>
-            <Button
+            <Text style={styles.emptyTitle}>No agents yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Create custom agents with their own model, personality, and tools.
+            </Text>
+            <PillButton
+              label="Create your first agent"
               onPress={() => router.push('/agents/new/edit')}
-              className="rounded-full px-6"
-            >
-              <Button.Label>Create your first agent</Button.Label>
-            </Button>
+              variant="primary"
+              style={{ marginTop: space.lg }}
+            />
           </View>
         ) : (
-          <View className="mt-1">
-            {listAgents.map((agent) => {
+          <View>
+            {/* 1. Groups */}
+            {groups.map((group) => (
+              <AgentListRow
+                key={`group-${group.id}`}
+                agent={{
+                  id: group.id,
+                  name: group.name,
+                  role: 'Group chat',
+                  instructions: group.description ?? '',
+                  model: null,
+                  fallbackModels: [],
+                  avatar: { type: 'icon', value: 'bot', color: colors.mark.orange },
+                  isSupervisor: false,
+                  isSleeping: false,
+                  toolCount: 0,
+                  createdAt: group.createdAt,
+                }}
+                activeRun={null}
+                isGroup={true}
+                groupMembers={group.members}
+                onPress={() => handleGroupPress(group)}
+                onActionPress={() => {}}
+                isActionsOpen={false}
+                onActionsToggle={() => {}}
+                lastMessage={group.description ?? 'Group chat'}
+              />
+            ))}
+
+            {/* 2. Individual Agents */}
+            {agents.map((agent) => {
               const activeRun = activeRunByAgent.get(agent.id) ?? null;
               const isExpanded = expandedRowId === agent.id;
 
@@ -288,13 +284,14 @@ export default function AgentsScreen() {
         )}
 
         {error && !loading && (
-          <View className="px-5 py-4">
-            <Typography type="body-sm" className="text-red-500 text-center">
-              {error}
-            </Typography>
-            <Button variant="secondary" onPress={() => void load()} className="mt-2 w-full">
-              <Button.Label>Retry</Button.Label>
-            </Button>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <PillButton
+              label="Retry"
+              onPress={() => void load()}
+              variant="secondary"
+              style={{ marginTop: space.sm }}
+            />
           </View>
         )}
       </ScrollView>
@@ -302,10 +299,15 @@ export default function AgentsScreen() {
       {/* Search bottom sheet */}
       <AgentSearch
         agents={agents}
+        groups={groups}
         runs={runs}
         onSelect={(id) => {
           const target = agents.find((a) => a.id === id);
           if (target) handleRowPress(target);
+        }}
+        onSelectGroup={(id) => {
+          const target = groups.find((g) => g.id === id);
+          if (target) handleGroupPress(target);
         }}
         onClose={() => setSearchOpen(false)}
         isOpen={searchOpen}
@@ -313,3 +315,83 @@ export default function AgentsScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+  },
+  initialsAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initialsText: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: space.lg,
+    paddingVertical: 14,
+    gap: space.md,
+  },
+  skeletonAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    paddingVertical: 80,
+  },
+  emptyAvatarBox: {
+    marginBottom: space.lg,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: space.xs,
+  },
+  emptySubtitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  errorBox: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.recording,
+    textAlign: 'center',
+  },
+});

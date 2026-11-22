@@ -2,14 +2,14 @@ import { MCPServerPatchSchema, normalizeListingSlug } from "@agent/shared";
 
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { zodMessage } from "@/lib/zod-error";
-import { deleteServer, getServer, updateServer, assertAdmin, toPublicServer } from "@/lib/mcp/registry";
+import { deleteServer, getServer, updateServer, toPublicServer } from "@/lib/mcp/registry";
 import { listCachedTools } from "@/lib/mcp/discovery";
 import { getConnectionForServer } from "@/lib/mcp/connections";
 
 /**
  * GET    /api/mcp/servers/:id — listing detail (+ cached tools + connection flag).
- * PUT    /api/mcp/servers/:id — admin-only: patch the listing.
- * DELETE /api/mcp/servers/:id — admin-only: remove it (cascades to tools,
+ * PUT    /api/mcp/servers/:id — patch the listing.
+ * DELETE /api/mcp/servers/:id — remove it (cascades to tools,
  *                                connections and agent attachments).
  */
 export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
 export async function PUT(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     await requireUser(request);
-    assertAdmin();
     const { id } = await ctx.params;
     const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -85,7 +84,6 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     await requireUser(request);
-    assertAdmin();
     const { id } = await ctx.params;
     const removed = await deleteServer(id);
     return Response.json({ deleted: removed });

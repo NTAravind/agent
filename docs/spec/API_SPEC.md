@@ -1,6 +1,6 @@
 # API Spec
 
-Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer <Supabase JWT>` (except webhooks/OAuth callback/Inngest) and verify the user equals `ALLOWED_USER_ID`. Errors: `{ "error": { "code": string, "message": string } }`.
+Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer <Supabase JWT>` (except webhooks/OAuth callback/Inngest) and verify the session with Supabase Auth. Supabase database trigger enforces a single app account; routes scope user data by the authenticated `user_id`. Errors: `{ "error": { "code": string, "message": string } }`.
 
 ## 1. Chat
 | Method | Route | Description |
@@ -15,6 +15,8 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | GET | `/api/admin/models` | Provider catalog, mobile availability, provider key status and recent provider/model usage |
 | POST | `/api/admin/models/refresh` | Fetch catalogs from configured providers and persist model metadata |
 | PATCH | `/api/admin/models` | `{ models:[{ id, enabled }] }` to control mobile availability |
+
+**Agent-scoped chats:** an existing thread's persisted `agent_id` is authoritative. The request may omit `agentId` or repeat the same id; a different id is rejected with **409** `agent_mismatch`, and an unknown/foreign agent id is rejected with **404** `agent_not_found`. A thread with no agent yet may be bound to the requested owned agent on its first agent-scoped request.
 
 ## 2. Files
 | POST | `/api/upload` | Returns signed upload URL + `documents` row. |

@@ -39,6 +39,23 @@ async function withThreadAgents(rows: Thread[], userId: string): Promise<Thread[
   }));
 }
 
+/** Sets an agent's primary thread when it does not have one yet. */
+async function setPrimaryThreadIfUnset(
+  userId: string,
+  agentId: string,
+  threadId: string,
+): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("agents")
+    .update({ primary_thread_id: threadId })
+    .eq("id", agentId)
+    .eq("user_id", userId)
+    .is("primary_thread_id", null);
+  if (error) {
+    console.warn("[chat] could not set the agent's primary thread:", error.message);
+  }
+}
+
 export async function createThread(
   userId: string,
   options: {
@@ -71,19 +88,50 @@ export async function createThread(
   // primary (persistent) thread, so the agent's conversation keeps growing
   // instead of starting over on every visit.
   if (options.agentId) {
-    const { error: primaryError } = await supabaseAdmin()
-      .from("agents")
-      .update({ primary_thread_id: (data as Thread).id })
-      .eq("id", options.agentId)
-      .eq("user_id", userId)
-      .is("primary_thread_id", null);
-    if (primaryError) {
-      console.warn("[chat] could not set the agent's primary thread:", primaryError.message);
-    }
+    await setPrimaryThreadIfUnset(userId, options.agentId, (data as Thread).id);
   }
 
   const [thread] = await withThreadAgents([data as Thread], userId);
   return thread;
+}
+
+/**
+ * Binds an unscoped thread to an agent.
+ *
+ * The update is conditional on `agent_id is null`, so two concurrent requests
+ * cannot move the same thread to different agents. The returned id is the
+ * thread's effective owner after the update.
+ */
+export async function bindThreadToAgent(
+  userId: string,
+  threadId: string,
+  agentId: string,
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin()
+    .from("threads")
+    .update({ agent_id: agentId })
+    .eq("id", threadId)
+    .eq("user_id", userId)
+    .is("agent_id", null)
+    .select("agent_id")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not bind thread to agent: ${error.message}`);
+  }
+
+  // A concurrent request may have won the conditional update. Re-read the
+  // thread so the caller can reject a conflicting owner instead of using it.
+  const effectiveAgentId =
+    (data as { agent_id?: string | null } | null)?.agent_id ??
+    (await getThread(userId, threadId))?.agent_id ??
+    null;
+
+  if (effectiveAgentId === agentId) {
+    await setPrimaryThreadIfUnset(userId, agentId, threadId);
+  }
+
+  return effectiveAgentId;
 }
 
 export async function getThread(userId: string, threadId: string): Promise<Thread | null> {

@@ -45,7 +45,7 @@ async function main() {
       const { text, modelId, attempts } = await generateTextWithFallback({
         prompt: PROMPT,
         modelIds: [candidate.modelId],
-        userId: process.env.ALLOWED_USER_ID,
+        userId: process.env.CHECK_USER_ID,
         retriesPerModel: 0,
       });
       console.log(
@@ -99,7 +99,7 @@ async function main() {
     const { text, modelId, attempts } = await generateTextWithFallback({
       prompt: PROMPT,
       modelIds: [DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER],
-      userId: process.env.ALLOWED_USER_ID,
+      userId: process.env.CHECK_USER_ID,
       retriesPerModel: 0,
     });
     console.log(

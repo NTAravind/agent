@@ -11,32 +11,24 @@ Everything in this document is a one-time manual setup. The code for it is alrea
    - `Project URL` → `SUPABASE_URL`
    - `anon` public key → `SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server only!)
-3. **Project settings → Auth → Providers → GitHub**:
-   - Turn GitHub on, paste the Client ID and Client Secret of the GitHub OAuth app (step 2).
-   - GitHub OAuth app callback URL: `https://<project-ref>.supabase.co/auth/v1/callback`.
-4. **Project settings → Auth → URL Configuration → Redirect URLs** — add:
-   - `agentapp://auth/callback` (the Expo app deep link)
+3. **Project settings → Auth → URL Configuration → Redirect URLs** — add:
+   - `agentapp://auth/callback` (the Expo app email-confirmation deep link)
    - `http://localhost:3000/**` for local web experiments
-5. Keep the project awake: the workflow in `.github/workflows/keepalive.yml` pings it every 3 days.
+4. Keep the project awake: the workflow in `.github/workflows/keepalive.yml` pings it every 3 days.
    Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as repository secrets.
 
-## 2. GitHub OAuth app
+## 2. Create the single app account
 
-1. <https://github.com/settings/developers> → **New OAuth App**.
-2. Homepage URL: your Vercel URL. Authorization callback URL: `https://<project-ref>.supabase.co/auth/v1/callback`.
-3. Copy the Client ID / Client Secret into the Supabase GitHub provider settings.
+The app uses email/password for sign-in. The first account can be created in the app. Apply
+`db/migrations/20261122132549_single_account_auth.sql` before deploying the updated API; the database
+trigger rejects any second account, including signups made outside the app. The migration refuses
+to install if more than one Auth user already exists, so remove extras intentionally before applying.
+If the existing account was created through GitHub, set a password on that same Auth user before
+switching the app to email/password; do not create a second account.
+No `ALLOWED_USER_ID` environment variable is needed. Protected routes verify the Supabase JWT and
+scope user data through `user_id` and RLS.
 
-The app itself does not talk to GitHub OAuth directly — Supabase is the broker, and the mobile app
-only ever receives a Supabase session.
-
-## 3. Allow-list your account
-
-The API is single-user. After signing in once through the app (or the Supabase dashboard), copy the
-user UUID from **Authentication → Users** and set it as `ALLOWED_USER_ID` in both
-`apps/api/.env.local` and the Vercel environment. Every protected route rejects any other user id
-with `403 forbidden`.
-
-## 4. Inngest
+## 3. Inngest
 
 1. Create an app at <https://app.inngest.com> → **Apps → New App**.
 2. Copy **Event key** → `INNGEST_EVENT_KEY`, **Signing key** → `INNGEST_SIGNING_KEY`.
@@ -44,15 +36,16 @@ with `403 forbidden`.
 4. Locally, run `npx inngest-cli@latest dev` and set `INNGEST_DEV=1` in `apps/api/.env.local`
    (Inngest v4 defaults to cloud mode and needs a signing key there).
 
-## 5. Vercel
+## 4. Vercel
 
 1. Import the repo at <https://vercel.com/new>.
 2. **Root Directory**: `apps/api`. Framework preset: Next.js. Install command stays `npm install`
    (workspaces are installed from the repo root).
-3. Add the environment variables from `apps/api/.env.example` (Preview + Production).
+3. Add the environment variables from `apps/api/.env.example` (Preview + Production). There is no
+   `ALLOWED_USER_ID`; account creation is limited by the Supabase database trigger.
 4. Deploy. `GET https://<your-domain>/api/health` must return `401 unauthorized` without a token.
 
-## 6. LLM provider keys (needed from Phase 0.5 on)
+## 5. LLM provider keys (needed from Phase 0.5 on)
 
 - `GOOGLE_GENERATIVE_AI_API_KEY` — <https://aistudio.google.com/apikey>
 - `GROQ_API_KEY` — <https://console.groq.com/keys>
@@ -116,15 +109,14 @@ cp apps/mobile/.env.example apps/mobile/.env
 npm run dev:mobile
 ```
 
-The app ships with `expo-secure-store` (session) and `expo-web-browser` (OAuth). On a simulator the
-`agentapp://` deep link works out of the box; on a physical device install a development build
-(`npx expo run:ios` / `npx expo run:android`) or use Expo Go with the matching scheme.
+The app stores only the Supabase session in `expo-secure-store`. Email confirmation may use the
+`agentapp://auth/callback` deep link in a development build.
 
 ## 8. Acceptance check (Phase 0 "done when")
 
 1. `npm run dev:api`
 2. `npm run dev:mobile`
-3. Sign in with the allow-listed GitHub account.
+3. Create the first account with email/password, then sign in.
 4. Tap **Check /api/health** in the app → the JSON response with `status: "ok"` appears.
 
 ## 9. Shadcn/ui

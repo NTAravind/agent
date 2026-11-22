@@ -3,14 +3,14 @@ import {
   Bed,
   Bell,
   BellOff,
-  Brain,
-  BrainOff,
+  Bot,
   CalendarClock,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
   Copy,
+  Database,
   Globe,
   Info,
   Menu,
@@ -23,21 +23,17 @@ import {
   Search,
   SkipForward,
   SlidersHorizontal,
-  Sparkles,
   Square,
   Wrench,
   X,
 } from 'lucide-react-native';
 
 /**
- * Centralised icon constants so glyphs can be swapped in one place.
- * All icons are Lucide React Native components.
+ * Centralised icon constants conforming to design.md:
+ * All icons are clean outline SF Symbols / Lucide style.
+ * No sparkles, no robot/brain "AI" badges.
  */
 
-/**
- * Sleep/snooze glyph for the chat details button and the agent detail
- * quick actions. Swap this one constant to change both (e.g. to `Info`).
- */
 export const SLEEP_ICON = Bed;
 
 /** Icons used in the agent list row action pill. */
@@ -56,8 +52,9 @@ export const AGENT_OVERVIEW_ICONS = {
   bell: Bell,
   bellOff: BellOff,
   sleep: SLEEP_ICON,
-  brain: Brain,
-  brainOff: BrainOff,
+  memory: Database,
+  brain: Database,
+  brainOff: Database,
 } as const;
 
 /** Icons used in the per-agent chat header. */
@@ -66,9 +63,7 @@ export const CHAT_HEADER_ICONS = {
   search: Search,
   menu: Menu,
   create: Plus,
-  /** Details button on the right of the agent chat header. */
   details: SLEEP_ICON,
-  /** Clock button: the routines bound to this agent (Phase 10). */
   routine: CalendarClock,
 } as const;
 
@@ -84,18 +79,18 @@ export const SCREEN_ICONS = {
   wrench: Wrench,
 } as const;
 
-/** Icons used in the Grok-style capsule composer. */
+/** Icons used in composer. */
 export const COMPOSER_ICONS = {
   send: ArrowUp,
   attach: Plus,
   paperclip: Paperclip,
   deepSearch: Globe,
-  think: Brain,
-  sparkles: Sparkles,
+  think: Database,
+  sparkles: Bot,
   stop: Square,
 } as const;
 
-/** Icons used in the Grok-style message bubble and tools. */
+/** Icons used in message bubble and tools. */
 export const MESSAGE_ICONS = {
   copy: Copy,
   check: Check,
@@ -103,8 +98,8 @@ export const MESSAGE_ICONS = {
   chevronDown: ChevronDown,
   chevronUp: ChevronUp,
   deepSearch: Globe,
-  sparkles: Sparkles,
-  brain: Brain,
+  sparkles: Bot,
+  brain: Database,
 } as const;
 
 /** Tile size in the pinned quick-access row (pt). */

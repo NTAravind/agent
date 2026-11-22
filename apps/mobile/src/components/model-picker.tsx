@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Button, Typography } from 'heroui-native';
-import { FlatList, Modal, Pressable, Text, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react-native';
 
 import { PROVIDER_LABELS } from '@agent/shared';
-import { MESSAGE_ICONS } from '@/constants/icons';
+import { colors, radius, shadow, space } from '@/theme';
 import type { ModelOption } from '@/lib/models';
 
 type Props = {
@@ -59,8 +59,10 @@ function statusTags(model: ModelOption): string[] {
 }
 
 /**
- * Grok-inspired model picker.
- * Features a sleek capsule trigger and obsidian bottom sheet.
+ * Clean monochrome model picker conforming to design.md:
+ * - Surface-filled capsule trigger with floating shadow.
+ * - Clean white bottom sheet with rounded top corners.
+ * - No dark obsidian or neon elements.
  */
 export function ModelPicker({
   models,
@@ -87,13 +89,17 @@ export function ModelPicker({
         accessibilityLabel={`Choose model${value ? `, selected ${value.label}` : ''}`}
         accessibilityHint="Opens the model list"
         onPress={() => setOpen(true)}
-        className="max-w-[220px] flex-row items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 active:bg-white/10"
+        style={({ pressed }) => [
+          styles.trigger,
+          shadow.floating,
+          { opacity: pressed ? 0.6 : 1 },
+        ]}
       >
-        <MESSAGE_ICONS.sparkles size={13} color="#ffffff" />
-        <Text numberOfLines={1} className="shrink text-sm font-semibold text-white">
+        <SlidersHorizontal size={14} color={colors.textPrimary} strokeWidth={1.75} />
+        <Text numberOfLines={1} style={styles.triggerText}>
           {value?.label ?? 'Select model'}
         </Text>
-        <MESSAGE_ICONS.chevronDown size={13} color="#71717a" />
+        <ChevronDown size={14} color={colors.textSecondary} strokeWidth={1.75} />
       </Pressable>
 
       <Modal
@@ -103,35 +109,43 @@ export function ModelPicker({
         onRequestClose={() => setOpen(false)}
         statusBarTranslucent
       >
-        <View className="flex-1 justify-end">
+        <View style={styles.modalOverlay}>
           <Pressable
             accessibilityLabel="Close model picker"
             onPress={() => setOpen(false)}
-            className="absolute inset-0 bg-black/60"
+            style={styles.backdrop}
           />
           <View
-            className="max-h-[82%] rounded-t-[32px] border-t border-white/10 bg-[#101014]"
-            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+            style={[
+              styles.sheetContainer,
+              { paddingBottom: Math.max(insets.bottom, space.md) },
+            ]}
           >
             {/* Sheet Handle */}
-            <View className="items-center pt-3 pb-1">
-              <View className="h-1 w-10 rounded-full bg-white/20" />
+            <View style={styles.handleContainer}>
+              <View style={styles.handle} />
             </View>
 
-            <View className="flex-row items-center justify-between px-5 pb-3 pt-2">
+            <View style={styles.sheetHeader}>
               <View>
-                <Typography type="body" weight="semibold" className="text-white">Choose Model</Typography>
-                <Typography type="body-xs" className="text-zinc-400">Select model and capabilities</Typography>
+                <Text style={styles.sheetTitle}>Choose Model</Text>
+                <Text style={styles.sheetSubtitle}>Select model and capabilities</Text>
               </View>
-              <Button size="sm" variant="ghost" onPress={() => setOpen(false)} accessibilityLabel="Close model picker">
-                <Button.Label>Done</Button.Label>
-              </Button>
+              <Pressable
+                onPress={() => setOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close model picker"
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text style={styles.doneText}>Done</Text>
+              </Pressable>
             </View>
+
             <FlatList
               data={models}
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 16 }}
+              contentContainerStyle={styles.listContent}
               renderItem={({ item: model }) => {
                 const tags = statusTags(model);
                 const isSelected = model.id === selectedId;
@@ -144,31 +158,36 @@ export function ModelPicker({
                       onSelect(model.id);
                       setOpen(false);
                     }}
-                    className={`mx-1 mb-2 flex-row items-center rounded-2xl border px-4 py-3 active:opacity-75 ${
-                      isSelected
-                        ? 'border-white/25 bg-white/10'
-                        : 'border-white/5 bg-[#16161b]'
-                    } ${!model.available ? 'opacity-40' : ''}`}
+                    style={({ pressed }) => [
+                      styles.modelRow,
+                      isSelected && styles.modelRowSelected,
+                      !model.available && { opacity: 0.4 },
+                      { opacity: pressed ? 0.6 : 1 },
+                    ]}
                   >
-                    <View className="flex-1 gap-1">
-                      <View className="flex-row items-center gap-2">
-                        <Text className="text-base font-semibold text-white">{model.label}</Text>
+                    <View style={styles.modelInfo}>
+                      <View style={styles.titleRow}>
+                        <Text style={styles.modelName}>{model.label}</Text>
                         {isSelected ? (
-                          <View className="h-2 w-2 rounded-full bg-emerald-400" />
+                          <View style={styles.statusDot} />
                         ) : null}
                       </View>
-                      <Typography type="body-xs" className="text-zinc-400">
+                      <Text style={styles.modelSubtitle}>
                         {`${providerLabel(model.provider)} · ${capabilitySummary(model)}`}
-                      </Typography>
+                      </Text>
 
                       {tags.length > 0 && (
-                        <Typography type="body-xs" className="text-zinc-500">
-                          {tags.join(' · ')}
-                        </Typography>
+                        <View style={styles.tagRow}>
+                          {tags.map((tag) => (
+                            <View key={tag} style={styles.tagPill}>
+                              <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
                       )}
                     </View>
                     {isSelected ? (
-                      <MESSAGE_ICONS.check size={16} color="#ffffff" />
+                      <Check size={18} color={colors.success} strokeWidth={2.5} />
                     ) : null}
                   </Pressable>
                 );
@@ -189,18 +208,160 @@ export function ModelBadges({
   if (!model) return null;
 
   return (
-    <View className="flex-row flex-wrap gap-1">
-      <Typography type="body-xs" className="text-zinc-400">
+    <View style={styles.badgeContainer}>
+      <Text style={styles.badgeText}>
         {providerLabel(model.provider)}
-      </Typography>
+      </Text>
 
       {CAPABILITIES.filter(
         (capability) => model.capabilities[capability],
       ).map((capability) => (
-        <Typography key={capability} type="body-xs" className="text-zinc-500">
+        <Text key={capability} style={styles.badgeSubtext}>
           {`· ${CAPABILITY_LABELS[capability]}`}
-        </Typography>
+        </Text>
       ))}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  trigger: {
+    maxWidth: 220,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  triggerText: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.overlay,
+  },
+  sheetContainer: {
+    maxHeight: '82%',
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    backgroundColor: colors.surfaceRaised,
+    ...shadow.floating,
+  },
+  handleContainer: {
+    alignItems: 'center',
+    paddingTop: space.sm,
+    paddingBottom: space.xs,
+  },
+  handle: {
+    height: 4,
+    width: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.divider,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  sheetSubtitle: {
+    fontSize: 14,
+    lineHeight: 18,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  doneText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.link,
+  },
+  listContent: {
+    paddingHorizontal: space.md,
+    paddingBottom: space.lg,
+    gap: space.xs,
+  },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.inner,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm + 2,
+    backgroundColor: 'transparent',
+  },
+  modelRowSelected: {
+    backgroundColor: colors.surface,
+  },
+  modelInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  modelName: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.success,
+  },
+  modelSubtitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.xs,
+    marginTop: 4,
+  },
+  tagPill: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  tagText: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.textSecondary,
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  badgeText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  badgeSubtext: {
+    fontSize: 12,
+    color: colors.textTertiary,
+  },
+});

@@ -2,20 +2,19 @@ import { MCPServerCreateSchema, normalizeListingSlug } from "@agent/shared";
 
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { zodMessage } from "@/lib/zod-error";
-import { listCatalog, createServer, assertAdmin, toPublicServer } from "@/lib/mcp/registry";
+import { listCatalog, createServer, toPublicServer } from "@/lib/mcp/registry";
 
 /**
  * GET  /api/mcp/servers — marketplace catalog with the caller's connection flags.
  *      Query: ?q=&category=&provider=&authType=&freeOnly=1&connected=1
- *      Admin:  ?all=1 also returns disabled listings (management view).
- * POST /api/mcp/servers — admin-only: add a listing (ALLOWED_USER_ID).
+ *      `all=1` also returns disabled listings (management view).
+ * POST /api/mcp/servers — add a listing for the single signed-in account.
  */
 export async function GET(request: Request) {
   try {
     const user = await requireUser(request);
     const url = new URL(request.url);
     const includeDisabled = url.searchParams.get("all") === "1";
-    if (includeDisabled) assertAdmin();
     const entries = await listCatalog({
       userId: user.id,
       q: url.searchParams.get("q") ?? undefined,
@@ -41,8 +40,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    await requireUser(request);
-    assertAdmin();
+    const user = await requireUser(request);
     const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
     // Normalize before validation: slugs are stored lowercase-dashed and an
@@ -62,7 +60,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const server = await createServer(parsed.data);
+    const server = await createServer({ ...parsed.data, createdBy: user.id });
     return Response.json({ server: toPublicServer(server) }, { status: 201 });
   } catch (error) {
     return toErrorResponse(error);

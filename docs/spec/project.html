@@ -494,7 +494,7 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 </tr>
 <tr>
 <td>Auth</td>
-<td>Supabase Auth (GitHub OAuth), single allowed account</td>
+<td>Supabase Auth (email/password), single account enforced in the database</td>
 <td>Free</td>
 </tr>
 <tr>
@@ -604,7 +604,7 @@ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-ali
 <h2 id="3-key-libraries">3. Key libraries</h2>
 <p><code>ai</code>, <code>@ai-sdk/react</code>, <code>@ai-sdk/google</code>, <code>@ai-sdk/groq</code>, <code>@openrouter/ai-sdk-provider</code>, <code>@ai-sdk/mistral</code>, <code>@ai-sdk/deepseek</code>, <code>@ai-sdk/huggingface</code>, <code>@ai-sdk/cohere</code>, <code>@langchain/langgraph</code>, <code>@langchain/langgraph-checkpoint-postgres</code>, <code>@langchain/mcp-adapters</code> (or AI SDK MCP client), <code>inngest</code>, <code>@supabase/supabase-js</code>, <code>drizzle-orm</code> + <code>postgres</code>, <code>zod</code>, <code>react-native-webview</code>, <code>expo-secure-store</code>. Verify package names/versions at install time.</p>
 <h2 id="4-environment-variables">4. Environment variables</h2>
-<p>Server (Vercel env, never in the app bundle): <code>GOOGLE_GENERATIVE_AI_API_KEY</code>, <code>GROQ_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>MISTRAL_API_KEY</code>, <code>DEEPSEEK_API_KEY</code>, <code>HUGGINGFACE_API_KEY</code>, <code>COHERE_API_KEY</code>, <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, <code>DATABASE_URL</code> (pooled), <code>INNGEST_EVENT_KEY</code>, <code>INNGEST_SIGNING_KEY</code>, <code>ENCRYPTION_KEY</code> (32-byte, for MCP credentials), <code>GITHUB_VAULT_TOKEN</code>, <code>GITHUB_VAULT_REPO</code>, <code>SEARCH_API_KEY</code>, <code>ALLOWED_USER_ID</code>.
+<p>Server (Vercel env, never in the app bundle): <code>GOOGLE_GENERATIVE_AI_API_KEY</code>, <code>GROQ_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>MISTRAL_API_KEY</code>, <code>DEEPSEEK_API_KEY</code>, <code>HUGGINGFACE_API_KEY</code>, <code>COHERE_API_KEY</code>, <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, <code>DATABASE_URL</code> (pooled), <code>INNGEST_EVENT_KEY</code>, <code>INNGEST_SIGNING_KEY</code>, <code>ENCRYPTION_KEY</code> (32-byte, for MCP credentials), <code>GITHUB_VAULT_TOKEN</code>, <code>GITHUB_VAULT_REPO</code>, <code>SEARCH_API_KEY</code>.
 Client (public by design): <code>EXPO_PUBLIC_API_BASE_URL</code>, <code>EXPO_PUBLIC_SUPABASE_URL</code>, <code>EXPO_PUBLIC_SUPABASE_ANON_KEY</code>. Never put model or service keys in <code>EXPO_PUBLIC_*</code>.</p>
 <h2 id="5-known-constraints">5. Known constraints</h2>
 <ul>
@@ -683,7 +683,7 @@ Client (public by design): <code>EXPO_PUBLIC_API_BASE_URL</code>, <code>EXPO_PUB
 <p>Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes through <code>getModel(id)</code> / <code>withFallback(ids)</code>. Registry entries declare capabilities and <code>private_ok</code>. Order of operations: capability check → call → on 429/5xx retry once → next fallback → log to <code>provider_usage</code>. Defaults: chat and agents on Google; cheap/fast steps (routing, summaries) may use Groq; OpenRouter is the long-tail and last-resort provider. Mistral, DeepSeek, Hugging Face and Cohere are selectable per chat/agent and join the fallback chain as soon as their keys are configured. Embeddings are pinned to one model.</p>
 <h2 id="4-security-model">4. Security model</h2>
 <ul>
-<li>Single allowed user; every API route verifies the Supabase JWT and <code>ALLOWED_USER_ID</code>. RLS on all tables as defense in depth.</li>
+<li>One app account; a Supabase Auth database trigger rejects additional users. API routes verify Supabase JWTs; RLS and explicit user_id filters scope data.</li>
 <li>Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.</li>
 <li><strong>Prompt injection:</strong> treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list.</li>
 <li>Canvas actions are a fixed enum; no eval, no model-supplied code. WebView HTML is sandboxed (no network, no native bridge).</li>
@@ -890,7 +890,7 @@ create table monitor_snapshots (
 <p>Enable RLS on every table above. Policy pattern: <code>using (user_id = auth.uid())</code>; for child tables join through the parent. <code>mcp_servers</code> is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by <code>user_id</code> explicitly in server queries.</p>
 <h2 id="retention-protect-the-500-mb-cap">Retention (protect the 500 MB cap)</h2>
 <p>Prune <code>run_events</code> and <code>provider_usage</code> older than 30 days; keep <code>agent_runs</code> summaries. Truncate large tool outputs before storing. Store files only in Storage.</p></section><section id="api_spec"><div class="fn">API_SPEC.md</div><h1 id="api-spec">API Spec</h1>
-<p>Base URL: <code>EXPO_PUBLIC_API_BASE_URL</code>. All routes require <code>Authorization: Bearer &lt;Supabase JWT&gt;</code> (except webhooks/OAuth callback/Inngest) and verify the user equals <code>ALLOWED_USER_ID</code>. Errors: <code>{ "error": { "code": string, "message": string } }</code>.</p>
+<p>Base URL: <code>EXPO_PUBLIC_API_BASE_URL</code>. All routes require <code>Authorization: Bearer &lt;Supabase JWT&gt;</code> (except webhooks/OAuth callback/Inngest) and verify the session with Supabase Auth. Supabase limits account creation to one user; routes scope data by the authenticated user id. Errors: <code>{ "error": { "code": string, "message": string } }</code>.</p>
 <h2 id="1-chat">1. Chat</h2>
 <table>
 <thead>
@@ -1331,7 +1331,7 @@ create table monitor_snapshots (
 <h2 id="phase-0-setup-12-days">Phase 0: Setup (1–2 days)</h2>
 <ul>
 <li>[ ] Monorepo (<code>apps/api</code> Next.js, <code>apps/mobile</code> Expo, <code>packages/shared</code> zod schemas)</li>
-<li>[ ] Supabase project, GitHub OAuth, allow-list your account</li>
+<li>[x] Supabase email/password auth; one account enforced by a database trigger</li>
 <li>[ ] Vercel deploy, env vars, Inngest app connected</li>
 <li>[ ] GitHub Actions cron keepalive for Supabase</li>
 <li>[ ] Install providers: <code>@ai-sdk/google</code>, <code>@ai-sdk/groq</code>, <code>@openrouter/ai-sdk-provider</code> (plus <code>@ai-sdk/mistral</code>, <code>@ai-sdk/deepseek</code>, <code>@ai-sdk/huggingface</code>, <code>@ai-sdk/cohere</code> from Phase 0.5); add the API keys to Vercel env

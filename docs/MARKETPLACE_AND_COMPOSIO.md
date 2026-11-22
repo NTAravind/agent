@@ -121,7 +121,7 @@ await supabaseAdmin().from("mcp_servers").upsert({
   is_verified: true,
   is_free_tier: true,
   enabled: true,
-  created_by: allowedUserId() ?? null,
+  created_by: null, // system-created listing
 }, { onConflict: "slug" });
 ```
 

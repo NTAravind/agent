@@ -7,7 +7,7 @@
 ## 6.1: MCP server registry
 - The MCP registry is stored in Supabase (`mcp_servers` table).
 - Schema: `id`, `name`, `description`, `capabilities`, `config`, `encrypted_credentials`, `enabled`, `created_by`, `created_at`, `updated_at`.
-- Only admins (users with ALLOWED_USER_ID) can manage MCP servers.
+- Management routes require a valid Supabase session; the Auth database trigger enforces the single-account limit.
 - Allowed server origins: GitHub `user/p` / `org/repo` → stored with `type: github`; remote URLs → `type: http` (HTTPS).
 
 ## 6.2: Connection flows

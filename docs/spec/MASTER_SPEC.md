@@ -25,7 +25,7 @@ A personal, always-available AI assistant you can use from your phone (Expo) and
 | Constraint | Consequence |
 |---|---|
 | Free tiers only | Gemini free tier, Vercel Hobby, Supabase Free, Inngest Hobby. Design for quotas. |
-| Personal use | Vercel Hobby (non-commercial) is acceptable. Auth = your GitHub account only. |
+| Personal use | Vercel Hobby (non-commercial) is acceptable. Sign in with email/password; one account is enforced in Supabase. GitHub vault access remains server-configured and separate from sign-in. |
 | Mobile-first | Expo app is the primary client; the server is a Next.js API. |
 | Privacy | Gemini free tier may use requests to improve Google products. Don't send sensitive notes through it by default. Group handoffs to a non-`private_ok` model must also omit note/memory-derived context and the tools that can retrieve it — and a member that *can* read private context may not hand that work to one that cannot, because the copy is indistinguishable from ordinary prose. |
 

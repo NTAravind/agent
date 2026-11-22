@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
-import { Card, Typography } from 'heroui-native';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { GroupedCard, SectionLabel } from '@/components/design-system';
+import { colors, space } from '@/theme';
 
 type Props = {
   /** Section label (e.g., "Agent info", "Tools") */
@@ -14,25 +16,45 @@ type Props = {
 };
 
 /**
- * Reusable section wrapper for agent detail screen.
- * Renders a small section label, then a rounded-xl card with content.
- * Supports action buttons (e.g., "Edit", "Add integrations") aligned right.
+ * Reusable section wrapper for agent detail screen conforming to design.md.
+ * Renders a small section label, then a grouped card with content.
  */
 export function AgentDetailSection({ label, children, action, secondaryAction }: Props) {
   return (
-    <View className="gap-2 w-full">
-      <View className="flex-row items-center justify-between px-1">
-        <Typography type="body-xs" color="muted" weight="semibold">
-          {label.toUpperCase()}
-        </Typography>
-        <View className="flex-row items-center gap-2">
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <SectionLabel>{label}</SectionLabel>
+        <View style={styles.actions}>
           {secondaryAction}
           {action}
         </View>
       </View>
-      <Card className="rounded-xl p-3 border border-border bg-surface">
-        {children}
-      </Card>
+      <GroupedCard>
+        <View style={styles.content}>
+          {children}
+        </View>
+      </GroupedCard>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    gap: space.xs,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.xs,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  content: {
+    padding: space.md,
+  },
+});

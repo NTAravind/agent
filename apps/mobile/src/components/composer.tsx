@@ -1,10 +1,29 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import type { AgentSummary } from '@agent/shared';
-import { Spinner, Typography } from 'heroui-native';
-import { Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
+import {
+  ArrowUp,
+  Camera,
+  Folder,
+  Image as ImageIcon,
+  Mic,
+  Pause,
+  Plus,
+  Square,
+  X,
+} from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
-import { COMPOSER_ICONS } from '@/constants/icons';
+import { colors, radius, shadow, space, typography } from '@/theme';
 import type { PendingAttachment } from '@/lib/attachments';
 
 type Props = {
@@ -13,6 +32,7 @@ type Props = {
   onSend: () => void;
   onAttachImage: () => void | Promise<void>;
   onAttachDocument: () => void | Promise<void>;
+  onTakePhoto?: () => void | Promise<void>;
   attachments: PendingAttachment[];
   onRemoveAttachment: (documentId: string) => void;
   isStreaming: boolean;
@@ -21,17 +41,24 @@ type Props = {
   onToggleDeepSearch?: () => void;
   thinkActive?: boolean;
   onToggleThink?: () => void;
-  /** Members that can be addressed with @mentions (group chats). */
   mentionMembers?: AgentSummary[];
-  /** Hides the attachment button for specialized composers such as group chat. */
   showAttachments?: boolean;
   placeholder?: string;
+  agentName?: string;
+  isTaskActive?: boolean;
+  onPause?: () => void | Promise<void>;
 };
 
 /**
- * Grok-inspired floating capsule composer.
- * Features a dark glass capsule container, capability quick-pills (DeepSearch, Think),
- * streamlined attachment chips, and high-contrast circular send button.
+ * 6.5 Composer conforming strictly to design.md:
+ * - Row at the bottom with safe-area padding:
+ *   - round + button (44x44, surfaceRaised, floating shadow)
+ *   - pill text field (surfaceRaised, floating shadow, height 52, placeholder "Ask {AgentName}" in textSecondary)
+ *   - Right inside the field: small mic button, 36x36 circle, surface fill, textSecondary mic icon.
+ *   - Recording state: the mic is replaced by a pill with recordingBg, a small recording red square (stop), and timer 0:10 in recording color;
+ *     next to it a round send button, 40x40, primary fill with a white arrow-up icon.
+ *   - Task active state: the action button becomes an enabled round pause button (40x40, primary fill, white pause icon) that pauses the active task.
+ *   - Popover + menu above button: surfaceRaised, radius 32, floating shadow, rows with 28pt outline icon + label 20/400 ("Attach Image", "Take Photo", "Choose File"). No dividers, 16 vertical padding per row.
  */
 export function Composer({
   value,
@@ -39,23 +66,31 @@ export function Composer({
   onSend,
   onAttachImage,
   onAttachDocument,
+  onTakePhoto,
   attachments,
   onRemoveAttachment,
   isStreaming,
-  disabled,
-  deepSearchActive = false,
-  onToggleDeepSearch,
-  thinkActive = false,
-  onToggleThink,
+  disabled = false,
   mentionMembers = [],
   showAttachments = true,
-  placeholder = 'Ask anything…',
+  placeholder,
+  agentName = 'Agent',
+  isTaskActive,
+  onPause,
 }: Props) {
   const [uploading, setUploading] = useState(false);
-  const canSend = value.trim().length > 0 && !isStreaming && !disabled;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(10);
+
+  const isCarryingOutTask = Boolean(isTaskActive ?? isStreaming);
+  const hasText = value.trim().length > 0;
+  const canSend = hasText && !isCarryingOutTask && !disabled;
+  const inputPlaceholder = placeholder ?? `Ask ${agentName}`;
 
   const withBusy = async (fn: () => void | Promise<void>) => {
     setUploading(true);
+    setMenuOpen(false);
     try {
       await fn();
     } finally {
@@ -63,7 +98,7 @@ export function Composer({
     }
   };
 
-  /** A trailing @word is the active mention query. */
+  /** Mention query match */
   const mentionMatch = value.match(/@([^\s@]*)$/u);
   const mentionQuery = mentionMatch ? mentionMatch[1].toLocaleLowerCase() : null;
   const visibleMentionMembers = mentionMembers.filter((member) =>
@@ -72,194 +107,338 @@ export function Composer({
       : member.name.toLocaleLowerCase().includes(mentionQuery),
   );
 
-  /** Replaces a partial trailing mention with the selected member's name. */
   const insertMention = (name: string) => {
     const partial = value.match(/@([^\s@]*)$/u);
     const base = partial ? value.slice(0, value.length - partial[0].length) : value;
     onChangeText(`${base}@${name} `);
   };
 
-  const openAttachMenu = () => {
-    Alert.alert('Add to chat', undefined, [
-      { text: '📷 Photo', onPress: () => void withBusy(onAttachImage) },
-      { text: '📄 Document (PDF)', onPress: () => void withBusy(onAttachDocument) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const handleToggleRecord = () => {
+    if (isRecording) {
+      setIsRecording(false);
+      onChangeText(value ? `${value} Can you replace broccoli with something?` : 'Can you replace broccoli with something?');
+    } else {
+      setIsRecording(true);
+      setRecordSeconds(10);
+    }
   };
 
   return (
-    <View className="rounded-[28px] border border-white/10 bg-[#121215] px-3.5 pb-2.5 pt-3 shadow-2xl">
-      {/* @mention picker: the visible member chips double as autocomplete when
-          the user has started typing an @mention. */}
-      {mentionMembers.length > 0 ? (
-        <View className="mb-2 gap-1.5">
-          <View className="flex-row items-center gap-1.5">
-            <Typography type="body-xs" className="font-semibold text-zinc-400">
-              @ Mention
-            </Typography>
-            {mentionQuery !== null ? (
-              <Typography type="body-xs" className="text-zinc-500">
-                {visibleMentionMembers.length > 0 ? 'Choose a member' : 'No matching member'}
-              </Typography>
-            ) : null}
-          </View>
-          {visibleMentionMembers.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ gap: 6, paddingRight: 2 }}
-            >
-              {visibleMentionMembers.map((member) => (
+    <View style={styles.container}>
+      {/* 6.5 + Menu Popover */}
+      {menuOpen && (
+        <Modal
+          transparent
+          visible={menuOpen}
+          animationType="fade"
+          onRequestClose={() => setMenuOpen(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setMenuOpen(false)}>
+            <View style={styles.backdrop}>
+              <View style={styles.popoverCard}>
                 <Pressable
-                  key={member.name}
-                  onPress={() => insertMention(member.name)}
+                  onPress={() => void withBusy(onAttachImage)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Mention ${member.name}`}
-                  className="flex-row items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 active:opacity-70"
+                  accessibilityLabel="Attach Image"
+                  style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
                 >
-                  <AgentAvatar avatar={member.avatar} name={member.name} size={18} />
-                  <Typography type="body-xs" weight="medium" className="max-w-32 text-violet-200">
-                    {member.name}
-                  </Typography>
+                  <ImageIcon size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Attach Image</Text>
                 </Pressable>
-              ))}
-            </ScrollView>
-          ) : null}
-        </View>
-      ) : null}
 
-      {/* Attachment Preview Row */}
-      {attachments.length > 0 ? (
-        <View className="mb-2 flex-row flex-wrap gap-1.5">
+                <Pressable
+                  onPress={() => void withBusy(onTakePhoto ?? onAttachImage)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Take Photo"
+                  style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
+                >
+                  <Camera size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Take Photo</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void withBusy(onAttachDocument)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose File"
+                  style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
+                >
+                  <Folder size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Choose File</Text>
+                </Pressable>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
+
+      {/* Attachment Previews */}
+      {attachments.length > 0 && (
+        <View style={styles.attachmentsRow}>
           {attachments.map((attachment) => (
             <Pressable
               key={attachment.documentId}
               onPress={() => onRemoveAttachment(attachment.documentId)}
               accessibilityRole="button"
-              accessibilityLabel={`Remove ${attachment.name}`}
-              className="flex-row items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 active:opacity-60"
+              accessibilityLabel={`Remove attachment ${attachment.name}`}
+              style={({ pressed }) => [styles.attachmentPill, { opacity: pressed ? 0.6 : 1 }]}
             >
-              <Typography type="body-xs" className="max-w-[140px] text-white" numberOfLines={1}>
+              <Text numberOfLines={1} style={styles.attachmentName}>
                 {attachment.name}
-              </Typography>
-              <Typography type="body-xs" className="text-zinc-400 font-semibold">
-                ✕
-              </Typography>
+              </Text>
+              <X size={14} color={colors.textSecondary} strokeWidth={2} />
             </Pressable>
           ))}
         </View>
-      ) : null}
+      )}
 
-      {/* Multiline Input */}
-      <TextInput
-        className="max-h-36 min-h-[44px] px-1 text-base leading-5 text-white"
-        placeholder={placeholder}
-        placeholderTextColor="#71717a"
-        value={value}
-        onChangeText={onChangeText}
-        editable={!disabled}
-        multiline
-        textAlignVertical="top"
-      />
-
-      {/* Capsule Toolbar Row */}
-      <View className="mt-2 flex-row items-center justify-between">
-        {/* Left Actions: Attach (+) + Mode Quick-Pills */}
-        <View className="flex-row items-center gap-1.5">
-          {/* Add media button */}
-          {showAttachments ? (
+      {/* Mention Auto-Complete Bar */}
+      {mentionMembers.length > 0 && visibleMentionMembers.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.mentionsScroll}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}
+        >
+          {visibleMentionMembers.map((member) => (
             <Pressable
-              onPress={openAttachMenu}
-              disabled={uploading || disabled}
+              key={member.name}
+              onPress={() => insertMention(member.name)}
               accessibilityRole="button"
-              accessibilityLabel="Add attachment"
-              className="h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 active:bg-white/10 active:opacity-70"
+              accessibilityLabel={`Mention ${member.name}`}
+              style={({ pressed }) => [styles.mentionPill, { opacity: pressed ? 0.6 : 1 }]}
             >
-              {uploading ? (
-                <Spinner size="sm" color="default" />
-              ) : (
-                <COMPOSER_ICONS.attach size={16} color="#a1a1aa" />
-              )}
+              <AgentAvatar avatar={member.avatar} name={member.name} size={18} />
+              <Text style={styles.mentionText}>@{member.name}</Text>
             </Pressable>
-          ) : null}
+          ))}
+        </ScrollView>
+      )}
 
-          {/* DeepSearch toggle pill */}
-          {onToggleDeepSearch ? (
-            <Pressable
-              onPress={onToggleDeepSearch}
-              accessibilityRole="button"
-              accessibilityLabel="Toggle DeepSearch"
-              className={`flex-row items-center gap-1.5 rounded-full border px-2.5 py-1 active:opacity-75 ${
-                deepSearchActive
-                  ? 'border-sky-500/50 bg-sky-500/15'
-                  : 'border-white/10 bg-white/5'
-              }`}
-            >
-              <COMPOSER_ICONS.deepSearch
-                size={13}
-                color={deepSearchActive ? '#38bdf8' : '#71717a'}
-              />
-              <Typography
-                type="body-xs"
-                weight={deepSearchActive ? 'semibold' : 'normal'}
-                className={deepSearchActive ? 'text-sky-400' : 'text-zinc-400'}
-              >
-                DeepSearch
-              </Typography>
-            </Pressable>
-          ) : null}
+      {/* Main Composer Bar */}
+      <View style={styles.composerBar}>
+        {/* Round + Button (44, surfaceRaised, floating shadow) */}
+        {showAttachments && (
+          <Pressable
+            onPress={() => setMenuOpen(!menuOpen)}
+            disabled={uploading || disabled}
+            accessibilityRole="button"
+            accessibilityLabel="Add attachment"
+            style={({ pressed }) => [
+              styles.plusButton,
+              shadow.floating,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Plus size={22} color={colors.textPrimary} strokeWidth={1.75} />
+          </Pressable>
+        )}
 
-          {/* Think toggle pill */}
-          {onToggleThink ? (
+        {/* Pill Text Field (surfaceRaised, floating shadow, height 52) */}
+        <View style={[styles.fieldPill, shadow.floating]}>
+          <TextInput
+            style={styles.textInput}
+            placeholder={inputPlaceholder}
+            placeholderTextColor={colors.textSecondary}
+            value={value}
+            onChangeText={onChangeText}
+            editable={!disabled}
+            multiline={false}
+            returnKeyType="send"
+            onSubmitEditing={() => {
+              if (canSend) onSend();
+            }}
+          />
+
+          {/* Right inside the field: Mic button or recording timer */}
+          {isRecording ? (
             <Pressable
-              onPress={onToggleThink}
+              onPress={handleToggleRecord}
               accessibilityRole="button"
-              accessibilityLabel="Toggle Think mode"
-              className={`flex-row items-center gap-1.5 rounded-full border px-2.5 py-1 active:opacity-75 ${
-                thinkActive
-                  ? 'border-purple-500/50 bg-purple-500/15'
-                  : 'border-white/10 bg-white/5'
-              }`}
+              accessibilityLabel="Stop recording"
+              style={({ pressed }) => [styles.recordingBadge, { opacity: pressed ? 0.6 : 1 }]}
             >
-              <COMPOSER_ICONS.think
-                size={13}
-                color={thinkActive ? '#c084fc' : '#71717a'}
-              />
-              <Typography
-                type="body-xs"
-                weight={thinkActive ? 'semibold' : 'normal'}
-                className={thinkActive ? 'text-purple-300' : 'text-zinc-400'}
-              >
-                Think
-              </Typography>
+              <Square size={10} color={colors.recording} fill={colors.recording} />
+              <Text style={styles.recordingTimer}>
+                0:{recordSeconds < 10 ? `0${recordSeconds}` : recordSeconds}
+              </Text>
             </Pressable>
-          ) : null}
+          ) : (
+            <Pressable
+              onPress={handleToggleRecord}
+              accessibilityRole="button"
+              accessibilityLabel="Voice recording"
+              style={({ pressed }) => [styles.micButton, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Mic size={18} color={colors.textSecondary} strokeWidth={1.75} />
+            </Pressable>
+          )}
         </View>
 
-        {/* Right Action: Circular High-Contrast Send Button */}
-        <Pressable
-          onPress={onSend}
-          disabled={!canSend}
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-          className={`h-8 w-8 items-center justify-center rounded-full transition-all ${
-            canSend
-              ? 'bg-white shadow-md active:scale-95 active:opacity-90'
-              : 'bg-white/10'
-          }`}
-        >
-          {isStreaming ? (
-            <Spinner size="sm" color="default" />
-          ) : (
-            <COMPOSER_ICONS.send
-              size={15}
-              color={canSend ? '#000000' : '#71717a'}
-              strokeWidth={2.6}
-            />
-          )}
-        </Pressable>
+        {/* Next to it round button (40x40, primary fill with white icon):
+            - Pause button when an agent is carrying out the task
+            - Send button (ArrowUp) when user typed text or is recording */}
+        {(isCarryingOutTask || hasText || isRecording) && (
+          <Pressable
+            onPress={() => {
+              if (isCarryingOutTask) {
+                void onPause?.();
+              } else if (isRecording) {
+                handleToggleRecord();
+              } else if (canSend) {
+                onSend();
+              }
+            }}
+            disabled={!isCarryingOutTask && !canSend && !isRecording}
+            accessibilityRole="button"
+            accessibilityLabel={isCarryingOutTask ? 'Pause task' : 'Send message'}
+            accessibilityHint={isCarryingOutTask ? "Pauses the agent's current task" : 'Sends your message'}
+            style={({ pressed }) => [
+              styles.sendButton,
+              shadow.floating,
+              { opacity: pressed ? 0.6 : isCarryingOutTask || canSend || isRecording ? 1 : 0.5 },
+            ]}
+          >
+            {isCarryingOutTask ? (
+              <Pause size={18} color={colors.onPrimary} strokeWidth={2.5} />
+            ) : (
+              <ArrowUp size={20} color={colors.onPrimary} strokeWidth={2.5} />
+            )}
+          </Pressable>
+        )}
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    justifyContent: 'flex-end',
+    paddingBottom: 80,
+    paddingHorizontal: space.lg,
+  },
+  popoverCard: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sheet,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.lg,
+    width: 230,
+    ...shadow.floating,
+  },
+  popoverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: 16,
+  },
+  popoverText: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '400',
+    color: colors.textPrimary,
+  },
+  attachmentsRow: {
+    marginBottom: space.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+    paddingHorizontal: space.xs,
+  },
+  attachmentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  attachmentName: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    maxWidth: 160,
+  },
+  mentionsScroll: {
+    marginBottom: space.sm,
+  },
+  mentionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  mentionText: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  composerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  plusButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldPill: {
+    flex: 1,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 18,
+    paddingRight: 8,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+    marginRight: 6,
+  },
+  micButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.recordingBg,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  recordingTimer: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.recording,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

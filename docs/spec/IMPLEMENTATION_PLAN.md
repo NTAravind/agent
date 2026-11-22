@@ -4,7 +4,9 @@ Build vertical slices. Each phase ends in something you can use. Estimates assum
 
 ## Phase 0: Setup (1–2 days)
 - [x] Monorepo (`apps/api` Next.js, `apps/mobile` Expo, `packages/shared` zod schemas)
-- [x] Supabase project, GitHub OAuth, allow-list your account
+- [x] Supabase project provisioned; GitHub OAuth was previously used for app sign-in and can now be disabled
+- [x] Switch app sign-in to email/password, remove GitHub from sign-in, remove `ALLOWED_USER_ID` API authorization, and enforce one account in code and a Supabase migration.
+- [ ] Apply `db/migrations/20261122132549_single_account_auth.sql` after confirming the project has no duplicate Auth users.
 - [x] use shadcn ui for ui in next js project 
 - [x] Vercel deploy, env vars, Inngest app connected
 - [x] GitHub Actions cron keepalive for Supabase

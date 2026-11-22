@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Image } from 'expo-image';
-import { Button, Card, Typography } from 'heroui-native';
-import { Linking, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polyline, Rect } from 'react-native-svg';
 import type { CanvasAction, CanvasSpec } from '@agent/shared';
+
+import { PillButton } from '@/components/design-system';
+import { colors, radius, space, typography } from '@/theme';
 
 /**
  * Native renderer for the Canvas component catalog (UI_UX_SPEC.md section 4).
@@ -15,38 +17,39 @@ type Node = CanvasSpec['root'];
 
 export type CanvasActionHandler = (action: CanvasAction, payload: unknown) => void;
 
-const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7'];
+const PALETTE = [
+  colors.mark.blue,
+  colors.mark.green,
+  colors.mark.amber,
+  colors.mark.red,
+  colors.mark.teal,
+  colors.mark.purple,
+];
 
 function UnknownBlock({ node }: { node: unknown }) {
   return (
-    <Card className="rounded-xl border border-border bg-surface">
-      <Card.Body>
-        <Typography type="body-sm" color="muted">
-          Can&apos;t display this block ({String((node as { type?: string })?.type ?? 'unknown')}).
-        </Typography>
-      </Card.Body>
-    </Card>
+    <View style={styles.card}>
+      <Text style={styles.mutedText}>
+        Can&apos;t display this block ({String((node as { type?: string })?.type ?? 'unknown')}).
+      </Text>
+    </View>
   );
 }
 
 function StatBlock({ node }: { node: Extract<Node, { type: 'stat' }> }) {
+  const isNegative = node.delta?.startsWith('-');
   return (
-    <Card className="flex-1 rounded-xl border border-border bg-surface">
-      <Card.Body className="gap-1">
-        <Typography type="body-xs" color="muted">
-          {node.label}
-        </Typography>
-        <Typography type="h3">{node.value}</Typography>
-        {node.delta ? (
-          <Typography
-            type="body-xs"
-            className={node.delta.startsWith('-') ? 'text-danger' : 'text-success'}
-          >
-            {node.delta}
-          </Typography>
-        ) : null}
-      </Card.Body>
-    </Card>
+    <View style={[styles.card, { flex: 1 }]}>
+      <Text style={styles.statLabel}>
+        {node.label}
+      </Text>
+      <Text style={styles.statValue}>{node.value}</Text>
+      {node.delta ? (
+        <Text style={[styles.statDelta, { color: isNegative ? colors.recording : colors.success }]}>
+          {node.delta}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -70,11 +73,11 @@ function ChartBlock({ node }: { node: Extract<Node, { type: 'chart' }> }) {
   const label = selected !== null ? `${String(data[selected].x)}: ${String(data[selected].y)}` : null;
 
   return (
-    <View className="gap-2">
+    <View style={styles.chartContainer}>
       {label ? (
-        <Typography type="body-xs" color="muted">
+        <Text style={styles.mutedText}>
           {label}
-        </Typography>
+        </Text>
       ) : null}
       <View>
         <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
@@ -133,12 +136,12 @@ function ChartBlock({ node }: { node: Extract<Node, { type: 'chart' }> }) {
               })()
             : null}
         </Svg>
-        <View className="mt-1 flex-row justify-between">
+        <View style={styles.chartLabelsRow}>
           {data.slice(0, 6).map((point, index) => (
             <Pressable key={index} onPress={() => setSelected(index)} hitSlop={6}>
-              <Typography type="body-xs" color="muted">
+              <Text style={styles.mutedText}>
                 {String(point.x)}
-              </Typography>
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -150,29 +153,29 @@ function ChartBlock({ node }: { node: Extract<Node, { type: 'chart' }> }) {
 function TableBlock({ node }: { node: Extract<Node, { type: 'table' }> }) {
   const [first, ...rest] = node.columns;
   return (
-    <View className="overflow-hidden rounded-xl border border-border">
-      <View className="flex-row bg-surface">
-        <View className="w-28 border-b border-r border-border p-2">
-          <Typography type="body-xs" color="muted">
+    <View style={styles.tableContainer}>
+      <View style={styles.tableHeaderRow}>
+        <View style={[styles.tableCell, styles.tableStickyCell]}>
+          <Text style={styles.mutedText}>
             {first}
-          </Typography>
+          </Text>
         </View>
         <ScrollView horizontal>
           <View>
-            <View className="flex-row border-b border-border">
+            <View style={styles.tableRow}>
               {rest.map((column, index) => (
-                <View key={index} className="w-28 p-2">
-                  <Typography type="body-xs" color="muted">
+                <View key={index} style={styles.tableCell}>
+                  <Text style={styles.mutedText}>
                     {column}
-                  </Typography>
+                  </Text>
                 </View>
               ))}
             </View>
             {node.rows.map((row, rowIndex) => (
-              <View key={rowIndex} className="flex-row">
+              <View key={rowIndex} style={styles.tableRow}>
                 {rest.map((_, columnIndex) => (
-                  <View key={columnIndex} className="w-28 p-2">
-                    <Typography type="body-sm">{String(row[columnIndex + 1] ?? '')}</Typography>
+                  <View key={columnIndex} style={styles.tableCell}>
+                    <Text style={styles.tableCellText}>{String(row[columnIndex + 1] ?? '')}</Text>
                   </View>
                 ))}
               </View>
@@ -183,15 +186,15 @@ function TableBlock({ node }: { node: Extract<Node, { type: 'table' }> }) {
       <ScrollView horizontal>
         <View>
           {node.rows.map((row, rowIndex) => (
-            <View key={rowIndex} className="flex-row border-t border-border">
-              <View className="w-28 p-2">
-                <Typography type="body-sm" className="font-medium">
+            <View key={rowIndex} style={[styles.tableRow, styles.tableBorderTop]}>
+              <View style={[styles.tableCell, styles.tableStickyCell]}>
+                <Text style={styles.tableCellBold}>
                   {String(row[0] ?? '')}
-                </Typography>
+                </Text>
               </View>
               {rest.map((_, columnIndex) => (
-                <View key={columnIndex} className="w-28 p-2">
-                  <Typography type="body-sm">{String(row[columnIndex + 1] ?? '')}</Typography>
+                <View key={columnIndex} style={styles.tableCell}>
+                  <Text style={styles.tableCellText}>{String(row[columnIndex + 1] ?? '')}</Text>
                 </View>
               ))}
             </View>
@@ -204,17 +207,17 @@ function TableBlock({ node }: { node: Extract<Node, { type: 'table' }> }) {
 
 function ListBlock({ node }: { node: Extract<Node, { type: 'list' }> }) {
   return (
-    <View className="overflow-hidden rounded-xl border border-border">
+    <View style={styles.listContainer}>
       {node.items.map((item, index) => {
         const content = (
-          <View className={`gap-0.5 p-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-            <Typography type="body-sm" className="font-medium">
+          <View style={[styles.listItem, index > 0 && styles.listBorderTop]}>
+            <Text style={styles.listTitle}>
               {item.title}
-            </Typography>
+            </Text>
             {item.subtitle ? (
-              <Typography type="body-xs" color="muted" numberOfLines={2}>
+              <Text style={styles.mutedText} numberOfLines={2}>
                 {item.subtitle}
-              </Typography>
+              </Text>
             ) : null}
           </View>
         );
@@ -238,14 +241,13 @@ function ButtonBlock({
   onAction: CanvasActionHandler;
 }) {
   return (
-    <Button
-      size="sm"
-      variant="secondary"
-      className="self-start"
-      onPress={() => onAction(node.action, node.payload)}
-    >
-      <Button.Label>{node.label}</Button.Label>
-    </Button>
+    <View style={{ alignSelf: 'flex-start' }}>
+      <PillButton
+        variant="secondary"
+        label={node.label}
+        onPress={() => onAction(node.action, node.payload)}
+      />
+    </View>
   );
 }
 
@@ -253,17 +255,15 @@ function TabsBlock({ node, onAction }: { node: Extract<Node, { type: 'tabs' }>; 
   const [selected, setSelected] = useState(0);
   const current = node.tabs[Math.min(selected, node.tabs.length - 1)];
   return (
-    <View className="gap-3">
-      <View className="flex-row gap-2">
+    <View style={styles.blockGap}>
+      <View style={styles.tabsRow}>
         {node.tabs.map((tab, index) => (
-          <Button
+          <PillButton
             key={index}
-            size="sm"
-            variant={index === selected ? 'primary' : 'ghost'}
+            variant={index === selected ? 'primary' : 'secondary'}
+            label={tab.label}
             onPress={() => setSelected(index)}
-          >
-            <Button.Label>{tab.label}</Button.Label>
-          </Button>
+          />
         ))}
       </View>
       <CanvasNode node={current.child as Node} onAction={onAction} />
@@ -287,15 +287,15 @@ export function CanvasNode({ node, onAction }: { node: Node | unknown; onAction:
       return <ListBlock node={component} />;
     case 'markdown':
       return (
-        <Typography type="body-sm" className="leading-6 text-foreground">
+        <Text style={styles.markdownText}>
           {component.text}
-        </Typography>
+        </Text>
       );
     case 'image':
       return (
         <Image
           source={{ uri: component.uri }}
-          style={{ width: '100%', height: 180, borderRadius: 12 }}
+          style={styles.image}
           contentFit="cover"
           accessibilityLabel={component.alt}
         />
@@ -307,7 +307,10 @@ export function CanvasNode({ node, onAction }: { node: Node | unknown; onAction:
     case 'stack':
       return (
         <View
-          className={component.direction === 'row' ? 'flex-row flex-wrap gap-3' : 'gap-3'}
+          style={[
+            styles.stackContainer,
+            component.direction === 'row' ? styles.stackRow : styles.stackColumn,
+          ]}
         >
           {component.children.map((child, index) => (
             <CanvasNode key={index} node={child as Node} onAction={onAction} />
@@ -327,8 +330,127 @@ export function CanvasView({
   onAction: CanvasActionHandler;
 }) {
   return (
-    <View className="gap-3">
+    <View style={styles.blockGap}>
       <CanvasNode node={spec.root} onAction={onAction} />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    padding: space.md,
+  },
+  mutedText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  statLabel: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  statDelta: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  chartContainer: {
+    gap: space.sm,
+  },
+  chartLabelsRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  tableContainer: {
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+  },
+  tableStickyCell: {
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.divider,
+  },
+  tableCell: {
+    width: 112,
+    padding: space.sm,
+  },
+  tableRow: {
+    flexDirection: 'row',
+  },
+  tableBorderTop: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  tableCellText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textPrimary,
+  },
+  tableCellBold: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  listContainer: {
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  listItem: {
+    padding: space.md,
+    gap: 2,
+  },
+  listBorderTop: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  listTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  markdownText: {
+    ...typography.body,
+    lineHeight: 24,
+  },
+  image: {
+    width: '100%',
+    height: 180,
+    borderRadius: radius.card,
+  },
+  stackContainer: {
+    gap: space.md,
+  },
+  stackRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  stackColumn: {
+    flexDirection: 'column',
+  },
+  blockGap: {
+    gap: space.md,
+  },
+});
