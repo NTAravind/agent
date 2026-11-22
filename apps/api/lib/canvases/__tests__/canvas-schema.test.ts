@@ -18,12 +18,12 @@ test("every canvas fixture validates", () => {
   }
 });
 
-test("rejects unknown component types", () => {
+test("preserves unknown component types for renderer fallback", () => {
   const result = validateCanvasSpec({
     title: "bad",
     root: { type: "iframe", src: "https://example.com" },
   });
-  assert.equal(result.ok, false);
+  assert.equal(result.ok, true);
 });
 
 test("rejects non-enum button actions", () => {

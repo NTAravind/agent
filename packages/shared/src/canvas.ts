@@ -116,26 +116,24 @@ const componentSchema = z.union([knownComponentSchema, unknownNode]);
 
 export type CanvasComponent = z.infer<typeof knownComponentSchema>;
 
+export const CanvasDataSourceSchema = z.object({
+  id: z.string().min(1).max(80),
+  kind: z.enum([
+    "web_search",
+    "search_notes",
+    "recall_memory",
+    "list_tasks",
+    "list_events",
+  ]),
+  query: z.string().min(2).max(400),
+});
+export type CanvasDataSource = z.infer<typeof CanvasDataSourceSchema>;
+
 const canvasSpecBase = z.object({
   title: z.string().min(1).max(200).optional(),
   root: componentSchema,
   /** Refreshable queries; bound components carry the matching `source` id. */
-  dataSources: z
-    .array(
-      z.object({
-        id: z.string().min(1).max(80),
-        kind: z.enum([
-          "web_search",
-          "search_notes",
-          "recall_memory",
-          "list_tasks",
-          "list_events",
-        ]),
-        query: z.string().min(2).max(400),
-      }),
-    )
-    .max(6)
-    .optional(),
+  dataSources: z.array(CanvasDataSourceSchema).max(6).optional(),
 });
 
 export type CanvasSpec = Omit<z.infer<typeof canvasSpecBase>, "root"> & { root: CanvasComponent };

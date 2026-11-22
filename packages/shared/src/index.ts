@@ -1,6 +1,7 @@
 export * from "./agents";
 export * from "./api";
 export * from "./canvas";
+export * from "./dashboard";
 export * from "./chat";
 export * from "./groups";
 export * from "./knowledge";

@@ -104,6 +104,9 @@ Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes
 8. One live parent run per group: a second one is refused (409), and a group with a live run cannot be deleted (409). The ordinary chat route refuses a group thread (409 `group_thread`) — group messages are group runs, never a chat stream.
 9. Token usage is cumulative: a run that parks on an approval keeps what it already spent, and the resume adds to it. Consult tokens are charged to the member turn and therefore to the group's cumulative budget.
 
+### 3.14 Persistent dashboards (Phase 13)
+Dashboards are user-owned workspaces separate from transient canvases. A dashboard row stores metadata/layout/version; child widget rows store validated Canvas-compatible config, data-source binding, position and size; immutable version rows store full snapshots. Dashboard APIs verify the caller and explicitly scope service-role queries. RLS independently scopes dashboard rows by `user_id` and child rows through the owning dashboard. Refresh and agent-tool flows are added in Phase 13.2; chat-inline canvas presentation remains a separate Phase 13.3 slice.
+
 ## 4. Security model
 - One app account; Supabase Auth accepts email/password and a database trigger rejects additional users. Every API route verifies the Supabase JWT; RLS and explicit `user_id` filters scope data.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.

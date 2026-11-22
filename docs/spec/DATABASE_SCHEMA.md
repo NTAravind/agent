@@ -171,6 +171,45 @@ create table canvases (
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
 
+-- Persistent dashboards (Phase 13): separate workspaces, widget rows and immutable revisions.
+create table dashboards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  description text,
+  created_by_agent_id uuid references agents(id) on delete set null,
+  layout jsonb not null default '{"columns":12,"rowHeight":96,"gap":12}'::jsonb,
+  version int not null default 1 check (version > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index dashboards_user_updated on dashboards (user_id, updated_at desc, id desc);
+
+create table dashboard_widgets (
+  id uuid primary key default gen_random_uuid(),
+  dashboard_id uuid not null references dashboards(id) on delete cascade,
+  type text not null check (type in ('stat','chart','table','list','markdown','image')),
+  title text not null,
+  config jsonb not null,
+  data_source jsonb,
+  position jsonb not null default '{"x":0,"y":0}'::jsonb,
+  size jsonb not null default '{"width":3,"height":2}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index dashboard_widgets_order on dashboard_widgets (dashboard_id, created_at, id);
+
+create table dashboard_versions (
+  id uuid primary key default gen_random_uuid(),
+  dashboard_id uuid not null references dashboards(id) on delete cascade,
+  version int not null check (version > 0),
+  snapshot jsonb not null,
+  created_at timestamptz not null default now(),
+  created_by_agent_id uuid references agents(id) on delete set null,
+  unique (dashboard_id, version)
+);
+create index dashboard_versions_recent on dashboard_versions (dashboard_id, version desc);
+
 -- Provider model catalog and user-controlled mobile availability
 create table provider_models (
   provider text not null check (provider in ('google','groq','openrouter','mistral','deepseek','huggingface','cohere')),
@@ -434,6 +473,8 @@ Created by the checkpointer's `setup()` on the same database; don't hand-write t
 
 ## Row Level Security
 Enable RLS on every table above. The normal policy pattern is `using (user_id = auth.uid())`; child tables join through the parent. Phase 11 additionally replaces the `threads`, `messages`, and `agent_runs` insert/update policies with ownership-aware checks, so a direct authenticated database client cannot attach another user's group, agent, thread, or run. `group_members` joins through both the owned group and the owned agent. `mcp_servers` is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by `user_id` explicitly in server queries.
+
+For Phase 13 dashboards, enable RLS on all three dashboard tables. The dashboard policy scopes `user_id` to `auth.uid()` for select/insert/update/delete. Widget and version policies use an `exists` check against the owning dashboard (`dashboard_id` and `user_id = auth.uid()`). Revoke Data API access from `anon` and `authenticated` because dashboard access goes through authenticated server routes; grant server-side service access explicitly. Server APIs still authenticate first and filter every service-role query by the caller's `user_id`. Version history keeps the latest 50 snapshots per dashboard.
 
 ## Memory kinds (Phase 9)
 `memories.kind` still accepts `'task'` for historical rows, but extraction no longer writes it: a detected task becomes a row in `tasks` with `created_by = 'suggested'`, which the app shows as a suggestion to accept or dismiss. This keeps one todo store instead of two.

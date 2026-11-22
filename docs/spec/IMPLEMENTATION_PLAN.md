@@ -244,6 +244,36 @@ canvases via the API and they appear in the Canvas tab.
 ## Phase 12: Extras (as wanted)
 Website monitors → image generation (verify free) → voice (device APIs) → code sandbox → X data (paid).
 
+## Phase 13: Universal visual output — dashboards and chat canvases
+
+Build this as reviewable vertical slices. Canvas (Phase 5) remains the transient/report output; dashboards are separate user-owned workspaces.
+
+### Phase 13.1: Dashboard data foundation and APIs
+- [x] Shared Zod contracts for dashboard metadata, layout, widgets and versions; reuse Canvas component validation.
+- [x] Dashboard, widget and version tables with ownership-aware RLS and bounded payload/widget limits.
+- [x] Authenticated, owner-scoped dashboard CRUD, paginated listing, version listing and restore APIs.
+- [x] Rate-limit dashboard creation and retain a bounded version history.
+**Done when:** an authenticated user can create, read, update, delete and restore a persisted dashboard through the API; invalid specs and cross-user access are rejected.
+
+**Status (2026-11-23):** Phase 13.1 implementation is complete locally. Shared/API type checks, focused schema tests and production build pass. The migration has not been applied, so live API and second-user RLS acceptance remains pending before this checkpoint is considered verified.
+
+### Phase 13.2: Agent dashboard tools and refresh
+- [ ] Add create/get/update and per-widget agent tools to the global registry for every agent tier.
+- [ ] Validate run/agent/user context, ownership and approvals for destructive actions.
+- [ ] Add independent Inngest refresh for configured data sources with partial failure reporting and versioned results.
+**Done when:** basic and advanced agents can manage owned dashboards and refresh configured widgets without an LLM call.
+
+### Phase 13.3: Canvas in chat
+- [ ] Emit durable `data-canvas` references from chat and preserve them in message history.
+- [ ] Add deduplicated inline canvas cards with loading/error/deleted states, refresh, prompt actions and full-screen navigation.
+**Done when:** a canvas renders during streaming and after thread reload, and its actions reach the chat/API correctly.
+
+### Phase 13.4: Web and mobile dashboards
+- [ ] Build dashboard listing, creation, detail, widget rendering, deletion and version restoration in the existing web design system.
+- [ ] Add Expo dashboard list/detail routes and a native renderer over the same shared specifications.
+- [ ] Add navigation from chat and verify cross-platform rendering.
+**Done when:** the same persisted dashboard renders and can be managed on web and mobile.
+
 ## Testing
 - Unit: zod schemas, chunker, wikilink parser, encryption round-trip, model resolver, fallback ordering, capability gate.
 - Provider contract tests: one tool-call prompt, one structured-output prompt, one image prompt per registry model (run manually, they consume quota).

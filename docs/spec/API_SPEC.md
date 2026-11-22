@@ -257,3 +257,19 @@ consult may ask one further member for help (nested consults run one level deepe
 
 ## 9. Streaming
 AI SDK UI message stream. Custom data parts: `data-run-event` (node/tool progress), `data-approval` (pending approval card), `data-canvas` (canvas id), `data-routine-proposal` (the Phase 10 routine confirmation card — `{ routineId, name, prompt, scheduleLabel, nextRuns, tz, status }`).
+
+## 10. Persistent dashboards (Phase 13)
+All dashboard endpoints require `requireUser()` and use the shared schemas in `packages/shared/src/dashboard.ts`. Responses and requests use camelCase. Widget config is validated through the Canvas component schema; at most 24 widgets are allowed per dashboard and dashboard specs are capped at 500 KB.
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/dashboards?limit=&offset=` | Paginated caller-owned dashboard summaries |
+| POST | `/api/dashboards` | Create `{ title, description?, layout?, widgets?, createdByAgentId? }` → **201** `{ dashboard }`; capped at 20 creates per user per hour (**429** when exceeded) |
+| GET | `/api/dashboards/:id` | Owned dashboard with widgets and current version |
+| PUT | `/api/dashboards/:id` | Update `{ title?, description?, layout?, widgets?, createdByAgentId? }`; a widget array replaces the current set; saves a version snapshot |
+| DELETE | `/api/dashboards/:id` | Delete an owned dashboard and its widgets/versions |
+| GET | `/api/dashboards/:id/versions` | List version metadata, newest first |
+| POST | `/api/dashboards/:id/restore` | Restore `{ version }` as a new current version; history remains immutable |
+| POST | `/api/dashboards/:id/refresh` | Phase 13.2: enqueue configured data-source refresh in Inngest |
+
+Every service-role query filters by authenticated `user_id`; dashboard, widget and version RLS provide database-level ownership as defense in depth. Unknown or foreign dashboard IDs return **404**. Version listing returns at most the latest 50 snapshots; older snapshots are pruned on new revisions.
