@@ -6,12 +6,15 @@ import { ModelLayerError } from "@/lib/models/errors";
 import { findRegistryEntry } from "@/lib/models/registry";
 import { resolveModel } from "@/lib/models/resolver";
 import { recordUsage } from "@/lib/models/usage";
+import { elapsedMs, tracePerf } from "@/lib/perf";
 
 export type ChatStreamAttempt = {
   modelId: string;
   provider: Provider | null;
   outcome: "ok" | "error" | "skipped";
   reason?: string;
+  latencyMs?: number;
+  ttftMs?: number;
 };
 
 export type ChatStreamOptions = {
@@ -30,6 +33,8 @@ export type ChatStreamOptions = {
   system?: string;
   /** How many tool round-trips are allowed in one turn. */
   maxSteps?: number;
+  /** Monotonic request start used to report end-to-end time to first token. */
+  requestStartedAt?: number;
 };
 
 export type ChatStream = {
@@ -102,6 +107,8 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
 
     let failureReason: string | undefined;
     let failureStatus: "error" | "rate_limited" = "error";
+    const attemptStartedAt = performance.now();
+    const attemptId = `${modelId}:${attemptStartedAt}:1`;
 
     const result = streamText({
       model,
@@ -159,12 +166,27 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
 
     if (failureReason || !firstContent) {
       const reason = failureReason ?? "provider stream ended before any content";
+      const latencyMs = elapsedMs(attemptStartedAt);
       console.error(`[chat] ${modelId} failed before first token: ${reason}`);
+      tracePerf({
+        kind: "model_attempt",
+        name: modelId,
+        duration_ms: latencyMs,
+        status: "error",
+        run_id: options.runId ?? null,
+        provider: entry.provider,
+        model: modelId,
+        attempt_id: attemptId,
+        try_number: 1,
+        outcome: failureStatus,
+        metadata: { phase: "pre_content", error_type: "provider_stream_error" },
+      });
       attempts.push({
         modelId,
         provider: entry.provider,
         outcome: "error",
         reason,
+        latencyMs,
       });
       await reader.cancel().catch(() => {});
       await recordUsage({
@@ -178,7 +200,75 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
       continue;
     }
 
-    attempts.push({ modelId, provider: entry.provider, outcome: "ok" });
+    const ttftMs = elapsedMs(attemptStartedAt);
+    const attempt: ChatStreamAttempt = {
+      modelId,
+      provider: entry.provider,
+      outcome: "ok",
+      ttftMs,
+    };
+    attempts.push(attempt);
+
+    tracePerf({
+      kind: "model_attempt",
+      name: modelId,
+      duration_ms: ttftMs,
+      status: "ok",
+      run_id: options.runId ?? null,
+      provider: entry.provider,
+      model: modelId,
+      attempt_id: attemptId,
+      try_number: 1,
+      outcome: "ok",
+      ttft_ms: ttftMs,
+      metadata: { phase: "ttft" },
+    });
+    tracePerf({
+      kind: "chat_stage",
+      name: "model_ttft",
+      duration_ms: ttftMs,
+      status: "ok",
+      run_id: options.runId ?? null,
+      provider: entry.provider,
+      model: modelId,
+      attempt_id: attemptId,
+      ttft_ms: ttftMs,
+    });
+    if (options.requestStartedAt !== undefined) {
+      tracePerf({
+        kind: "chat_stage",
+        name: "request_ttft",
+        duration_ms: elapsedMs(options.requestStartedAt),
+        status: "ok",
+        run_id: options.runId ?? null,
+        provider: entry.provider,
+        model: modelId,
+        attempt_id: attemptId,
+        ttft_ms: ttftMs,
+      });
+    }
+
+    let attemptFinished = false;
+    const traceAttemptTotal = (outcome: "ok" | "error"): void => {
+      if (attemptFinished) return;
+      attemptFinished = true;
+      const latencyMs = elapsedMs(attemptStartedAt);
+      attempt.latencyMs = latencyMs;
+      tracePerf({
+        kind: "model_attempt",
+        name: modelId,
+        duration_ms: latencyMs,
+        status: outcome === "ok" ? "ok" : "error",
+        run_id: options.runId ?? null,
+        provider: entry.provider,
+        model: modelId,
+        attempt_id: attemptId,
+        try_number: 1,
+        outcome,
+        ttft_ms: ttftMs,
+        metadata: { phase: "total" },
+      });
+    };
 
     // Re-emit the buffered pre-content parts, then the rest of the stream.
     const combined = new ReadableStream<TextStreamPart<ToolSet>>({
@@ -189,6 +279,7 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
       async pull(controller) {
         const { done, value } = await reader.read();
         if (done) {
+          traceAttemptTotal("ok");
           controller.close();
           return;
         }
@@ -199,6 +290,7 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
           // which the UI stream's onError turns into the error part).
           const reason = describeStreamError(value.error);
           console.error(`[chat] ${modelId} failed mid-stream: ${reason}`);
+          traceAttemptTotal("error");
           await recordUsage({
             userId: options.userId,
             provider: entry.provider,

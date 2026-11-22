@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --import tsx --test 'lib/**/__tests__/*.test.ts'",
+    "perf:report": "node --import tsx scripts/perf-report.ts",
     "check:providers": "tsx scripts/check-providers.ts"
   },
   "dependencies": {

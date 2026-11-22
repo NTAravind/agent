@@ -30,6 +30,7 @@ import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
 import { buildSkillTools } from "@/lib/skills/load";
 import { buildRoutineTools, routineProposalPayload } from "@/lib/routines/tools";
 import { DEFAULT_TIMEZONE } from "@/lib/routines/schedule";
+import { measurePerf, withPerfScope } from "@/lib/perf";
 
 export const maxDuration = 300;
 
@@ -40,8 +41,15 @@ export const maxDuration = 300;
  * Auth: Bearer <supabase JWT>
  */
 export async function POST(request: Request) {
+  const requestStartedAt = performance.now();
+  return await withPerfScope({ kind: "chat" }, () =>
+    handleChatPost(request, requestStartedAt),
+  );
+}
+
+async function handleChatPost(request: Request, requestStartedAt: number) {
   try {
-    const user = await requireUser(request);
+    const user = await measurePerf("chat_stage", "auth", () => requireUser(request));
 
     const parsed = ChatRequestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
@@ -58,7 +66,9 @@ export async function POST(request: Request) {
     let threadId = body.threadId ?? null;
     let knownThread: Awaited<ReturnType<typeof getThread>> = null;
     if (threadId) {
-      knownThread = await getThread(user.id, threadId);
+      knownThread = await measurePerf("chat_stage", "thread_load", () =>
+        getThread(user.id, threadId!),
+      );
       if (knownThread?.group_id) {
         return Response.json(
           {
@@ -138,7 +148,9 @@ export async function POST(request: Request) {
     }
 
     // Attachments are resolved to bytes before the model call.
-    const attachments = await loadAttachments(user.id, body.attachments);
+    const attachments = await measurePerf("chat_stage", "attachments", () =>
+      loadAttachments(user.id, body.attachments),
+    );
     const needsVision = attachments.some((a) => a.mediaType.startsWith("image/"));
     const needsPdf = attachments.some((a) => a.mediaType === "application/pdf");
 
@@ -199,16 +211,18 @@ export async function POST(request: Request) {
       }),
     };
 
-    const system = await buildSystemPrompt(
-      user.id,
-      canSeePrivate
-        ? [...body.messages].reverse().find((message) => message.role === "user")?.parts
-            .filter((part) => part.type === "text")
-            .map((part) => String((part as { text?: unknown }).text ?? ""))
-            .join(" ")
-        : undefined,
-      agentId,
-      body.tz ?? DEFAULT_TIMEZONE,
+    const system = await measurePerf("chat_stage", "prompt_build", () =>
+      buildSystemPrompt(
+        user.id,
+        canSeePrivate
+          ? [...body.messages].reverse().find((message) => message.role === "user")?.parts
+              .filter((part) => part.type === "text")
+              .map((part) => String((part as { text?: unknown }).text ?? ""))
+              .join(" ")
+          : undefined,
+        agentId,
+        body.tz ?? DEFAULT_TIMEZONE,
+      ),
     );
 
     const chatStream = await createChatStream({
@@ -219,6 +233,7 @@ export async function POST(request: Request) {
       system,
       tools,
       maxSteps: 6,
+      requestStartedAt,
     });
 
     const uiStream = createUIMessageStream({

@@ -144,10 +144,11 @@ create table agent_runs (
 create table run_events (
   id bigint generated always as identity primary key,
   run_id uuid not null references agent_runs(id) on delete cascade,
-  type text not null,                  -- node_start|node_end|tool_call|tool_result|message|error
+  type text not null,                  -- node_start|node_end|tool_call|tool_result|message|error|perf
   payload jsonb,
   created_at timestamptz default now()
 );
+-- `perf` rows are content-free Phase 0 timings and are emitted only when PERF_TRACE=1.
 create index on run_events (run_id, id);
 create table approvals (
   id uuid primary key default gen_random_uuid(),

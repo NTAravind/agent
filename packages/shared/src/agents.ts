@@ -126,6 +126,8 @@ export const RunEventTypeSchema = z.enum([
   "tool_result",
   "message",
   "error",
+  /** Phase 0 performance telemetry; only emitted when PERF_TRACE=1. */
+  "perf",
 ]);
 
 export type RunEventType = z.infer<typeof RunEventTypeSchema>;

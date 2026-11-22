@@ -5,6 +5,7 @@ import { assertCapabilities } from "./capability";
 import { ModelLayerError, ModelRegistryError } from "./errors";
 import { findRegistryEntry } from "./registry";
 import { resolveModel } from "./resolver";
+import { tracePerf } from "@/lib/perf";
 import { recordUsage as defaultRecordUsage, type UsageRecord, type UsageStatus } from "./usage";
 
 export type AttemptOutcome = "ok" | "rate_limited" | "error" | "skipped";
@@ -180,9 +181,23 @@ export async function withFallback<T>(
 
     for (let tryNumber = 1; tryNumber <= retries + 1; tryNumber += 1) {
       const startedAt = Date.now();
+      const attemptId = `${id}:${startedAt}:${tryNumber}`;
       try {
         const result = await run(model, entry);
         const latencyMs = Date.now() - startedAt;
+
+        tracePerf({
+          kind: "model_attempt",
+          name: id,
+          duration_ms: latencyMs,
+          status: "ok",
+          run_id: options.runId ?? null,
+          provider: entry.provider,
+          model: id,
+          attempt_id: attemptId,
+          try_number: tryNumber,
+          outcome: "ok",
+        });
 
         attempts.push({ modelId: id, provider: entry.provider, outcome: "ok", tryNumber, latencyMs });
 
@@ -203,6 +218,20 @@ export async function withFallback<T>(
       } catch (error) {
         const latencyMs = Date.now() - startedAt;
         const classification = classifyError(error);
+
+        tracePerf({
+          kind: "model_attempt",
+          name: id,
+          duration_ms: latencyMs,
+          status: "error",
+          run_id: options.runId ?? null,
+          provider: entry.provider,
+          model: id,
+          attempt_id: attemptId,
+          try_number: tryNumber,
+          outcome: classification.outcome,
+          metadata: { error_type: error instanceof Error ? error.name : "unknown_error" },
+        });
 
         attempts.push({
           modelId: id,

@@ -2,6 +2,7 @@ import { createGoogle } from "@ai-sdk/google";
 import { embedMany, type EmbeddingModel } from "ai";
 
 import { optionalEnv } from "../env";
+import { measurePerf } from "@/lib/perf";
 import { ModelRegistryError } from "./errors";
 
 /**
@@ -35,13 +36,23 @@ export function getEmbeddingModel(): EmbeddingModel {
 export async function embedTexts(values: string[]): Promise<number[][]> {
   if (values.length === 0) return [];
 
-  const { embeddings } = await embedMany({
-    model: getEmbeddingModel(),
-    values,
-    providerOptions: {
-      google: { outputDimensionality: EMBEDDING_DIMENSIONS },
+  const { embeddings } = await measurePerf(
+    "embedding",
+    EMBEDDING_MODEL_ID,
+    () =>
+      embedMany({
+        model: getEmbeddingModel(),
+        values,
+        providerOptions: {
+          google: { outputDimensionality: EMBEDDING_DIMENSIONS },
+        },
+      }),
+    {
+      provider: "google",
+      model: EMBEDDING_MODEL_ID,
+      metadata: { batch_size: values.length, dimensions: EMBEDDING_DIMENSIONS },
     },
-  });
+  );
 
   return embeddings;
 }

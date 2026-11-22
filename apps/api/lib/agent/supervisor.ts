@@ -20,6 +20,7 @@ import {
 } from "@/lib/agent/pause";
 import { getCheckpointer } from "@/lib/agent/checkpointer";
 import {
+  appendPerfRunEvent,
   appendRunEvent,
   createRun,
   failRun,
@@ -30,6 +31,7 @@ import { generateTextWithFallback } from "@/lib/models/generate";
 import { primeMobileModel } from "@/lib/models/catalog";
 import { findRegistryEntry, listRegistry } from "@/lib/models/registry";
 import { providersWithKeys } from "@/lib/models";
+import { measurePerf, withPerfScope } from "@/lib/perf";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -183,12 +185,22 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
 
   /** Same pause/cancel boundary as the single-agent graph (see graph.ts). */
   const withPause = (
+    nodeName: string,
     node: (state: SupervisorStateType) => Promise<Partial<SupervisorStateType>>,
   ): ((state: SupervisorStateType) => Promise<Partial<SupervisorStateType>>) =>
-    async (state) => {
-      await assertRunActive(runId);
-      return node(state);
-    };
+    async (state) =>
+      await measurePerf(
+        "node",
+        nodeName,
+        async () => {
+          await assertRunActive(runId);
+          return node(state);
+        },
+        {
+          runId,
+          onComplete: (event) => appendPerfRunEvent(runId, event),
+        },
+      );
 
   const specialistById = (agentId: string) => specialists.find((s) => s.id === agentId);
   const modelFor = (agentId: string) => specialistById(agentId)?.model ?? preferredModel;
@@ -468,10 +480,10 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
   };
 
   return new StateGraph(SupervisorState)
-    .addNode("delegate", withPause(delegateNode))
-    .addNode("fan_out", withPause(fanOutNode))
-    .addNode("verify", withPause(verifyNode))
-    .addNode("merge", withPause(mergeNode))
+    .addNode("delegate", withPause("delegate", delegateNode))
+    .addNode("fan_out", withPause("fan_out", fanOutNode))
+    .addNode("verify", withPause("verify", verifyNode))
+    .addNode("merge", withPause("merge", mergeNode))
     .addEdge(START, "delegate")
     .addEdge("delegate", "fan_out")
     .addEdge("fan_out", "verify")
@@ -511,6 +523,14 @@ async function loadSpecialists(userId: string): Promise<Specialist[]> {
  * the user has fewer than 2 specialists (nothing to cross-check yet).
  */
 export async function runSupervisor(
+  input: RunAgentInput,
+): Promise<{ status: string; result?: string }> {
+  return await withPerfScope({ kind: "agent", runId: input.runId }, () =>
+    runSupervisorInternal(input),
+  );
+}
+
+async function runSupervisorInternal(
   input: RunAgentInput,
 ): Promise<{ status: string; result?: string }> {
   const { runId, userId, goal } = input;

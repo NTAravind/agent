@@ -3,6 +3,7 @@ import type { RunEventType, RunStatus } from "@agent/shared";
 import type { AgentFinding } from "@/lib/agent/state";
 
 import { loadAgentSummaries } from "@/lib/agents";
+import type { PerfTraceEvent } from "@/lib/perf";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -97,6 +98,17 @@ export async function appendRunEvent(
   } catch (error) {
     console.warn("[agent/runs] could not append event:", error);
   }
+}
+
+/**
+ * Persists one Phase 0 performance sample on a run timeline. Telemetry is
+ * emitted only when PERF_TRACE=1 and never contains prompts or tool payloads.
+ */
+export async function appendPerfRunEvent(
+  runId: string,
+  event: PerfTraceEvent,
+): Promise<void> {
+  await appendRunEvent(runId, "perf", { ...event });
 }
 
 export async function getRunWithEvents(runId: string, userId: string): Promise<{

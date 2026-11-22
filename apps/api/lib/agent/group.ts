@@ -20,6 +20,7 @@ import {
   assertRunActive,
 } from "@/lib/agent/pause";
 import {
+  appendPerfRunEvent,
   appendRunEvent,
   createRun,
   failRun,
@@ -33,6 +34,7 @@ import {
   truncate,
   type RunAgentInput,
 } from "@/lib/agent/graph";
+import { measurePerf, withPerfScope } from "@/lib/perf";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -354,12 +356,22 @@ function buildGroupGraph(deps: GroupDeps) {
   ) => appendRunEvent(runId, phase, { node, ...payload });
 
   const withPause = (
+    nodeName: string,
     node: (state: GroupStateType) => Promise<Partial<GroupStateType>>,
   ): ((state: GroupStateType) => Promise<Partial<GroupStateType>>) =>
-    async (state) => {
-      await assertRunActive(runId);
-      return node(state);
-    };
+    async (state) =>
+      await measurePerf(
+        "node",
+        nodeName,
+        async () => {
+          await assertRunActive(runId);
+          return node(state);
+        },
+        {
+          runId,
+          onComplete: (event) => appendPerfRunEvent(runId, event),
+        },
+      );
 
   const routeNode = async (
     state: GroupStateType,
@@ -728,9 +740,9 @@ function buildGroupGraph(deps: GroupDeps) {
   };
 
   return new StateGraph(GroupState)
-    .addNode("route", withPause(routeNode))
-    .addNode("agent_turn", withPause(agentTurnNode))
-    .addNode("finalize", withPause(finalizeNode))
+    .addNode("route", withPause("route", routeNode))
+    .addNode("agent_turn", withPause("agent_turn", agentTurnNode))
+    .addNode("finalize", withPause("finalize", finalizeNode))
     .addEdge(START, "route")
     .addConditionalEdges("route", (state: GroupStateType) =>
       state.shouldFinalize ? "finalize" : "agent_turn",
@@ -754,6 +766,14 @@ async function beginGroupResume(runId: string, userId: string): Promise<boolean>
 
 /** Executes a dynamic group run through the Postgres-checkpointed graph. */
 export async function runGroup(
+  input: RunAgentInput & { groupId: string },
+): Promise<{ status: string; result?: string }> {
+  return await withPerfScope({ kind: "agent", runId: input.runId }, () =>
+    runGroupInternal(input),
+  );
+}
+
+async function runGroupInternal(
   input: RunAgentInput & { groupId: string },
 ): Promise<{ status: string; result?: string }> {
   const { runId, userId, goal, groupId } = input;

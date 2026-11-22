@@ -9,7 +9,7 @@ import {
 import { generateObject, isStepCount, tool, type Tool } from "ai";
 import { z, type ZodType } from "zod";
 
-import { appendRunEvent, failRun, updateRun } from "@/lib/agent/runs";
+import { appendPerfRunEvent, appendRunEvent, failRun, updateRun } from "@/lib/agent/runs";
 import {
   RunCancelledError,
   RunPausedError,
@@ -50,6 +50,7 @@ import {
 } from "@/lib/groups/tools";
 import { filterPrivateTools, privateModelChain } from "@/lib/groups/privacy";
 import type { GroupHandoff, GroupToolContext } from "@/lib/groups/types";
+import { measurePerf, withPerfScope } from "@/lib/perf";
 
 /**
  * The agent graph: plan → act ⇄ tools → observe, with a self-correction node
@@ -296,12 +297,22 @@ function buildGraph(deps: GraphDeps) {
    * node), and `run/resumed` re-runs exactly this node via `invoke(null)`.
    */
   const withPause = (
+    nodeName: string,
     node: (state: AgentStateType) => Promise<Partial<AgentStateType>>,
   ): ((state: AgentStateType) => Promise<Partial<AgentStateType>>) =>
-    async (state) => {
-      await assertRunActive(runId);
-      return node(state);
-    };
+    async (state) =>
+      await measurePerf(
+        "node",
+        nodeName,
+        async () => {
+          await assertRunActive(runId);
+          return node(state);
+        },
+        {
+          runId,
+          onComplete: (event) => appendPerfRunEvent(runId, event),
+        },
+      );
 
   // --- Nodes --------------------------------------------------------------
 
@@ -788,13 +799,13 @@ function buildGraph(deps: GraphDeps) {
     state.groupHandoff ? "finalize" : "act_llm";
 
   const graph = new StateGraph(AgentState)
-    .addNode("plan", withPause(planNode))
-    .addNode("act_llm", withPause(actLlmNode))
-    .addNode("tool_gate", withPause(toolGateNode))
-    .addNode("tool_exec", withPause(toolExecNode))
-    .addNode("observe", withPause(observeNode))
-    .addNode("self_correct", withPause(selfCorrectNode))
-    .addNode("finalize", withPause(finalizeNode))
+    .addNode("plan", withPause("plan", planNode))
+    .addNode("act_llm", withPause("act_llm", actLlmNode))
+    .addNode("tool_gate", withPause("tool_gate", toolGateNode))
+    .addNode("tool_exec", withPause("tool_exec", toolExecNode))
+    .addNode("observe", withPause("observe", observeNode))
+    .addNode("self_correct", withPause("self_correct", selfCorrectNode))
+    .addNode("finalize", withPause("finalize", finalizeNode))
     .addEdge(START, "plan")
     .addEdge("plan", "act_llm")
     .addConditionalEdges("act_llm", (state: AgentStateType) => routeAfterActLlm(state))
@@ -954,6 +965,14 @@ async function runTimeZone(runId: string): Promise<string> {
 export async function runAgent(
   input: RunAgentInput,
 ): Promise<{ status: string; result?: string; handoff?: GroupHandoff }> {
+  return await withPerfScope({ kind: "agent", runId: input.runId }, () =>
+    runAgentInternal(input),
+  );
+}
+
+async function runAgentInternal(
+  input: RunAgentInput,
+): Promise<{ status: string; result?: string; handoff?: GroupHandoff }> {
   const { runId, userId, goal } = input;
   if (input.resume && !(await beginResume(runId))) {
     // Cancelled or finished while the resume event was in flight — do not
@@ -1048,6 +1067,15 @@ export async function runAgent(
  * the tool gate with the checkpointer's state.
  */
 export async function resumeAgentRun(input: {
+  runId: string;
+  userId: string;
+}): Promise<{ status: string; result?: string; handoff?: GroupHandoff }> {
+  return await withPerfScope({ kind: "agent", runId: input.runId }, () =>
+    resumeAgentRunInternal(input),
+  );
+}
+
+async function resumeAgentRunInternal(input: {
   runId: string;
   userId: string;
 }): Promise<{ status: string; result?: string; handoff?: GroupHandoff }> {

@@ -3,7 +3,7 @@ import { step } from "inngest";
 import { resumeAgentRun } from "@/lib/agent/graph";
 import { executeRun, resumeExecution } from "@/lib/agent/execute";
 import { resumeGroupParentForChild } from "@/lib/agent/group";
-import { failRun } from "@/lib/agent/runs";
+import { appendPerfRunEvent, failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested, approvalDecided, canvasRefreshRequested, chatCompleted, runResumed, vaultChanged } from "@/lib/inngest/events";
 import { extractMemories } from "@/lib/memory/extract";
@@ -12,6 +12,28 @@ import { handleRoutineOutcome, runRoutineTick } from "@/lib/routines/scheduler";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { syncVault } from "@/lib/vault/sync";
 import { refreshCanvas } from "@/lib/canvases";
+import { measurePerf, withPerfScope } from "@/lib/perf";
+
+/**
+ * Times a durable Inngest step without changing its name or retry semantics.
+ * Run-associated steps are also persisted as `perf` run events; background
+ * steps remain structured console traces.
+ */
+function tracedStep<T>(
+  name: string,
+  runId: string | null | undefined,
+  operation: () => Promise<T> | T,
+): Promise<T> {
+  return measurePerf(
+    "inngest_step",
+    name,
+    () => withPerfScope({ kind: "inngest_step", runId: runId ?? null, step: name }, operation),
+    {
+      runId: runId ?? null,
+      onComplete: runId ? (event) => appendPerfRunEvent(runId, event) : undefined,
+    },
+  );
+}
 
 /**
  * Optional belt-and-braces keepalive. The primary Supabase keepalive is the
@@ -45,7 +67,9 @@ export const chatCompletedFunction = inngest.createFunction(
   async ({ event }) => {
     const { userId, threadId } = event.data;
 
-    return await step.run("extract-memories", () => extractMemories(userId, threadId));
+    return await step.run("extract-memories", () =>
+      tracedStep("extract-memories", null, () => extractMemories(userId, threadId)),
+    );
   },
 );
 
@@ -63,7 +87,7 @@ export const vaultChangedFunction = inngest.createFunction(
   async ({ event }) => {
     const { userId } = event.data;
 
-    return await step.run("sync-vault", () => syncVault(userId));
+    return await step.run("sync-vault", () => tracedStep("sync-vault", null, () => syncVault(userId)));
   },
 );
 
@@ -88,22 +112,26 @@ export const agentRunFunction = inngest.createFunction(
     const { runId, userId, goal, preferredModel, tz, routineId, groupId, approvalMode } = event.data;
 
     const result = await step.run("execute-agent-graph", () =>
-      executeRun({
-        runId,
-        userId,
-        goal,
-        preferredModel,
-        tz,
-        approvalMode,
-        ...(groupId ? { groupId } : {}),
-      }),
+      tracedStep("execute-agent-graph", runId, () =>
+        executeRun({
+          runId,
+          userId,
+          goal,
+          preferredModel,
+          tz,
+          approvalMode,
+          ...(groupId ? { groupId } : {}),
+        }),
+      ),
     );
 
     // A routine run books its own outcome (result posted in the thread,
     // failure streak, auto-pause after three failures).
     if (routineId) {
       await step.run("record-routine-outcome", () =>
-        handleRoutineOutcome(runId, result.status),
+        tracedStep("record-routine-outcome", runId, () =>
+          handleRoutineOutcome(runId, result.status),
+        ),
       );
     }
 
@@ -130,13 +158,19 @@ export const approvalResumeFunction = inngest.createFunction(
   async ({ event }) => {
     const { runId, userId } = event.data;
 
-    const result = await step.run("resume-agent-graph", () => resumeAgentRun({ runId, userId }));
+    const result = await step.run("resume-agent-graph", () =>
+      tracedStep("resume-agent-graph", runId, () => resumeAgentRun({ runId, userId })),
+    );
 
     // A group member's approval belongs to the child run. Once that child
     // finishes, resume the parked parent group graph so it can route or
     // finalize with the member's result.
     if (result.status !== "awaiting_approval" && result.status !== "paused") {
-      await step.run("resume-group-parent", () => resumeGroupParentForChild(runId, userId));
+      await step.run("resume-group-parent", () =>
+        tracedStep("resume-group-parent", runId, () =>
+          resumeGroupParentForChild(runId, userId),
+        ),
+      );
     }
 
     return result;
@@ -164,7 +198,9 @@ export const runResumeFunction = inngest.createFunction(
   async ({ event }) => {
     const { runId, userId } = event.data;
 
-    return await step.run("resume-paused-graph", () => resumeExecution({ runId, userId }));
+    return await step.run("resume-paused-graph", () =>
+      tracedStep("resume-paused-graph", runId, () => resumeExecution({ runId, userId })),
+    );
   },
 );
 
@@ -194,7 +230,9 @@ export const canvasRefreshFunction = inngest.createFunction(
     for (const canvas of data) {
       try {
         await step.run(`refresh-canvas-${canvas.id}`, async () =>
-          refreshCanvas(canvas.user_id, canvas as Parameters<typeof refreshCanvas>[1]),
+          tracedStep(`refresh-canvas-${canvas.id}`, null, () =>
+            refreshCanvas(canvas.user_id, canvas as Parameters<typeof refreshCanvas>[1]),
+          ),
         );
         refreshed += 1;
       } catch {
@@ -239,13 +277,15 @@ export const mcpSyncFunction = inngest.createFunction(
 
     for (const connection of connections) {
       try {
-        await step.run(`mcp-sync-${connection.id}`, async () => {
-          const { refreshProvider } = await import("@/lib/mcp/providers");
-          await refreshProvider({
-            userId: connection.user_id as string,
-            connectionId: connection.id as string,
-          });
-        });
+        await step.run(`mcp-sync-${connection.id}`, async () =>
+          tracedStep(`mcp-sync-${connection.id}`, null, async () => {
+            const { refreshProvider } = await import("@/lib/mcp/providers");
+            await refreshProvider({
+              userId: connection.user_id as string,
+              connectionId: connection.id as string,
+            });
+          }),
+        );
         ok += 1;
       } catch (syncError) {
         failed += 1;
@@ -287,7 +327,9 @@ export const reminderTickFunction = inngest.createFunction(
     triggers: { cron: "* * * * *" },
   },
   async () => {
-    const result = await step.run("send-reminders", () => runReminderTick());
+    const result = await step.run("send-reminders", () =>
+      tracedStep("send-reminders", null, () => runReminderTick()),
+    );
     return result;
   },
 );
@@ -304,7 +346,9 @@ export const routineTickFunction = inngest.createFunction(
     triggers: { cron: "* * * * *" },
   },
   async () => {
-    const result = await step.run("fire-routines", () => runRoutineTick());
+    const result = await step.run("fire-routines", () =>
+      tracedStep("fire-routines", null, () => runRoutineTick()),
+    );
     return result;
   },
 );

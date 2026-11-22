@@ -1,6 +1,7 @@
 import type { FetchPageResult, WebSearchResponse, WebSearchResult } from "@agent/shared";
 
 import { optionalEnv } from "@/lib/env";
+import { measurePerf } from "@/lib/perf";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const MAX_PAGE_CHARS = 6_000;
@@ -21,18 +22,24 @@ export async function webSearch(query: string, maxResults = 5): Promise<WebSearc
     );
   }
 
-  const response = await fetch(TAVILY_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      search_depth: "basic",
-      max_results: maxResults,
-      include_answer: true,
-      include_raw_content: false,
-    }),
-  });
+  const response = await measurePerf(
+    "web_tool",
+    "web_search",
+    () =>
+      fetch(TAVILY_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          search_depth: "basic",
+          max_results: maxResults,
+          include_answer: true,
+          include_raw_content: false,
+        }),
+      }),
+    { provider: "tavily" },
+  );
 
   if (!response.ok) {
     const body = await response.text();
@@ -78,14 +85,20 @@ export async function fetchPage(url: string): Promise<FetchPageResult> {
     throw new Error("Only http and https URLs can be fetched.");
   }
 
-  const response = await fetch(parsed.toString(), {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "agent-app/1.0 (+https://github.com/NTAravind/agent)",
-      Accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.5",
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = await measurePerf(
+    "web_tool",
+    "fetch_page",
+    () =>
+      fetch(parsed.toString(), {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "agent-app/1.0 (+https://github.com/NTAravind/agent)",
+          Accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.5",
+        },
+        signal: AbortSignal.timeout(15_000),
+      }),
+    { provider: "http", metadata: { protocol: parsed.protocol } },
+  );
 
   if (!response.ok) {
     throw new Error(`Could not fetch ${url} (${response.status}).`);

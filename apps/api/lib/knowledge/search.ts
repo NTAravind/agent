@@ -1,6 +1,7 @@
 import type { Memory, Note, NoteChunk, NoteWithContent } from "@agent/shared";
 
 import { embedTexts } from "@/lib/models/embeddings";
+import { measurePerf } from "@/lib/perf";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /** Formats a 768-dimension embedding for PostgRPC. */
@@ -18,7 +19,16 @@ export type SearchNotesOptions = {
  * Hybrid search over note chunks: cosine similarity fused with full-text rank
  * (reciprocal-rank fusion, done in the SQL function).
  */
-export async function searchNotes({
+export async function searchNotes(options: SearchNotesOptions): Promise<NoteChunk[]> {
+  return await measurePerf(
+    "retrieval",
+    "note_search",
+    () => searchNotesInternal(options),
+    { metadata: { k: options.k ?? 8 } },
+  );
+}
+
+async function searchNotesInternal({
   userId,
   query,
   k = 8,
@@ -48,7 +58,20 @@ export async function searchNotes({
   return (data ?? []) as NoteChunk[];
 }
 
-export async function searchMemories({
+export async function searchMemories(options: {
+  userId: string;
+  query: string;
+  k?: number;
+}): Promise<Array<Memory & { score: number }>> {
+  return await measurePerf(
+    "retrieval",
+    "memory_search",
+    () => searchMemoriesInternal(options),
+    { metadata: { k: options.k ?? 8 } },
+  );
+}
+
+async function searchMemoriesInternal({
   userId,
   query,
   k = 8,
