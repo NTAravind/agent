@@ -229,7 +229,7 @@ export default function AgentDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* 6.1 Settings Floating Header: round back button + round ellipsis only */}
+      {/* 6.1 Settings Floating Header: round back button + Edit pill + round ellipsis */}
       <View style={[styles.headerBar, { paddingTop: insets.top + space.sm }]}>
         <RoundButton
           icon={ChevronLeft}
@@ -237,11 +237,19 @@ export default function AgentDetailScreen() {
           accessibilityLabel="Go back"
         />
 
-        <RoundButton
-          icon={MoreHorizontal}
-          onPress={openMoreMenu}
-          accessibilityLabel="More options"
-        />
+        <View style={styles.headerRightActions}>
+          <PillButton
+            label="Edit"
+            variant="secondary"
+            onPress={() => router.push({ pathname: '/agents/[id]/edit', params: { id } })}
+            accessibilityLabel="Edit agent"
+          />
+          <RoundButton
+            icon={MoreHorizontal}
+            onPress={openMoreMenu}
+            accessibilityLabel="More options"
+          />
+        </View>
       </View>
 
       <ScrollView
@@ -461,6 +469,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: space.lg,
     paddingBottom: space.sm,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
   },
   heroMarkContainer: {
     alignItems: 'center',

@@ -8,6 +8,7 @@ import type { Memory } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
 import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
+import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
 import { deleteMemory, fetchMemories } from '@/lib/knowledge';
 
@@ -132,9 +133,7 @@ export default function MemoriesScreen() {
                       {new Date(memory.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                     </Text>
                   </View>
-                  <Text style={styles.memoryContent}>
-                    {memory.content}
-                  </Text>
+                  <MarkdownText markdown={memory.content} fontSize={17} />
                 </View>
 
                 <Pressable
@@ -238,11 +237,6 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 13,
     color: colors.textSecondary,
-  },
-  memoryContent: {
-    fontSize: 17,
-    lineHeight: 22,
-    color: colors.textPrimary,
   },
   deleteBtn: {
     width: 36,

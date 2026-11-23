@@ -241,6 +241,17 @@ export async function attachServer(agentId: string, connectionId: string): Promi
   });
 }
 
+export async function toggleAgentServerAttachment(
+  agentId: string,
+  connectionId: string,
+  enabled: boolean,
+): Promise<{ enabled: boolean }> {
+  return call<{ enabled: boolean }>(`/api/mcp/agents/${agentId}/servers/${connectionId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export async function detachServer(agentId: string, connectionId: string): Promise<void> {
   await call(`/api/mcp/agents/${agentId}/servers/${connectionId}`, { method: 'DELETE' });
 }

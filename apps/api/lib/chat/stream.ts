@@ -17,6 +17,11 @@ export type ChatStreamAttempt = {
   ttftMs?: number;
 };
 
+export type ChatToolApproval = Record<
+  string,
+  { type: "user-approval"; reason: string }
+>;
+
 export type ChatStreamOptions = {
   messages: ModelMessage[];
   /** Registry ids to try, in order. */
@@ -29,6 +34,10 @@ export type ChatStreamOptions = {
   maxOutputTokens?: number;
   /** Tool set exposed to the model (see lib/tools). */
   tools?: ToolSet;
+  /** Per-tool manual approval policy for sensitive tool calls. */
+  toolApproval?: ChatToolApproval;
+  /** Server-only HMAC secret used to sign and verify approval requests. */
+  toolApprovalSecret?: string | Uint8Array;
   /** System prompt. */
   system?: string;
   /** How many tool round-trips are allowed in one turn. */
@@ -55,6 +64,18 @@ export type ChatStream = {
  */
 export async function createChatStream(options: ChatStreamOptions): Promise<ChatStream> {
   const attempts: ChatStreamAttempt[] = [];
+
+  // A manual approval without a signing secret would let a modified client
+  // forge the decision. Fail closed before any provider request is made.
+  if (
+    options.toolApproval &&
+    Object.keys(options.toolApproval).length > 0 &&
+    !options.toolApprovalSecret
+  ) {
+    throw new Error(
+      "TOOL_APPROVAL_SECRET is required for approval-gated chat tools.",
+    );
+  }
 
   for (const modelId of options.modelIds) {
     const entry = findRegistryEntry(modelId);
@@ -117,6 +138,10 @@ export async function createChatStream(options: ChatStreamOptions): Promise<Chat
       ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options.maxOutputTokens !== undefined ? { maxOutputTokens: options.maxOutputTokens } : {}),
       ...(options.tools ? { tools: options.tools } : {}),
+      ...(options.toolApproval ? { toolApproval: options.toolApproval } : {}),
+      ...(options.toolApprovalSecret
+        ? { experimental_toolApprovalSecret: options.toolApprovalSecret }
+        : {}),
       ...(options.maxSteps ? { stopWhen: isStepCount(options.maxSteps) } : {}),
       maxRetries: 1,
       onError: ({ error }) => {

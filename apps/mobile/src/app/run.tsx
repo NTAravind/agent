@@ -15,6 +15,7 @@ import {
   RoundButton,
   SectionLabel,
 } from '@/components/design-system';
+import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
 import { cancelRun, decideApproval, fetchRun, pauseRun, resumeRun, type RunDetail } from '@/lib/agents';
 
@@ -321,9 +322,7 @@ export default function RunScreen() {
                 Final Result
               </Text>
             </View>
-            <Text style={{ fontSize: 16, lineHeight: 22, color: colors.textPrimary }}>
-              {answer}
-            </Text>
+            <MarkdownText markdown={answer} fontSize={16} />
           </GroupedCard>
         ) : null}
 

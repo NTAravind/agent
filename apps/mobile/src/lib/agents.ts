@@ -17,6 +17,8 @@ export async function startRun(
   goal: string,
   model?: string | null,
   agentId?: string | null,
+  threadId?: string | null,
+  timezone?: string | null,
 ): Promise<StartRunResponse> {
   return await authedFetch<StartRunResponse>("/api/agents/run", {
     method: "POST",
@@ -24,6 +26,8 @@ export async function startRun(
       goal,
       ...(model ? { model } : {}),
       ...(agentId ? { agentId } : {}),
+      ...(threadId ? { threadId } : {}),
+      ...(timezone ? { tz: timezone } : {}),
     }),
   });
 }

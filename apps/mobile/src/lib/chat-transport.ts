@@ -63,12 +63,14 @@ export class XhrChatTransport<UI_MESSAGE extends UIMessage> implements ChatTrans
     };
 
     const payload = JSON.stringify({
+      // Request-specific fields must never replace the complete UI history.
+      // Approval responses (and their server-issued signatures) live in it.
+      ...(body ?? {}),
       messages,
       threadId: this.options.threadId ?? undefined,
       model: this.options.model ?? undefined,
       // The device timezone: "every Monday at 9" means 9 where the user is.
       tz: deviceTimeZone(),
-      ...(body ?? {}),
     });
 
     return new Promise<ReadableStream<UIMessageChunk>>((resolve, reject) => {
@@ -165,13 +167,14 @@ export class ResilientChatTransport<UI_MESSAGE extends UIMessage>
         const token = await options.getToken();
         return {
           body: {
+            // Keep the complete UI history, including approval signatures.
+            // Request-specific fields are additive and cannot replace it.
+            ...(body ?? {}),
             messages,
             threadId: options.threadId ?? undefined,
             model: options.model ?? undefined,
             // The device timezone: "every Monday at 9" means 9 where the user is.
             tz: deviceTimeZone(),
-            // Attachments (and any extra fields) come from the send call.
-            ...(body ?? {}),
           },
           headers: token ? ({ Authorization: `Bearer ${token}` } as Record<string, string>) : {},
         };

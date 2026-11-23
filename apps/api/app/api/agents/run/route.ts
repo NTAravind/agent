@@ -3,7 +3,13 @@ import { z } from "zod";
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { executeRun } from "@/lib/agent/execute";
 import { createRun } from "@/lib/agent/runs";
-import { createThread, insertMessage } from "@/lib/chat/persist";
+import { resolveTaskThreadScope } from "@/lib/agent/task-thread";
+import {
+  bindThreadToAgent,
+  createThread,
+  insertMessage,
+  titleFromParts,
+} from "@/lib/chat/persist";
 import { getGroupRuntime } from "@/lib/groups/store";
 import { inngest } from "@/lib/inngest/client";
 import { agentRunRequested } from "@/lib/inngest/events";
@@ -59,20 +65,28 @@ export async function POST(request: Request) {
     // group entry point without repeating the group id in every request.
     let threadId = body.threadId ?? null;
     let threadGroupId: string | null = null;
+    let threadAgentId: string | null = null;
+    let threadExists = false;
     if (threadId) {
       const { data: thread } = await supabaseAdmin()
         .from("threads")
-        .select("id, group_id")
+        .select("id, group_id, agent_id")
         .eq("id", threadId)
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!thread) {
+      if (thread) {
+        threadExists = true;
+        threadGroupId = (thread as { group_id?: string | null }).group_id ?? null;
+        threadAgentId = (thread as { agent_id?: string | null }).agent_id ?? null;
+      } else if (body.groupId) {
         return Response.json(
           { error: { code: "not_found", message: "Unknown thread." } },
           { status: 404 },
         );
       }
-      threadGroupId = (thread as { group_id?: string | null }).group_id ?? null;
+      // A client-generated ordinary thread id may not exist yet. Task Mode
+      // creates it below, preserving the id so subsequent chat turns continue
+      // the same conversation.
     }
 
     const groupId = body.groupId ?? threadGroupId;
@@ -190,7 +204,12 @@ export async function POST(request: Request) {
           goal,
           tz: body.tz,
         });
-        return Response.json({ runId: run.id, status: result.status, groupId: group.id });
+        return Response.json({
+          runId: run.id,
+          status: result.status,
+          groupId: group.id,
+          threadId,
+        });
       }
 
       await inngest.send(
@@ -204,7 +223,7 @@ export async function POST(request: Request) {
         }),
       );
       return Response.json(
-        { runId: run.id, status: "queued", groupId: group.id },
+        { runId: run.id, status: "queued", groupId: group.id, threadId },
         { status: 202 },
       );
     }
@@ -214,13 +233,32 @@ export async function POST(request: Request) {
       return Response.json({ error: { code: "bad_request", message: "Choose a model enabled in the provider dashboard." } }, { status: 400 });
     }
 
-    // Resolve the target agent (must own it), else the default agent.
-    let agentId: string | null = null;
-    if (body.agentId) {
+    // The thread's persisted agent remains authoritative. An omitted agent
+    // falls back to the user's default only when the thread has no owner yet.
+    const fallbackAgentId =
+      !body.agentId && !threadAgentId
+        ? await defaultAgentId(user.id).catch(() => null)
+        : null;
+    const scope = resolveTaskThreadScope({
+      hasThread: threadExists,
+      storedAgentId: threadAgentId,
+      requestedAgentId: body.agentId ?? null,
+      fallbackAgentId,
+    });
+    if (!scope.ok) {
+      return Response.json(
+        { error: { code: scope.code, message: scope.message } },
+        { status: 409 },
+      );
+    }
+
+    // Resolve the target agent (must own it) and enforce its sleep state.
+    let agentId: string | null = scope.agentId;
+    if (agentId) {
       const { data: agent } = await supabaseAdmin()
         .from("agents")
         .select("id, sleeping")
-        .eq("id", body.agentId)
+        .eq("id", agentId)
         .eq("user_id", user.id)
         .maybeSingle();
       if (!agent) {
@@ -235,39 +273,70 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       }
-      agentId = agent.id as string;
-    } else {
-      // Default agent on demand — but never block a run if the agents table
-      // isn't migrated yet (Phase 6 ships code before the migration runs).
-      agentId = await defaultAgentId(user.id).catch(() => null);
-      if (agentId) {
-        const { data: agent } = await supabaseAdmin()
-          .from("agents")
-          .select("sleeping")
-          .eq("id", agentId)
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if ((agent as { sleeping?: boolean } | null)?.sleeping) {
-          return Response.json(
-            { error: { code: "conflict", message: "That agent is asleep — wake it before starting a task." } },
-            { status: 409 },
-          );
-        }
+      agentId = (agent as { id: string }).id;
+    }
+
+    // Create the ordinary conversation when needed, or bind an unscoped
+    // existing thread to the resolved agent. The client may provide its own
+    // UUID for a new thread; preserving it avoids a second round trip.
+    if (!threadExists) {
+      const thread = await createThread(user.id, {
+        ...(threadId ? { id: threadId } : {}),
+        title: titleFromParts([{ type: "text", text: goal }]),
+        model: preferredModel,
+        agentId,
+      });
+      threadId = thread.id;
+      threadExists = true;
+    } else if (scope.threadAction === "bind" && agentId) {
+      const effectiveAgentId = await bindThreadToAgent(
+        user.id,
+        threadId!,
+        agentId,
+      );
+      if (effectiveAgentId !== agentId) {
+        return Response.json(
+          {
+            error: {
+              code: "agent_mismatch",
+              message: "This conversation belongs to a different agent.",
+            },
+          },
+          { status: 409 },
+        );
       }
+      agentId = effectiveAgentId;
     }
 
     const run = await createRun({
       userId: user.id,
       goal,
-      threadId: body.threadId ?? null,
+      threadId,
       agentId,
       model: preferredModel,
       tz: body.tz ?? null,
     });
 
+    // The user's Task Mode turn belongs to the same durable conversation as
+    // the final answer. Linking both messages to the run keeps the transcript
+    // and task timeline connected.
+    await insertMessage(
+      user.id,
+      threadId!,
+      "user",
+      [{ type: "text", text: goal }],
+      preferredModel,
+      { runId: run.id },
+    );
+
     if (body.inline) {
       const result = await executeRun({ runId: run.id, userId: user.id, goal, preferredModel, tz: body.tz });
-      return Response.json({ runId: run.id, status: result.status, agentId });
+      return Response.json({
+        runId: run.id,
+        status: result.status,
+        threadId,
+        agentId,
+      });
     }
 
     await inngest.send(
@@ -276,13 +345,16 @@ export async function POST(request: Request) {
         userId: user.id,
         ...(agentId ? { agentId } : {}),
         goal,
-        threadId: body.threadId,
+        threadId: threadId ?? undefined,
         preferredModel,
         ...(body.tz ? { tz: body.tz } : {}),
       }),
     );
 
-    return Response.json({ runId: run.id, status: "queued", agentId }, { status: 202 });
+    return Response.json(
+      { runId: run.id, status: "queued", threadId, agentId },
+      { status: 202 },
+    );
   } catch (error) {
     return toErrorResponse(error);
   }

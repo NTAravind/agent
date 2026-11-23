@@ -17,6 +17,7 @@ import { ChevronLeft, FileText, Link2, Pencil, Trash2 } from 'lucide-react-nativ
 
 import { AppHeader } from '@/components/app-header';
 import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
+import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
 import { deleteNote, fetchNote, saveNote } from '@/lib/knowledge';
 
@@ -252,9 +253,7 @@ export default function NoteScreen() {
 
               {/* Note Body */}
               <GroupedCard style={{ paddingVertical: space.lg }}>
-                <Text style={styles.noteBodyText}>
-                  {note.content}
-                </Text>
+                <MarkdownText markdown={note.content} />
               </GroupedCard>
             </>
           ) : null}
@@ -371,10 +370,5 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.link,
     textDecorationLine: 'underline',
-  },
-  noteBodyText: {
-    fontSize: 17,
-    lineHeight: 24,
-    color: colors.textPrimary,
   },
 });

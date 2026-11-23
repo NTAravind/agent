@@ -210,6 +210,23 @@ create table dashboard_versions (
 );
 create index dashboard_versions_recent on dashboard_versions (dashboard_id, version desc);
 
+-- Phase 13.2: durable refresh requests and bounded per-widget outcomes.
+create table dashboard_refresh_runs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  dashboard_id uuid not null references dashboards(id) on delete cascade,
+  requested_by_agent_id uuid references agents(id) on delete set null,
+  status text not null default 'queued'
+    check (status in ('queued','running','succeeded','partial_failed','failed','no_op')),
+  widget_results jsonb not null default '[]'::jsonb,
+  error text,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  finished_at timestamptz
+);
+create index dashboard_refresh_runs_recent on dashboard_refresh_runs (dashboard_id, created_at desc);
+create index dashboard_refresh_runs_user_recent on dashboard_refresh_runs (user_id, created_at desc);
+
 -- Provider model catalog and user-controlled mobile availability
 create table provider_models (
   provider text not null check (provider in ('google','groq','openrouter','mistral','deepseek','huggingface','cohere')),
@@ -474,7 +491,7 @@ Created by the checkpointer's `setup()` on the same database; don't hand-write t
 ## Row Level Security
 Enable RLS on every table above. The normal policy pattern is `using (user_id = auth.uid())`; child tables join through the parent. Phase 11 additionally replaces the `threads`, `messages`, and `agent_runs` insert/update policies with ownership-aware checks, so a direct authenticated database client cannot attach another user's group, agent, thread, or run. `group_members` joins through both the owned group and the owned agent. `mcp_servers` is read-only for authenticated users. Server code using the service role bypasses RLS, so always filter by `user_id` explicitly in server queries.
 
-For Phase 13 dashboards, enable RLS on all three dashboard tables. The dashboard policy scopes `user_id` to `auth.uid()` for select/insert/update/delete. Widget and version policies use an `exists` check against the owning dashboard (`dashboard_id` and `user_id = auth.uid()`). Revoke Data API access from `anon` and `authenticated` because dashboard access goes through authenticated server routes; grant server-side service access explicitly. Server APIs still authenticate first and filter every service-role query by the caller's `user_id`. Version history keeps the latest 50 snapshots per dashboard.
+For Phase 13 dashboards, enable RLS on dashboard, widget, version and refresh-run tables. The dashboard policy scopes `user_id` to `auth.uid()` for select/insert/update/delete. Widget and version policies use an `exists` check against the owning dashboard (`dashboard_id` and `user_id = auth.uid()`). Refresh-run policies require both the row `user_id` and the owning dashboard to match `auth.uid()`. Revoke Data API access from `anon` and `authenticated` because dashboard access goes through authenticated server routes; grant server-side service access explicitly. Server APIs still authenticate first and filter every service-role query by the caller's `user_id`. Version history keeps the latest 50 snapshots per dashboard. Refresh requests are limited to 10 per dashboard per hour and their per-widget outcomes are bounded to the dashboard's widget cap.
 
 ## Memory kinds (Phase 9)
 `memories.kind` still accepts `'task'` for historical rows, but extraction no longer writes it: a detected task becomes a row in `tasks` with `created_by = 'suggested'`, which the app shows as a suggestion to accept or dismiss. This keeps one todo store instead of two.

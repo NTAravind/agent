@@ -255,13 +255,18 @@ Build this as reviewable vertical slices. Canvas (Phase 5) remains the transient
 - [x] Rate-limit dashboard creation and retain a bounded version history.
 **Done when:** an authenticated user can create, read, update, delete and restore a persisted dashboard through the API; invalid specs and cross-user access are rejected.
 
-**Status (2026-11-23):** Phase 13.1 implementation is complete locally. Shared/API type checks, focused schema tests and production build pass. The migration has not been applied, so live API and second-user RLS acceptance remains pending before this checkpoint is considered verified.
+**Status (2026-11-23):** Phase 13.1 implementation is complete locally. Shared/API type checks, focused schema tests and production build pass. The user reports the migration has been applied; live API and second-user RLS acceptance remain to be run.
 
 ### Phase 13.2: Agent dashboard tools and refresh
-- [ ] Add create/get/update and per-widget agent tools to the global registry for every agent tier.
-- [ ] Validate run/agent/user context, ownership and approvals for destructive actions.
-- [ ] Add independent Inngest refresh for configured data sources with partial failure reporting and versioned results.
-**Done when:** basic and advanced agents can manage owned dashboards and refresh configured widgets without an LLM call.
+- [ ] Add `create_dashboard`, `get_dashboard`, `update_dashboard`, `add_dashboard_widget`, `update_dashboard_widget`, `remove_dashboard_widget` and `refresh_dashboard` to the global agent tool registry for every tier.
+- [ ] Derive `userId`, `runId` and `agentId` from the authenticated run; never accept them as model arguments. Scope every dashboard/widget lookup by the run owner.
+- [ ] Require the existing approval gate for `remove_dashboard_widget`; keep create/read/update/refresh available without approval. Preserve the API's 20-create/hour limit and rate-limit refresh requests.
+- [ ] Add shared agent instructions distinguishing one-off canvases from persistent dashboards; prefer an existing dashboard, never invent source data, and report the created dashboard ID/destination.
+- [ ] Add a durable refresh request record and Inngest event/function. Refresh configured sources without an LLM call; deduplicate identical source queries within one run.
+- [ ] Add validated, whitelisted mappings from normalized source rows to stat, chart, table, list and markdown widget configs. Do not refresh image widgets or synthesize missing values.
+- [ ] Report per-widget success/failure. Preserve existing values for failed widgets and preserve current title, layout and user-edited config. Commit successful data as a new version; do not bump the version when nothing was refreshed successfully.
+- [ ] Verify refresh ownership, rate limiting, partial failures, version increments, tool approval/resume, and availability in basic and advanced agent runs.
+**Done when:** basic and advanced agents can manage only their user's dashboards, a destructive widget removal parks for approval, and refresh updates configured widgets without an LLM call while preserving layout and reporting partial failures.
 
 ### Phase 13.3: Canvas in chat
 - [ ] Emit durable `data-canvas` references from chat and preserve them in message history.

@@ -12,9 +12,12 @@ import {
 } from 'react-native';
 import {
   ArrowUp,
+  Brain,
   Camera,
   Folder,
+  Globe,
   Image as ImageIcon,
+  ListChecks,
   Mic,
   Pause,
   Plus,
@@ -41,6 +44,8 @@ type Props = {
   onToggleDeepSearch?: () => void;
   thinkActive?: boolean;
   onToggleThink?: () => void;
+  taskModeActive?: boolean;
+  onToggleTaskMode?: () => void;
   mentionMembers?: AgentSummary[];
   showAttachments?: boolean;
   placeholder?: string;
@@ -71,6 +76,12 @@ export function Composer({
   onRemoveAttachment,
   isStreaming,
   disabled = false,
+  deepSearchActive = false,
+  onToggleDeepSearch,
+  thinkActive = false,
+  onToggleThink,
+  taskModeActive = false,
+  onToggleTaskMode,
   mentionMembers = [],
   showAttachments = true,
   placeholder,
@@ -87,6 +98,9 @@ export function Composer({
   const hasText = value.trim().length > 0;
   const canSend = hasText && !isCarryingOutTask && !disabled;
   const inputPlaceholder = placeholder ?? `Ask ${agentName}`;
+  const showQuickToggles = Boolean(
+    onToggleDeepSearch || onToggleThink || onToggleTaskMode,
+  );
 
   const withBusy = async (fn: () => void | Promise<void>) => {
     setUploading(true);
@@ -214,6 +228,64 @@ export function Composer({
           ))}
         </ScrollView>
       )}
+
+      {/* Quick capability toggles */}
+      {showQuickToggles ? (
+        <View style={styles.quickToggleRow}>
+          {[
+            {
+              key: 'deep-search',
+              label: 'DeepSearch',
+              Icon: Globe,
+              active: deepSearchActive,
+              onPress: onToggleDeepSearch,
+            },
+            {
+              key: 'think',
+              label: 'Think',
+              Icon: Brain,
+              active: thinkActive,
+              onPress: onToggleThink,
+            },
+            {
+              key: 'task-mode',
+              label: 'Task Mode',
+              Icon: ListChecks,
+              active: taskModeActive,
+              onPress: onToggleTaskMode,
+            },
+          ].map(({ key, label, Icon, active, onPress }) => (
+            <Pressable
+              key={key}
+              onPress={onPress}
+              disabled={disabled || !onPress}
+              accessibilityRole="switch"
+              accessibilityLabel={label}
+              accessibilityState={{ checked: active, disabled: disabled || !onPress }}
+              style={({ pressed }) => [
+                styles.quickToggle,
+                active ? styles.quickToggleActive : styles.quickToggleInactive,
+                { opacity: pressed ? 0.6 : disabled || !onPress ? 0.5 : 1 },
+              ]}
+            >
+              <Icon
+                size={14}
+                color={active ? colors.onPrimary : colors.textSecondary}
+                strokeWidth={1.9}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.quickToggleText,
+                  { color: active ? colors.onPrimary : colors.textSecondary },
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {/* Main Composer Bar */}
       <View style={styles.composerBar}>
@@ -379,6 +451,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textPrimary,
     fontWeight: '500',
+  },
+  quickToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginBottom: space.sm,
+  },
+  quickToggle: {
+    minHeight: 34,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+  },
+  quickToggleActive: {
+    backgroundColor: colors.primary,
+  },
+  quickToggleInactive: {
+    backgroundColor: colors.surface,
+  },
+  quickToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   composerBar: {
     flexDirection: 'row',

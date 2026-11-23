@@ -5,7 +5,7 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 ## 1. Chat
 | Method | Route | Description |
 |---|---|---|
-| POST | `/api/chat` | Body `{ threadId?, messages, agentId?, model?, mode: "chat"\|"agent" }` (`model` = registry id like `groq:...`; falls back to agent/default). Streams AI SDK UI message stream. `mode:"agent"` creates a run and streams its progress parts. |
+| POST | `/api/chat` | Body `{ threadId?, messages, agentId?, model?, attachments?, tz? }` (`model` = registry id like `groq:...`; falls back to the dashboard default). Streams an AI SDK UI message stream. Agent-scoped chats also expose the agent's enabled MCP tools. |
 | GET | `/api/threads` | List threads (cursor paging), including the selected agent's `avatar` object and group summary when set |
 | POST | `/api/threads` | Create an empty thread. Body `{ title?, model?, groupId? }`; `groupId` creates a durable group chat and is rejected if the group is not owned by the caller |
 | GET | `/api/threads/:id` | Thread + messages; group messages include agent identities, handoff metadata, and run links |
@@ -17,6 +17,8 @@ Base URL: `EXPO_PUBLIC_API_BASE_URL`. All routes require `Authorization: Bearer 
 | PATCH | `/api/admin/models` | `{ models:[{ id, enabled }] }` to control mobile availability |
 
 **Agent-scoped chats:** an existing thread's persisted `agent_id` is authoritative. The request may omit `agentId` or repeat the same id; a different id is rejected with **409** `agent_mismatch`, and an unknown/foreign agent id is rejected with **404** `agent_not_found`. A thread with no agent yet may be bound to the requested owned agent on its first agent-scoped request.
+
+**MCP in ordinary chat:** the server loads only enabled tools from the conversation agent's connected MCP attachments and per-agent permissions. Approval-required MCP tools emit a signed AI SDK `tool-approval-request`; the client returns only the approve/deny decision while preserving the request signature in the complete message history. The server verifies the HMAC before execution, so a modified client cannot approve a different tool call or alter its input. `TOOL_APPROVAL_SECRET` is server-only and required when an approval-gated tool is exposed; without it the route fails closed with **503** `approval_not_configured`. An approval continuation updates the same UUID-backed assistant message and does not duplicate the preceding user message.
 
 ## 2. Files
 | POST | `/api/upload` | Returns signed upload URL + `documents` row. |
@@ -156,7 +158,7 @@ stream.
 | POST | `/api/agents/:id/avatar` | Returns a signed Storage upload URL for an image avatar |
 | POST | `/api/agents/:id/sleep` | Sleep: sets `agents.sleeping` and pauses the agent's active runs (plus a supervisor's unfinished inline children); new tasks are rejected until wake |
 | POST | `/api/agents/:id/wake` | Wake: clears `agents.sleeping` and emits `run/resumed` for the agent's paused runs plus the paused supervisors waiting on them |
-| POST | `/api/agents/run` | Ordinary run: `{ goal, threadId?, model?, agentId?, inline?, tz? }` → `{ runId }`; group run: `{ groupId, goal, threadId?, inline?, tz? }` → `{ runId, status, groupId }` (queues Inngest unless `inline: true`; `agentId` scopes an ordinary run to an agent, `model` is preferred for task nodes; **409 when the target agent is asleep**) |
+| POST | `/api/agents/run` | Ordinary run: `{ goal, threadId?, model?, agentId?, inline?, tz? }` → `{ runId, status, threadId, agentId }`; group run: `{ groupId, goal, threadId?, inline?, tz? }` → `{ runId, status, groupId, threadId }` (queues Inngest unless `inline: true`; `agentId` scopes an ordinary run to an agent, `model` is preferred for task nodes; **409 when the target agent is asleep**) |
 | GET | `/api/runs` | List recent top-level runs — supervisor children and group member turns are excluded and live under their parent |
 | GET | `/api/runs/:id` | Status + result + the full `run_events` timeline (returned whole on each poll — there is no separate events/SSE route); includes the run agent's `avatar` object, `pendingApprovals`, and `children` for Supervisor or group parent runs (each child embedded with its agent summary) |
 | POST | `/api/runs/:id/pause` | Pause an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
@@ -164,6 +166,8 @@ stream.
 | POST | `/api/runs/:id/cancel` | Cancel an unfinished run (cascades to unfinished supervisor children); idempotent, **409** when already finished |
 | GET | `/api/approvals?status=pending` | Pending approvals |
 | POST | `/api/approvals/:id` | `{ decision: "approve"\|"deny", edits? }` → emits `approval/decided` |
+
+**Ordinary Task Mode:** `POST /api/agents/run` creates or reuses an ordinary thread before the run starts. A client-generated thread UUID is preserved; an existing thread's persisted agent remains authoritative (a mismatched request is **409** `agent_mismatch`), while an unscoped thread is bound to the requested/default agent. The user's Task Mode turn is stored with `messages.run_id = runId`, and a successful root run stores its final assistant answer with the same `run_id`; group, child, Supervisor-child, and routine runs keep their own persistence paths. The response includes the resolved `threadId` so the client can continue the same conversation.
 
 **Pause & sleep:** `paused` is a first-class run status. Pause flips only the status row — every node in both graphs sits behind a status boundary (`assertRunActive`, `apps/api/lib/agent/pause.ts`), so the graph stops at the next node boundary with the LangGraph checkpoint left before that node. The stop is control flow, not failure: `runAgent`/`runSupervisor` return `{status:"paused"}` (or `cancelled`) without failing the run, so the Inngest function succeeds and `onFailure` never fires. Resume emits `run/resumed`, which continues via `invoke(null)` — the boundary node re-runs and everything before it replays from the Postgres checkpointer (an empty thread falls back to a fresh input invoke). Resuming a run parked on an *undecided* approval restores `awaiting_approval` instead of invoking: `invoke(null)` would resume the interrupt with an undefined value and the tool gate would read the still-pending row as denied. Pause, cancel and sleep all cascade to unfinished supervisor children; a paused child parks its supervisor's `fan_out`, which resumes it from its own checkpoint on the parent's resume.
 
@@ -270,6 +274,41 @@ All dashboard endpoints require `requireUser()` and use the shared schemas in `p
 | DELETE | `/api/dashboards/:id` | Delete an owned dashboard and its widgets/versions |
 | GET | `/api/dashboards/:id/versions` | List version metadata, newest first |
 | POST | `/api/dashboards/:id/restore` | Restore `{ version }` as a new current version; history remains immutable |
-| POST | `/api/dashboards/:id/refresh` | Phase 13.2: enqueue configured data-source refresh in Inngest |
+| POST | `/api/dashboards/:id/refresh` | Phase 13.2: enqueue refresh → **202** `{ refreshRunId, status: "queued" }`; caller-owned dashboards only; limit 10 requests per dashboard per hour (**429** when exceeded) |
+| GET | `/api/dashboards/:id/refresh-runs?limit=` | Phase 13.2: recent refresh status and per-widget outcomes (limit 1–50) |
+| GET | `/api/dashboards/:id/refresh-runs/:refreshRunId` | Phase 13.2: status/details for one owned refresh request |
 
 Every service-role query filters by authenticated `user_id`; dashboard, widget and version RLS provide database-level ownership as defense in depth. Unknown or foreign dashboard IDs return **404**. Version listing returns at most the latest 50 snapshots; older snapshots are pruned on new revisions.
+
+### Phase 13.2 agent tools
+Agent tools are global and have no tier gate. The executor reads `userId` and `runId` from its trusted run context and loads the current `agentId` from that run; none of these identities can be supplied in tool arguments.
+
+| Tool | Input | Behavior |
+|---|---|---|
+| `create_dashboard` | `{ title, description?, widgets, layout? }` | Creates an owned workspace and returns `{ dashboardId, title, version }`; agent attribution comes from run context |
+| `get_dashboard` | `{ dashboardId }` | Returns the owned dashboard and widgets |
+| `update_dashboard` | `{ dashboardId, updates: { title?, description?, layout? } }` | Updates metadata/layout and creates a version; widget changes use the widget-specific tools |
+| `add_dashboard_widget` | `{ dashboardId, widget }` | Adds one validated widget, subject to the 24-widget cap |
+| `update_dashboard_widget` | `{ dashboardId, widgetId, updates: { title?, config?, dataSource?, position?, size? } }` | Updates one owned widget; `type` is immutable for an existing widget |
+| `remove_dashboard_widget` | `{ dashboardId, widgetId }` | Removes an owned widget; always uses the normal approval gate |
+| `refresh_dashboard` | `{ dashboardId }` | Enqueues a refresh and returns `{ refreshRunId, status: "queued" }`; it does not claim completion before Inngest finishes |
+
+Every tool validates input with shared Zod contracts, verifies ownership before reading or writing, and returns structured success/failure data. A foreign or unknown dashboard/widget ID returns a not-found result. Refresh is independently rate-limited and invokes no model.
+
+**Agent visual-output instructions:** use a canvas for one-off research results, charts, structured reports and requested visualizations; use a dashboard for an explicitly requested persistent workspace or ongoing monitoring. Prefer updating an existing dashboard when it fits. Never fabricate values; identify sample data as sample data. Do not create a visual output when plain text is sufficient. Explain the output and return its dashboard ID and app destination. Advanced agents may proactively visualize when useful; basic agents must still create outputs when asked.
+
+### Phase 13.2 refresh contract
+The `dashboard/refresh.requested` Inngest event carries `{ refreshRunId, dashboardId, userId, requestedByAgentId? }`. The worker records `queued → running → succeeded | partial_failed | failed | no_op`, limits source work, deduplicates identical `(kind, query)` pairs within one refresh, and continues after an individual widget fails. The request row records bounded per-widget outcomes and timestamps.
+
+The shared dashboard data binding adds a mapping object to the existing Canvas-compatible source `{ id, kind, query }`. Allowed mapping operations are type-specific and contain no executable expressions:
+
+- `stat`: `count` or `sum` with a validated numeric field.
+- `chart`: `group_sum` with validated category/value fields, at most 60 points.
+- `table`: `rows` with up to 12 selected `{ key, label }` columns.
+- `list`: `items` with validated title/subtitle fields.
+- `markdown`: `summary` from the normalized source result.
+- `image`: no data refresh; keep the configured HTTPS image unchanged.
+
+Source rows are normalized from existing `web_search`, `search_notes`, `recall_memory`, `list_tasks`, and `list_events` integrations. Missing or non-numeric values are omitted; the worker never invents them. The mapper validates its resulting Canvas-compatible config before saving.
+
+On refresh, the worker applies new data only to widgets whose IDs and source bindings still match the current dashboard. It preserves the latest dashboard title, layout, widget configuration and user edits. Successful widget updates form one new immutable dashboard version; failures keep their previous widget data and are returned in the refresh status. If every configured widget fails, the dashboard version does not change. With no configured data sources, the result is `no_op` and the version does not change.

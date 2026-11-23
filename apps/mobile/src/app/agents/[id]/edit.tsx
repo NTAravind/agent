@@ -1,5 +1,4 @@
 import type { Agent, AgentAvatar as AgentAvatarType, Skill } from '@agent/shared';
-import { DEFAULT_AGENT_AVATAR } from '@agent/shared';
 import React, { useCallback, useState } from 'react';
 import {
   Alert as RNAlert,
@@ -15,9 +14,10 @@ import {
 import { Spinner, Switch } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BookMarked, Check, ChevronLeft, Trash2, Upload } from 'lucide-react-native';
+import { BookMarked, Check, ChevronLeft, ChevronRight, Blocks, Trash2, Upload, Wrench } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
+import { AgentToolsSheet } from '@/components/agent-tools-sheet';
 import {
   GroupedCard,
   HairlineDivider,
@@ -82,6 +82,7 @@ export default function AgentEditorScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [toolCount, setToolCount] = useState(0);
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [assignedSkillIds, setAssignedSkillIds] = useState<Set<string>>(new Set());
@@ -585,6 +586,58 @@ export default function AgentEditorScreen() {
               </GroupedCard>
             </View>
 
+            {/* Integrations & Tools Section (Opens Bottom Sheet) */}
+            <View style={{ gap: space.xs }}>
+              <SectionLabel text="Integrations & Tools" />
+              <GroupedCard style={{ padding: space.lg, gap: space.md }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, paddingRight: space.md }}>
+                    <Text style={styles.fieldTitle}>External Tools</Text>
+                    <Text style={styles.fieldSubtitle}>
+                      {isNew
+                        ? 'Save the agent first, then configure its tools and integrations.'
+                        : toolCount > 0
+                          ? `${toolCount} tools active across integrations`
+                          : 'No tools enabled yet'}
+                    </Text>
+                  </View>
+                  {!isNew && (
+                    <RoundButton
+                      icon={Wrench}
+                      onPress={() => setToolsSheetOpen(true)}
+                      accessibilityLabel="Manage integrations and tools"
+                    />
+                  )}
+                </View>
+
+                {isNew ? (
+                  <Text style={styles.fieldHelp}>
+                    Save the agent first, then come back to turn integrations and tools on or off.
+                  </Text>
+                ) : (
+                  <Pressable
+                    onPress={() => setToolsSheetOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open integrations and tools bottom sheet"
+                    style={({ pressed }) => [
+                      styles.toolsActionRow,
+                      { opacity: pressed ? 0.6 : 1 },
+                    ]}
+                  >
+                    <View style={styles.toolsActionLeft}>
+                      <Blocks size={20} color={colors.textSecondary} strokeWidth={1.75} />
+                      <Text style={styles.toolsActionText}>
+                        {toolCount > 0
+                          ? `View & manage ${toolCount} active tools`
+                          : 'Select integrations & tools'}
+                      </Text>
+                    </View>
+                    <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
+                  </Pressable>
+                )}
+              </GroupedCard>
+            </View>
+
             {/* Supervisor Toggle Card */}
             <View style={{ gap: space.xs }}>
               <SectionLabel text="Orchestration" />
@@ -635,6 +688,17 @@ export default function AgentEditorScreen() {
             </View>
           )}
         </ScrollView>
+      )}
+
+      {/* Integrations & Tools Bottom Sheet */}
+      {!isNew && (
+        <AgentToolsSheet
+          agentId={id}
+          agentName={name}
+          visible={toolsSheetOpen}
+          onClose={() => setToolsSheetOpen(false)}
+          onToolCountChanged={(count) => setToolCount(count)}
+        />
       )}
     </KeyboardAvoidingView>
   );
@@ -841,5 +905,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.recording,
+  },
+  toolsActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.card,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    marginTop: space.xs,
+  },
+  toolsActionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  toolsActionText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
 });

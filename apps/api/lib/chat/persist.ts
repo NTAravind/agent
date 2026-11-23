@@ -1,4 +1,5 @@
 import type { GroupHandoffPayload, Thread, StoredMessage } from "@agent/shared";
+import { z } from "zod";
 
 import { loadAgentSummaries } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -222,6 +223,102 @@ export async function insertMessage(
   }
 
   // Keep the thread's updated_at fresh so the thread list sorts correctly.
+  await supabaseAdmin()
+    .from("threads")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", threadId)
+    .eq("user_id", userId);
+}
+
+/**
+ * Inserts or updates one assistant message without ever crossing ownership.
+ *
+ * The update is scoped by message id, user id and thread id. If the row does
+ * not exist yet, it is inserted with the same id. This is used by ordinary
+ * chat: the first response inserts a UUID-backed assistant row, while an
+ * inline-approval continuation updates that same row instead of creating a
+ * duplicate. A foreign message id can therefore never be overwritten.
+ */
+export async function upsertOwnedMessage(input: {
+  userId: string;
+  threadId: string;
+  messageId: string;
+  role: "user" | "assistant" | "system" | "tool";
+  parts: MessagePart[];
+  model?: string | null;
+  fromAgentId?: string | null;
+  toAgentId?: string | null;
+  handoff?: GroupHandoffPayload | null;
+  runId?: string | null;
+}): Promise<boolean> {
+  if (!z.string().uuid().safeParse(input.messageId).success) {
+    console.warn("[chat] refused to persist a message with a non-UUID id.");
+    return false;
+  }
+
+  const mutableFields: Record<string, unknown> = {
+    role: input.role,
+    model: input.model ?? null,
+    parts: input.parts,
+  };
+  if (input.fromAgentId !== undefined) mutableFields.from_agent_id = input.fromAgentId;
+  if (input.toAgentId !== undefined) mutableFields.to_agent_id = input.toAgentId;
+  if (input.handoff !== undefined) mutableFields.handoff = input.handoff;
+  if (input.runId !== undefined) mutableFields.run_id = input.runId;
+
+  const admin = supabaseAdmin();
+  const updateOwned = async (): Promise<{ found: boolean; error: unknown }> => {
+    const { data, error } = await admin
+      .from("messages")
+      .update(mutableFields)
+      .eq("id", input.messageId)
+      .eq("user_id", input.userId)
+      .eq("thread_id", input.threadId)
+      .select("id")
+      .maybeSingle();
+    return { found: Boolean(data), error };
+  };
+
+  const updated = await updateOwned();
+  if (updated.error) {
+    console.warn("[chat] could not update message:", updated.error);
+    return false;
+  }
+  if (updated.found) {
+    await touchThread(input.userId, input.threadId);
+    return true;
+  }
+
+  const { error: insertError } = await admin.from("messages").insert({
+    id: input.messageId,
+    user_id: input.userId,
+    thread_id: input.threadId,
+    role: input.role,
+    model: input.model ?? null,
+    parts: input.parts,
+    ...(input.fromAgentId !== undefined ? { from_agent_id: input.fromAgentId } : {}),
+    ...(input.toAgentId !== undefined ? { to_agent_id: input.toAgentId } : {}),
+    ...(input.handoff !== undefined ? { handoff: input.handoff } : {}),
+    ...(input.runId !== undefined ? { run_id: input.runId } : {}),
+  });
+
+  if (insertError) {
+    // A concurrent request may have inserted the same row after our scoped
+    // update found nothing. Retry the ownership-scoped update once; never
+    // fall back to an unscoped upsert that could overwrite another user's row.
+    const retried = await updateOwned();
+    if (retried.error || !retried.found) {
+      console.warn("[chat] could not persist message:", insertError);
+      return false;
+    }
+  }
+
+  await touchThread(input.userId, input.threadId);
+  return true;
+}
+
+/** Keeps a thread's updated_at fresh after a message write. */
+async function touchThread(userId: string, threadId: string): Promise<void> {
   await supabaseAdmin()
     .from("threads")
     .update({ updated_at: new Date().toISOString() })

@@ -10,6 +10,7 @@ import { generateObject, isStepCount, tool, type Tool } from "ai";
 import { z, type ZodType } from "zod";
 
 import { appendPerfRunEvent, appendRunEvent, failRun, updateRun } from "@/lib/agent/runs";
+import { persistOrdinaryRunResult } from "@/lib/agent/run-persistence";
 import {
   RunCancelledError,
   RunPausedError,
@@ -842,6 +843,11 @@ async function finalizeRun(
       tokens_used: tokens + (await persistedTokensUsed(runId)),
       finished_at: new Date().toISOString(),
     });
+    await persistOrdinaryRunResult(
+      runId,
+      finalState.result,
+      finalState.finalModel,
+    );
     return {
       status: "succeeded",
       result: finalState.result,

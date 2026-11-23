@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -17,8 +19,13 @@ import {
   getThread,
   insertMessage,
   titleFromParts,
+  upsertOwnedMessage,
 } from "@/lib/chat/persist";
 import { resolveChatAgentScope } from "@/lib/chat/agent-scope";
+import {
+  hasPendingToolApproval,
+  isApprovalContinuation,
+} from "@/lib/chat/approval-continuation";
 import { createChatStream } from "@/lib/chat/stream";
 import { buildSystemPrompt } from "@/lib/chat/system-prompt";
 import { inngest } from "@/lib/inngest/client";
@@ -30,6 +37,9 @@ import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
 import { buildSkillTools } from "@/lib/skills/load";
 import { buildRoutineTools, routineProposalPayload } from "@/lib/routines/tools";
 import { DEFAULT_TIMEZONE } from "@/lib/routines/schedule";
+import { buildMcpChatTools } from "@/lib/mcp/chat-tools";
+import { loadAgentMcpTools } from "@/lib/mcp/tools-loader";
+import { toolApprovalSecret } from "@/lib/env";
 import { measurePerf, withPerfScope } from "@/lib/perf";
 
 export const maxDuration = 300;
@@ -159,15 +169,26 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       ...(needsPdf ? { pdf: true } : {}),
     };
 
-    // Model messages — window to the last MAX_CHAT_MESSAGES to cap input tokens.
-    const MAX_CHAT_MESSAGES = 16;
-    const windowedMessages = body.messages.length > MAX_CHAT_MESSAGES
-      ? body.messages.slice(-MAX_CHAT_MESSAGES)
-      : body.messages;
-    const modelMessages = await convertToModelMessages(
-      windowedMessages as unknown as Parameters<typeof convertToModelMessages>[0],
-    );
-    const messagesWithFiles = withAttachmentParts(modelMessages, attachments);
+    // MCP tools are scoped to this conversation's agent. The same loader and
+    // per-tool approval flags used by durable runs decide which tools are
+    // exposed and which ones require a human decision here. Resolve the
+    // approval configuration before creating or persisting conversation rows
+    // so a fail-closed 503 cannot leave an empty thread or orphaned user turn.
+    const mcpRuntime = await loadAgentMcpTools(user.id, agentId);
+    const mcpChat = buildMcpChatTools(mcpRuntime);
+    const approvalSecret = toolApprovalSecret();
+    if (Object.keys(mcpChat.approval).length > 0 && !approvalSecret) {
+      return Response.json(
+        {
+          error: {
+            code: "approval_not_configured",
+            message:
+              "Approval-gated integrations are unavailable until TOOL_APPROVAL_SECRET is configured on the server.",
+          },
+        },
+        { status: 503 },
+      );
+    }
 
     if (!threadId) {
       const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
@@ -178,9 +199,14 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       });
       threadId = thread.id;
     }
-    // Persist the user message (the last one in the request).
+
+    // An approval continuation sends the complete UI history, ending with the
+    // assistant's `approval-responded` tool part. It is not a new user turn,
+    // so the earlier user message must not be inserted a second time.
+    const approvalContinuation = isApprovalContinuation(body.messages);
+    const assistantContinuation = body.messages.at(-1)?.role === "assistant";
     const lastUserMessage = [...body.messages].reverse().find((message) => message.role === "user");
-    if (lastUserMessage) {
+    if (!approvalContinuation && !assistantContinuation && lastUserMessage) {
       await insertMessage(
         user.id,
         threadId,
@@ -209,7 +235,21 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
         agentId,
         timeZone: body.tz ?? DEFAULT_TIMEZONE,
       }),
+      ...mcpChat.tools,
     };
+
+    // Model messages — window to the last MAX_CHAT_MESSAGES to cap input tokens.
+    // The current tool definitions are required so signed approval requests
+    // and their decisions round-trip through the AI SDK's model conversion.
+    const MAX_CHAT_MESSAGES = 16;
+    const windowedMessages = body.messages.length > MAX_CHAT_MESSAGES
+      ? body.messages.slice(-MAX_CHAT_MESSAGES)
+      : body.messages;
+    const modelMessages = await convertToModelMessages(
+      windowedMessages as unknown as Parameters<typeof convertToModelMessages>[0],
+      { tools },
+    );
+    const messagesWithFiles = withAttachmentParts(modelMessages, attachments);
 
     const system = await measurePerf("chat_stage", "prompt_build", () =>
       buildSystemPrompt(
@@ -232,16 +272,27 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       required,
       system,
       tools,
+      ...(Object.keys(mcpChat.approval).length > 0
+        ? { toolApproval: mcpChat.approval }
+        : {}),
+      ...(approvalSecret ? { toolApprovalSecret: approvalSecret } : {}),
       maxSteps: 6,
       requestStartedAt,
     });
 
+    // Database message ids are UUIDs. The AI SDK's default id is not, so the
+    // server owns this id. Supplying it to both stream layers makes the
+    // emitted start chunk explicit; approval continuations still reuse the
+    // prior assistant id and therefore update the same row.
+    const responseMessageId = randomUUID();
     const uiStream = createUIMessageStream({
       originalMessages: body.messages as unknown as UIMessage[],
+      generateId: () => responseMessageId,
       execute: async ({ writer }) => {
         const chunks = toUIMessageStream({
           stream: chatStream.stream,
           originalMessages: body.messages as unknown as UIMessage[],
+          generateMessageId: () => responseMessageId,
           messageMetadata: () => ({
             model: chatStream.modelId,
             provider: chatStream.provider,
@@ -279,13 +330,19 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
         const assistant = [...messages].reverse().find((message) => message.role === "assistant");
         if (!assistant) return;
 
-        await insertMessage(
-          user.id,
-          threadId!,
-          "assistant",
-          assistant.parts as unknown as Record<string, unknown>[],
-          chatStream.modelId,
-        );
+        await upsertOwnedMessage({
+          userId: user.id,
+          threadId: threadId!,
+          messageId: assistant.id,
+          role: "assistant",
+          parts: assistant.parts as unknown as Record<string, unknown>[],
+          model: chatStream.modelId,
+        });
+
+        // An outstanding approval means the conversation is not complete yet.
+        // The signed continuation updates this same assistant row and queues
+        // memory extraction once the tool has run or was denied.
+        if (hasPendingToolApproval(assistant)) return;
 
         // Memory extraction runs in the background (Inngest), never in the request.
         try {

@@ -3,6 +3,7 @@ import { ArrowUpRight, GitBranch } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, space } from '@/theme';
 
 type Props = {
@@ -97,16 +98,18 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
               </Text>
             </View>
             {message.handoff.task ? (
-              <Text style={styles.handoffTask}>
-                {message.handoff.task}
-              </Text>
+              <MarkdownText
+                markdown={message.handoff.task}
+                fontSize={13}
+                color={colors.textSecondary}
+              />
             ) : null}
           </View>
         ) : null}
 
         {text && !message.handoff ? (
           <View style={styles.agentBubble}>
-            <Text style={styles.agentText}>{text}</Text>
+            <MarkdownText markdown={text} />
           </View>
         ) : null}
 
@@ -209,11 +212,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.textPrimary,
   },
-  handoffTask: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textSecondary,
-  },
   agentBubble: {
     maxWidth: '85%',
     alignSelf: 'flex-start',
@@ -221,11 +219,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: 16,
     paddingVertical: 14,
-  },
-  agentText: {
-    fontSize: 17,
-    lineHeight: 22,
-    color: colors.textPrimary,
   },
   footerRow: {
     flexDirection: 'row',

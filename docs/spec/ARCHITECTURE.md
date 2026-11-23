@@ -26,9 +26,10 @@
 ## 3. Key flows
 ### 3.1 Short chat
 1. App `POST /api/chat` with messages + JWT.
-2. Server verifies user, loads memories + top-k notes, builds system prompt.
-3. `streamText` (or short graph piped via adapter) → UI message stream → `useChat`.
-4. On finish: persist messages; emit `chat/completed` to Inngest for memory extraction.
+2. Server verifies user, resolves the authoritative thread agent, loads memories + top-k notes, and builds the system prompt.
+3. The server loads the agent's enabled MCP runtime and binds executable ordinary-chat declarations separately from the durable graph's non-executing declarations.
+4. `streamText` → UI message stream → `useChat`. Approval-required MCP calls stop at a signed inline approval request; the client preserves the signature and sends only its decision, and the server verifies it before execution.
+5. On finish: persist the UUID-backed assistant message; emit `chat/completed` to Inngest for memory extraction. An approval continuation updates the same assistant message rather than duplicating the turn.
 
 ### 3.2 Long/background task
 1. Chat or button creates `agent_runs` row (`queued`) and sends `agent/run.requested`.
@@ -37,11 +38,9 @@
 4. Completion posts a result message and optionally a canvas.
 
 ### 3.3 Human approval
-1. Tool flagged `requires_approval` (or graph hits `interrupt()`).
-2. Run state → `awaiting_approval`; `approvals` row created; push notification optional.
-3. User taps Approve/Deny → `POST /api/approvals/:id` → Inngest event `approval/decided`.
-4. Function resumes graph with `Command({ resume })`; deny path lets the agent re-plan.
-5. Approvals expire after a timeout (default 24 h) and are treated as denied.
+1. Durable runs use the graph gate: a tool flagged `requires_approval` (or a graph `interrupt()`) moves the run to `awaiting_approval` and creates an `approvals` row.
+2. User taps Approve/Deny → `POST /api/approvals/:id` → Inngest event `approval/decided`; the function resumes the graph with `Command({ resume })`. The deny path lets the agent re-plan, and approvals expire after a timeout (default 24 h).
+3. Ordinary chat uses the AI SDK's inline approval flow instead. The server signs the approval request with the server-only `TOOL_APPROVAL_SECRET`; the client returns only its decision, while the server verifies the signature and approved input before executing the MCP call.
 
 ### 3.4 Memory
 - Short-term: thread messages + checkpointer state.
@@ -57,7 +56,8 @@
 1. User taps Add on a server (`mcp_servers` registry).
 2. If OAuth/API key needed: flow completes at `/api/mcp/oauth/callback`; credentials encrypted (AES-256-GCM) → `mcp_connections`.
 3. User enables the server for an agent (`agent_mcp_tools`, with per-tool approval flags).
-4. At run start, server decrypts credentials server-side, connects, lists tools, filters by allow-list, adds to the graph.
+4. At ordinary-chat or durable-run start, the server decrypts credentials server-side, resolves the agent-scoped connected attachment and enabled cached tools, applies per-agent permissions, and exposes the resulting tool runtime.
+5. Durable runs keep a non-executing shared declaration and apply their run-backed gate. Ordinary chat binds a separate executable declaration and applies signed inline approval; neither path exposes an MCP declaration that bypasses its configured policy.
 
 ### 3.7 Canvas
 Agent calls `render_canvas(spec)` → zod-validated → saved in `canvases` → returned in the message as a tool part → Expo renders from the component catalog. Data-bound components reference a saved data source so refresh needs no LLM call.
@@ -105,13 +105,18 @@ Every LLM call (chat route, graph nodes, memory extraction, canvas refresh) goes
 9. Token usage is cumulative: a run that parks on an approval keeps what it already spent, and the resume adds to it. Consult tokens are charged to the member turn and therefore to the group's cumulative budget.
 
 ### 3.14 Persistent dashboards (Phase 13)
-Dashboards are user-owned workspaces separate from transient canvases. A dashboard row stores metadata/layout/version; child widget rows store validated Canvas-compatible config, data-source binding, position and size; immutable version rows store full snapshots. Dashboard APIs verify the caller and explicitly scope service-role queries. RLS independently scopes dashboard rows by `user_id` and child rows through the owning dashboard. Refresh and agent-tool flows are added in Phase 13.2; chat-inline canvas presentation remains a separate Phase 13.3 slice.
+Dashboards are user-owned workspaces separate from transient canvases. A dashboard row stores metadata/layout/version; child widget rows store validated Canvas-compatible config, data-source binding, position and size; immutable version rows store full snapshots. Dashboard APIs verify the caller and explicitly scope service-role queries. RLS independently scopes dashboard rows by `user_id` and child rows through the owning dashboard.
+
+Phase 13.2 adds global agent tools. The runtime derives user/run/agent identity from the run row, verifies dashboard ownership on each operation, and uses the standard approval gate for widget removal. `refresh_dashboard` creates a durable refresh request and emits `dashboard/refresh.requested`; an Inngest worker fetches only configured sources, makes no LLM call, and records per-widget outcomes. A shared, Zod-validated mapping layer converts normalized source rows into existing Canvas widget config (stat/count or sum, chart/grouped sum, table rows, list items, markdown summary). It has no eval or model-provided expressions. A successful subset is committed as one new dashboard version while the worker preserves the latest layout and applies results only where the widget ID and binding still match. Failed widgets retain their prior values. No successful changes means no version bump. Refresh work is rate-limited to 10 requests per dashboard per hour.
+
+Agents use canvases for one-off reports and visual answers. They use dashboards for explicitly requested persistent views and ongoing monitoring, and should update an existing dashboard when appropriate instead of creating duplicates. Data must come from configured sources or supplied evidence; agents label sample values and return the dashboard ID and destination after creation. Chat-inline canvas presentation is a separate Phase 13.3 slice.
 
 ## 4. Security model
 - One app account; Supabase Auth accepts email/password and a database trigger rejects additional users. Every API route verifies the Supabase JWT; RLS and explicit `user_id` filters scope data.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.
-- **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list.
+- **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list. Ordinary-chat MCP approval requests are HMAC-signed server-side; the decision may authorize only the exact signed tool call and input.
 - Canvas actions are a fixed enum; no eval, no model-supplied code. WebView HTML is sandboxed (no network, no native bridge).
+- Dashboard widget configs and source mappings are Zod-validated and bounded; no generated JavaScript or expressions run. Agent dashboard tools derive owner/agent/run IDs from trusted server context; widget removal uses approval. Refresh queries only configured sources and preserves old values for failed widgets.
 - Context derived from your notes/memories is sent only to models marked `private_ok`. Treat free tiers of any provider as possibly logged/trained on unless its terms say otherwise (verify). The same rule applies to group handoffs and consults: a non-private target receives neither private context nor note/memory retrieval tools, and a private-capable member may not hand that work to a non-private member at all.
 - Group targets are validated against the group's membership on the server; the calling agent is read from run context, never trusted from model arguments. Membership and privacy are re-validated live when a parked run resumes. Service-role queries explicitly scope groups, memberships, threads, messages, and runs to the owning user.
 - Rate-limit endpoints; cap per-run steps and tokens to protect free quotas. Group runs also cap hops, ping-pong cycles, nested asks, and total group tokens.

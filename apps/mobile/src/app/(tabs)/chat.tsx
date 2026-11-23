@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import * as Crypto from 'expo-crypto';
 import type { AgentSummary } from '@agent/shared';
 import { Alert, Button, Spinner } from 'heroui-native';
-import type { UIMessage } from 'ai';
+import { lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
 import {
   Alert as RNAlert,
   KeyboardAvoidingView,
@@ -47,11 +48,12 @@ import {
   fetchRun,
   fetchRuns,
   pauseRun,
+  startRun,
   type Agent,
   type RunDetail,
   type RunListItem,
 } from '@/lib/agents';
-import { ResilientChatTransport } from '@/lib/chat-transport';
+import { deviceTimeZone, ResilientChatTransport } from '@/lib/chat-transport';
 import {
   fetchEnabledModels,
   fetchThread,
@@ -69,7 +71,11 @@ const LIVE = new Set(['queued', 'running', 'awaiting_approval']);
 /** A chat id is generated on the client so the server can create the thread
  *  with it — no round trip is needed to learn the thread id. */
 function newChatId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return Crypto.randomUUID();
+}
+
+function newMessageId(): string {
+  return Crypto.randomUUID();
 }
 
 const SUGGESTIONS = [
@@ -161,6 +167,8 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [deepSearchActive, setDeepSearchActive] = useState(false);
   const [thinkActive, setThinkActive] = useState(false);
+  /** Task Mode sends through the durable agent-run pipeline instead of /api/chat. */
+  const [taskModeActive, setTaskModeActive] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(
     Boolean(params.threadId) || Boolean(params.agentId),
   );
@@ -168,6 +176,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   /** Runs owned by the context agent — surfaced inline as task bubbles. */
   const [agentRuns, setAgentRuns] = useState<RunListItem[]>([]);
+  /** Task runs launched from this free-chat conversation. */
+  const [taskRunIds, setTaskRunIds] = useState<string[]>([]);
+  /** Task Mode launch errors are separate from the streaming chat error. */
+  const [taskError, setTaskError] = useState<string | null>(null);
   /** Live event detail for the primary active run (drives the step line). */
   const [activeRunDetail, setActiveRunDetail] = useState<RunDetail | null>(null);
   /** Set once the user types/sends — blocks thread resumption from clobbering. */
@@ -210,9 +222,19 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
     [threadId, modelId],
   );
 
-  const { messages, setMessages, sendMessage, regenerate, error, status, stop } = useChat<UIMessage>({
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    regenerate,
+    error,
+    status,
+    stop,
+    addToolApprovalResponse,
+  } = useChat<UIMessage>({
     transport,
     id: threadId,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   const isStreaming = status === 'streaming' || status === 'submitted';
@@ -406,32 +428,132 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   /** The agent this conversation belongs to (route wins over loaded thread). */
   const contextAgentId = params.agentId ?? agentId;
 
+  /** Refreshes the selected agent's runs for the inline task timeline. */
+  const refreshAgentRuns = useCallback(async () => {
+    try {
+      const all = await fetchRuns();
+      if (!mountedRef.current) return;
+
+      const scoped = contextAgentId
+        ? all.filter((run) => run.agent_id === contextAgentId)
+        : all;
+
+      setAgentRuns((current) => {
+        const fetchedIds = new Set(scoped.map((run) => run.id));
+        // Keep a just-created optimistic run visible if the list endpoint has
+        // not caught up yet. The next poll replaces it with the server row.
+        const pending = current.filter(
+          (run) =>
+            !fetchedIds.has(run.id) &&
+            (!contextAgentId || run.agent_id === contextAgentId),
+        );
+        return [...pending, ...scoped];
+      });
+
+      setActiveRunId(
+        scoped.find((run) => !FINISHED.has(run.status))?.id ?? null,
+      );
+    } catch {
+      // Transient — the next poll retries.
+    }
+  }, [contextAgentId]);
+
   const handleSend = useCallback(
     async (override?: string) => {
       const text = (override ?? input).trim();
       if (!text) return;
 
+      const attachmentPayload = attachments.map((attachment) => ({
+        documentId: attachment.documentId,
+        mediaType: attachment.mediaType,
+        name: attachment.name,
+      }));
+
       touchedRef.current = true;
       setLoadingHistory(false);
       atBottomRef.current = true;
       setInput('');
-      // Attachments travel in the send body: they are read synchronously from
-      // state here, then cleared once the send has been handed off.
+      // Attachments are handed to ordinary chat below. Task Mode never sends
+      // them to the durable endpoint, so both paths clear them consistently.
+      setAttachments([]);
+      setTaskError(null);
+
+      if (taskModeActive) {
+        // The durable endpoint returns a run, not a streamed UI message. Add
+        // the user turn locally so it is visible while the task is queued.
+        const localMessage: UIMessage = {
+          id: newMessageId(),
+          role: 'user',
+          parts: [{ type: 'text', text }],
+        };
+        setMessages((current) => [...current, localMessage]);
+
+        try {
+          const response = await startRun(
+            text,
+            modelId,
+            contextAgentId,
+            threadId,
+            deviceTimeZone(),
+          );
+
+          setTaskRunIds((current) =>
+            current.includes(response.runId) ? current : [...current, response.runId],
+          );
+
+          // The API resolves (and may create) the ordinary thread. Continue the
+          // same conversation if the server chose a different id.
+          if (response.threadId && response.threadId !== threadId) {
+            setThreadId(response.threadId);
+          }
+
+          const optimisticRun: RunListItem = {
+            id: response.runId,
+            goal: text,
+            status: response.status,
+            model: modelId,
+            tokens_used: 0,
+            created_at: new Date().toISOString(),
+            finished_at: null,
+            agent_id: response.agentId ?? contextAgentId,
+            agent: null,
+          };
+          setAgentRuns((current) => [
+            optimisticRun,
+            ...current.filter((run) => run.id !== response.runId),
+          ]);
+
+          await refreshAgentRuns();
+          if (LIVE.has(response.status)) setActiveRunId(response.runId);
+        } catch (err) {
+          setTaskError(err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      // Ordinary chat stays on /api/chat and includes attachment references in
+      // the request body.
       const pending = sendMessage({ text }, {
         body: {
           ...(contextAgentId ? { agentId: contextAgentId } : {}),
           deepSearch: deepSearchActive,
-          attachments: attachments.map((attachment) => ({
-            documentId: attachment.documentId,
-            mediaType: attachment.mediaType,
-            name: attachment.name,
-          })),
+          attachments: attachmentPayload,
         },
       });
-      setAttachments([]);
       await pending;
     },
-    [attachments, contextAgentId, deepSearchActive, input, sendMessage],
+    [
+      attachments,
+      contextAgentId,
+      deepSearchActive,
+      input,
+      modelId,
+      refreshAgentRuns,
+      sendMessage,
+      setMessages,
+      taskModeActive,
+      threadId,
+    ],
   );
 
   const toggleDeepSearch = useCallback(() => {
@@ -452,6 +574,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
       return next;
     });
   }, [models]);
+
+  const toggleTaskMode = useCallback(() => {
+    setTaskModeActive((prev) => !prev);
+  }, []);
 
   const modelLabel = useMemo(() => {
     if (!modelId) return null;
@@ -482,23 +608,14 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
 
   // Poll the agent's runs while an agent chat is open so task bubbles update
   // in place (Plan → Act → tool calls → completion) without leaving the chat.
+  // Free chat starts the same polling after it launches its first Task Mode run.
   useEffect(() => {
-    if (!isAgentContext || !contextAgentId) return;
+    if (!isAgentContext && taskRunIds.length === 0) return;
     let active = true;
 
     const refreshRuns = async () => {
-      try {
-        const all = await fetchRuns();
-        if (!active) return;
-        setAgentRuns(all.filter((run) => run.agent_id === contextAgentId));
-        setActiveRunId(
-          all.find(
-            (run) => run.agent_id === contextAgentId && !FINISHED.has(run.status),
-          )?.id ?? null,
-        );
-      } catch {
-        // Transient — the next tick retries.
-      }
+      if (!active) return;
+      await refreshAgentRuns();
     };
 
     void refreshRuns();
@@ -507,17 +624,31 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
       active = false;
       clearInterval(interval);
     };
-  }, [isAgentContext, contextAgentId]);
+  }, [isAgentContext, refreshAgentRuns, taskRunIds.length]);
+
+  // Agent context shows the agent's task history. Free chat shows only the
+  // tasks launched from this conversation.
+  const conversationRuns = useMemo(() => {
+    if (isAgentContext) return agentRuns;
+    const ids = new Set(taskRunIds);
+    return agentRuns.filter((run) => ids.has(run.id));
+  }, [agentRuns, isAgentContext, taskRunIds]);
 
   // The agent's primary active run: keep its event timeline fresh so the
   // task bubble's current step (act llm / tool) transitions live. Paused runs
   // are deliberately excluded — their badge is static and they must not steal
   // the poll slot from a running task (the 4s runs list picks a resumed run
   // back up).
-  const primaryActiveRunId = useMemo(
-    () => agentRuns.find((run) => LIVE.has(run.status))?.id ?? null,
-    [agentRuns],
-  );
+  const primaryActiveRunId = useMemo(() => {
+    const launchedTask = conversationRuns.find(
+      (run) => taskRunIds.includes(run.id) && LIVE.has(run.status),
+    );
+    return (
+      launchedTask?.id ??
+      conversationRuns.find((run) => LIVE.has(run.status))?.id ??
+      null
+    );
+  }, [conversationRuns, taskRunIds]);
 
   useEffect(() => {
     if (!primaryActiveRunId) return;
@@ -542,11 +673,11 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   // then the most recent finished ones (the list is newest-first) — capped
   // so the thread never gets cluttered.
   const visibleRuns = useMemo(() => {
-    const live = agentRuns.filter((run) => LIVE.has(run.status));
-    const paused = agentRuns.filter((run) => run.status === 'paused');
-    const finished = agentRuns.filter((run) => FINISHED.has(run.status)).slice(0, 3);
+    const live = conversationRuns.filter((run) => LIVE.has(run.status));
+    const paused = conversationRuns.filter((run) => run.status === 'paused');
+    const finished = conversationRuns.filter((run) => FINISHED.has(run.status)).slice(0, 3);
     return [...live, ...paused, ...finished].slice(0, 4);
-  }, [agentRuns]);
+  }, [conversationRuns]);
 
   // The polled detail may belong to a run that just finished — only feed it
   // to the bubble while it still matches the primary active run.
@@ -558,10 +689,12 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   // Active task running for this agent or in this conversation
   const activeTaskRun = useMemo(() => {
     return (
-      agentRuns.find((run) => LIVE.has(run.status)) ??
-      (activeRunId ? agentRuns.find((r) => r.id === activeRunId && LIVE.has(r.status)) : null)
+      conversationRuns.find((run) => LIVE.has(run.status)) ??
+      (activeRunId
+        ? conversationRuns.find((run) => run.id === activeRunId && LIVE.has(run.status))
+        : null)
     );
-  }, [agentRuns, activeRunId]);
+  }, [activeRunId, conversationRuns]);
 
   const isTaskActive = isStreaming || Boolean(activeTaskRun || primaryActiveRunId);
 
@@ -781,6 +914,9 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 setMessages([]);
                 setAttachments([]);
                 setInput('');
+                setTaskError(null);
+                setTaskRunIds([]);
+                setAgentRuns([]);
                 setThreadAgent(null);
                 setThreadId(newChatId());
               }}
@@ -924,7 +1060,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           onContentSizeChange={scrollToBottom}
           scrollEventThrottle={32}
         >
-          {messages.map((message) => {
+          {messages.map((message, index) => {
             const parts = message.parts as { type: string; [key: string]: unknown }[];
             // Assistant messages containing tool calls belong to a background
             // run — offer "View task" for the most recent active run.
@@ -946,6 +1082,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   router.push({ pathname: '/run', params: { id } });
                 }}
                 onEditRoutine={() => setRoutineSheetOpen(true)}
+                onToolApprovalResponse={({ id, approved }) => {
+                  void addToolApprovalResponse({ id, approved });
+                }}
+                isStreaming={isStreaming && index === messages.length - 1}
               />
             );
           })}
@@ -968,6 +1108,15 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               }}
             />
           ))}
+
+          {taskError ? (
+            <Alert status="danger">
+              <Alert.Content>
+                <Alert.Title>Task could not start</Alert.Title>
+                <Alert.Description>{taskError}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
 
           {error ? (
             <Alert status="danger">
@@ -1014,6 +1163,8 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           onToggleDeepSearch={toggleDeepSearch}
           thinkActive={thinkActive}
           onToggleThink={toggleThink}
+          taskModeActive={taskModeActive}
+          onToggleTaskMode={toggleTaskMode}
           agentName={currentAgent?.name ?? threadAgent?.name ?? 'Agent'}
         />
       </View>

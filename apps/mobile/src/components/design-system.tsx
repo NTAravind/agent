@@ -64,12 +64,14 @@ export function PillButton({
   onPress,
   variant = 'primary',
   disabled = false,
+  accessibilityLabel,
   style,
 }: {
   label: string;
   onPress?: () => void;
   variant?: 'primary' | 'secondary';
   disabled?: boolean;
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const isPrimary = variant === 'primary';
@@ -78,7 +80,7 @@ export function PillButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       style={({ pressed }) => [
         {
           height: 44,

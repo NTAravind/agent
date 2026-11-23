@@ -147,6 +147,10 @@ export const StartRunResponseSchema = z.object({
   status: RunStatusSchema,
   /** Present when the run belongs to a dynamic agent group. */
   groupId: z.string().uuid().optional(),
+  /** Resolved ordinary conversation used by the run (Task Mode). */
+  threadId: z.string().uuid().optional(),
+  /** Agent that owns the resolved task/conversation, when one applies. */
+  agentId: z.string().uuid().nullable().optional(),
 });
 
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>;

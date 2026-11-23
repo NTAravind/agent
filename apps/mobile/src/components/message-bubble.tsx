@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Button } from 'heroui-native';
 import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import {
+  AlertTriangle,
   CalendarClock,
   Check,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { MarkdownText } from '@/components/markdown-text';
 import { RoutineProposalCard, type RoutineProposal } from '@/components/routine-proposal-card';
 import { colors, radius, space, typography } from '@/theme';
 
@@ -25,16 +27,29 @@ type Props = {
   runId?: string | null;
   onViewTask?: (runId: string) => void;
   onEditRoutine?: (routineId: string) => void;
+  /** Records the user's decision for an inline tool approval request. */
+  onToolApprovalResponse?: (response: { id: string; approved: boolean }) => void;
   replyQuote?: string | null;
   onSelectOption?: (option: string) => void;
+  /** True while this message's AI response is still streaming tokens. */
+  isStreaming?: boolean;
 };
 
 type ToolPart = {
   type: string;
+  toolName?: string;
   state?: string;
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  approval?: {
+    id: string;
+    requestReason?: string;
+    reason?: string;
+    isAutomatic?: boolean;
+    /** Server-issued proof for this approval request. Never rebuild it locally. */
+    signature?: string;
+  };
 };
 
 /**
@@ -48,8 +63,10 @@ export function MessageBubble({
   runId,
   onViewTask,
   onEditRoutine,
+  onToolApprovalResponse,
   replyQuote,
   onSelectOption,
+  isStreaming = false,
 }: Props) {
   const isUser = role === 'user';
   const [copied, setCopied] = useState(false);
@@ -197,17 +214,11 @@ export function MessageBubble({
             }
 
             return (
-              <Text
+              <MarkdownText
                 key={index}
-                style={{
-                  fontSize: 17,
-                  lineHeight: 22,
-                  fontWeight: '400',
-                  color: colors.textPrimary,
-                }}
-              >
-                {textContent}
-              </Text>
+                markdown={textContent}
+                streaming={isStreaming}
+              />
             );
           }
 
@@ -256,8 +267,18 @@ export function MessageBubble({
             );
           }
 
-          if (part.type.startsWith('tool-')) {
-            return <ToolPartView key={index} part={part as ToolPart} />;
+          if (part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
+            const toolPart = part as ToolPart;
+            if (toolPart.state === 'approval-requested' && toolPart.approval) {
+              return (
+                <ToolApprovalCard
+                  key={index}
+                  part={toolPart}
+                  onRespond={onToolApprovalResponse}
+                />
+              );
+            }
+            return <ToolPartView key={index} part={toolPart} />;
           }
 
           return null;
@@ -527,17 +548,159 @@ function ReasoningView({ text }: { text: string }) {
             padding: 12,
           }}
         >
-          <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
-            {text}
-          </Text>
+          <MarkdownText markdown={text} fontSize={13} color={colors.textSecondary} />
         </View>
       ) : null}
     </View>
   );
 }
 
+/** Shows the exact request payload so approval is informed, not blind. */
+function approvalInputText(input: unknown): string | null {
+  if (input === undefined || input === null) return null;
+  if (typeof input === 'string') return input.slice(0, 4_000);
+  try {
+    const text = JSON.stringify(input, null, 2);
+    return text ? text.slice(0, 4_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ToolApprovalCard({
+  part,
+  onRespond,
+}: {
+  part: ToolPart;
+  onRespond?: (response: { id: string; approved: boolean }) => void;
+}) {
+  const name =
+    part.toolName ??
+    (part.type === 'dynamic-tool'
+      ? 'MCP tool'
+      : part.type.replace(/^tool-/, '') || 'MCP tool');
+  const reason = part.approval?.requestReason ?? part.approval?.reason;
+  const isAutomatic = part.approval?.isAutomatic === true;
+  const input = approvalInputText(part.input);
+
+  return (
+    <View
+      style={{
+        width: '100%',
+        borderRadius: radius.inner,
+        backgroundColor: colors.surfaceRaised,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.divider,
+        padding: 14,
+        gap: 10,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+        <AlertTriangle size={17} color={colors.recording} strokeWidth={1.9} />
+        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+          Approval required
+        </Text>
+      </View>
+
+      <View
+        style={{
+          alignSelf: 'flex-start',
+          borderRadius: radius.pill,
+          backgroundColor: colors.surface,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+        }}
+      >
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>
+          {name}
+        </Text>
+      </View>
+
+      {reason ? (
+        <Text style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
+          {reason}
+        </Text>
+      ) : null}
+
+      {input ? (
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: radius.tile,
+            padding: 12,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: 'monospace',
+              fontSize: 12,
+              lineHeight: 18,
+              color: colors.textPrimary,
+            }}
+          >
+            {input}
+          </Text>
+        </View>
+      ) : null}
+
+      {isAutomatic ? (
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+          This request is being checked automatically.
+        </Text>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 8, paddingTop: 2 }}>
+          <Pressable
+            onPress={() => onRespond?.({ id: part.approval!.id, approved: true })}
+            disabled={!onRespond}
+            accessibilityRole="button"
+            accessibilityLabel={`Approve ${name}`}
+            style={({ pressed }) => ({
+              minHeight: 38,
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: radius.pill,
+              backgroundColor: colors.primary,
+              paddingHorizontal: 14,
+              opacity: pressed ? 0.6 : onRespond ? 1 : 0.5,
+            })}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.onPrimary }}>
+              Approve
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onRespond?.({ id: part.approval!.id, approved: false })}
+            disabled={!onRespond}
+            accessibilityRole="button"
+            accessibilityLabel={`Deny ${name}`}
+            style={({ pressed }) => ({
+              minHeight: 38,
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: radius.pill,
+              backgroundColor: colors.surface,
+              paddingHorizontal: 14,
+              opacity: pressed ? 0.6 : onRespond ? 1 : 0.5,
+            })}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+              Deny
+            </Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function ToolPartView({ part }: { part: ToolPart }) {
-  const name = part.type.replace(/^tool-/, '');
+  const name =
+    part.toolName ??
+    (part.type === 'dynamic-tool'
+      ? 'MCP tool'
+      : part.type.replace(/^tool-/, '') || 'MCP tool');
   const state = part.state ?? 'input-available';
   const failed = state === 'output-error';
 

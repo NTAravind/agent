@@ -19,6 +19,7 @@ import {
   beginResume,
 } from "@/lib/agent/pause";
 import { getCheckpointer } from "@/lib/agent/checkpointer";
+import { persistOrdinaryRunResult } from "@/lib/agent/run-persistence";
 import {
   appendPerfRunEvent,
   appendRunEvent,
@@ -592,6 +593,11 @@ async function runSupervisorInternal(
         tokens_used: usage.total(),
         finished_at: new Date().toISOString(),
       });
+      await persistOrdinaryRunResult(
+        runId,
+        finalState.result,
+        finalState.finalModel,
+      );
       return { status: "succeeded", result: finalState.result };
     }
 
