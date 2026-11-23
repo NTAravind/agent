@@ -6,19 +6,16 @@ import { colors, radius } from '@/theme';
 
 export type TabButtonProps = Omit<TabTriggerSlotProps, 'style'> & {
   icon: LucideIcon;
-  label: string;
+  label: string; // kept for accessibility only (not rendered)
   badge?: number;
   isFocused?: boolean;
 };
 
 /**
- * Modern Pill Nav Dock Tab Button (conforming to design.md)
+ * Icon-only tab button for the black pill nav dock.
  */
 export const TabButton = React.forwardRef<any, TabButtonProps>(
   function TabButton({ icon: Icon, label, badge, isFocused, ...props }, ref) {
-    const iconColor = isFocused ? colors.textPrimary : colors.textSecondary;
-    const textColor = isFocused ? colors.textPrimary : colors.textSecondary;
-
     return (
       <Pressable
         {...props}
@@ -33,24 +30,17 @@ export const TabButton = React.forwardRef<any, TabButtonProps>(
         ]}
       >
         <View style={styles.iconContainer}>
-          <Icon size={19} color={iconColor} strokeWidth={isFocused ? 2.2 : 1.75} />
+          <Icon
+            size={22}
+            color={colors.onPrimary}
+            strokeWidth={isFocused ? 2.4 : 1.75}
+          />
           {badge && badge > 0 ? (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {badge > 9 ? '9+' : badge}
-              </Text>
+              <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
             </View>
           ) : null}
         </View>
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.label,
-            { color: textColor, fontWeight: isFocused ? '600' : '400' },
-          ]}
-        >
-          {label}
-        </Text>
       </Pressable>
     );
   },
@@ -59,16 +49,14 @@ export const TabButton = React.forwardRef<any, TabButtonProps>(
 const styles = StyleSheet.create({
   button: {
     flex: 1,
-    height: 48,
+    height: 44,
     borderRadius: radius.pill,
-    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 3,
     marginHorizontal: 1,
   },
   buttonFocused: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   buttonUnfocused: {
     backgroundColor: 'transparent',
@@ -80,8 +68,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -3,
-    right: -7,
+    top: -4,
+    right: -8,
     minWidth: 14,
     height: 14,
     paddingHorizontal: 3,
@@ -94,10 +82,5 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontSize: 9,
     fontWeight: '700',
-  },
-  label: {
-    fontSize: 10,
-    lineHeight: 13,
-    marginTop: 2,
   },
 });

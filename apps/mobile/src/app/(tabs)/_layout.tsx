@@ -54,11 +54,14 @@ export default function TabsLayout() {
         style={[
           styles.dock,
           {
+            backgroundColor: colors.primary,
             bottom: Math.max(insets.bottom + 12, 16),
             left: (screenWidth - dockWidth) / 2,
             width: dockWidth,
           },
           !isMainScreen && styles.dockHidden,
+        
+        
         ]}
       >
         <TabTrigger name="chat" href="/chat" asChild>

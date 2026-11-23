@@ -31,7 +31,8 @@ export type CreatureShape =
   | 'hexagon'
   | 'cloud'
   | 'drop'
-  | 'teardrop';
+  | 'teardrop'
+  | 'ghost';
 
 export const CREATURE_SHAPES: CreatureShape[] = [
   'circle',
@@ -42,6 +43,7 @@ export const CREATURE_SHAPES: CreatureShape[] = [
   'hexagon',
   'cloud',
   'drop',
+  'ghost',
 ];
 
 export const PALETTE_COLORS: string[] = [
@@ -78,6 +80,9 @@ export function deriveCreatureConfig(
   }
   if (normalized.includes('inbox') || normalized.includes('triage')) {
     return { shape: 'squircle', color: customColor ?? colors.mark.gray };
+  }
+  if (normalized.includes('ghost') || normalized.includes('spooky') || normalized.includes('boo')) {
+    return { shape: 'ghost', color: customColor ?? colors.mark.purple };
   }
 
   let hash = 0;
@@ -175,11 +180,28 @@ export function AgentMark({
           <Polygon points="50,12 85,30 85,70 50,88 15,70 15,30" fill={color} />
         )}
 
-        {/* Highlights: two short, rounded, white strokes tilted ~20 deg at upper right */}
-        <G transform={`translate(${eyeX}, ${eyeY}) rotate(-20)`}>
-          <Rect x="-8" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
-          <Rect x="4" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
-        </G>
+        {normShape === 'ghost' && (
+          <>
+            <Path
+              d="M 50.11 14.7 C 55.94 14.36 62.81 15.33 68.22 18.88 C 73.63 22.42 79.53 30.08 82.59 35.97 C 85.65 41.85 85.81 49.49 86.55 54.19 C 87.28 58.88 86.92 60.77 87.0 64.14 C 87.08 67.52 88.13 71.48 87.0 74.44 C 85.87 77.4 82.06 80.91 80.21 81.91 C 78.36 82.91 77.36 81.31 75.91 80.44 C 74.46 79.57 72.97 77.57 71.5 76.7 C 70.03 75.83 68.77 75.1 67.09 75.23 C 65.41 75.36 63.32 76.2 61.43 77.5 C 59.54 78.8 57.68 81.74 55.77 83.04 C 53.87 84.34 51.91 85.28 50.0 85.3 C 48.09 85.32 46.11 84.47 44.34 83.15 C 42.57 81.83 41.15 78.7 39.36 77.38 C 37.57 76.06 35.31 75.34 33.59 75.23 C 31.88 75.12 30.6 75.87 29.07 76.7 C 27.54 77.53 25.98 79.34 24.43 80.21 C 22.88 81.08 21.68 82.81 19.79 81.91 C 17.9 81.0 14.09 77.67 13.11 74.78 C 12.13 71.89 13.47 67.96 13.91 64.6 C 14.35 61.24 14.61 59.11 15.72 54.64 C 16.83 50.17 17.66 43.4 20.58 37.78 C 23.5 32.16 28.33 24.77 33.25 20.92 C 38.17 17.07 44.28 15.04 50.11 14.7 Z"
+              fill={color}
+            />
+            {/* White eyeballs */}
+            <Ellipse cx="53.3" cy="42.3" rx="9.7" ry="10.7" fill="#FFFFFF" />
+            <Ellipse cx="73.3" cy="42.3" rx="8.2" ry="10.1" fill="#FFFFFF" />
+            {/* Dark pupils looking to the right */}
+            <Ellipse cx="59.4" cy="42.0" rx="3.5" ry="4.2" fill="#111111" />
+            <Ellipse cx="78.2" cy="42.0" rx="3.1" ry="4.1" fill="#111111" />
+          </>
+        )}
+
+        {/* Highlights: two short, rounded, white strokes tilted ~20 deg at upper right (for standard shapes) */}
+        {normShape !== 'ghost' && (
+          <G transform={`translate(${eyeX}, ${eyeY}) rotate(-20)`}>
+            <Rect x="-8" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
+            <Rect x="4" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
+          </G>
+        )}
       </Svg>
     </View>
   );

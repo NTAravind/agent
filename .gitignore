@@ -30,6 +30,7 @@ node_modules/
 # misc
 .DS_Store
 *.pem
+*firebase-adminsdk*.json
 
 # debug
 npm-debug.log*

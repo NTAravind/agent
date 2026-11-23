@@ -307,7 +307,7 @@ export default function AgentDetailScreen() {
 
             <HairlineDivider inset={0} />
 
-            {/* 2. Shapes: 8 shape previews, 36pt each, rendered in selected color with white eyes */}
+            {/* 2. Shapes: Creature shape previews, 36pt each, rendered in selected color */}
             <View style={styles.shapesRow}>
               {CREATURE_SHAPES.map((shape) => {
                 const isSelected = selectedShape === shape;
@@ -532,8 +532,10 @@ const styles = StyleSheet.create({
   },
   shapesRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    gap: space.xs,
     paddingHorizontal: space.xs,
   },
   shapeTouch: {

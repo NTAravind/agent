@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -12,31 +13,25 @@ import {
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, FileText, Folder, Plus, RefreshCw, Search, X } from 'lucide-react-native';
+import { FileText, Plus, RefreshCw, Search, X } from 'lucide-react-native';
 import type { Note, NoteChunk } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
-import { GroupedCard, HairlineDivider, PillButton, RoundButton } from '@/components/design-system';
+import { PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
-import { fetchNotes, saveNote, searchNotes, suggestNotePath, syncVault } from '@/lib/knowledge';
+import {
+  deleteNote,
+  fetchNote,
+  fetchNotes,
+  saveNote,
+  searchNotes,
+  suggestNotePath,
+  syncVault,
+} from '@/lib/knowledge';
 import { useSession } from '@/lib/session';
 
-function formatNoteDate(dateStr?: string | null): string {
-  if (!dateStr) return 'Markdown note';
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return 'Markdown note';
-
-  const now = new Date();
-  const isToday =
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear();
-
-  if (isToday) {
-    return `Updated today, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  return `Updated ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
-}
+import { NoteCard } from '@/components/notes/note-card';
+import { QuickCreateGrid, type QuickCreateMode } from '@/components/notes/quick-create-grid';
 
 export default function NotesScreen() {
   const router = useRouter();
@@ -44,19 +39,59 @@ export default function NotesScreen() {
   const { session } = useSession();
 
   const [notes, setNotes] = useState<Note[]>([]);
-  const [search, setSearch] = useState<{ query: string; results: NoteChunk[] } | null>(null);
+  const [noteContents, setNoteContents] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<NoteChunk[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [newOpen, setNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
   const load = useCallback(async () => {
     try {
-      setNotes(await fetchNotes());
+      const items = await fetchNotes();
+      // Sort pinned first, then newest updated_at
+      const sorted = [...items].sort((a, b) => {
+        const aPinned = Boolean(a.frontmatter?.pinned);
+        const bPinned = Boolean(b.frontmatter?.pinned);
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+      setNotes(sorted);
+
+      // Fetch note content for previews (top 15 recent notes)
+      const toFetch = sorted.slice(0, 15);
+      void Promise.all(
+        toFetch.map(async (n) => {
+          try {
+            const data = await fetchNote(n.path);
+            return [n.path, data?.content ?? ''] as const;
+          } catch {
+            return [n.path, ''] as const;
+          }
+        }),
+      ).then((entries) => {
+        setNoteContents((prev) => {
+          const next = { ...prev };
+          for (const [p, c] of entries) {
+            next[p] = c;
+          }
+          return next;
+        });
+      });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     } finally {
@@ -73,19 +108,28 @@ export default function NotesScreen() {
 
   const trimmedQuery = query.trim();
 
-  // The visible results are derived during render: an empty query simply has
-  // no results, and results from an older query are never shown against a
-  // newer one. Clearing the search is therefore not an effect at all.
-  const matches = trimmedQuery && search?.query === trimmedQuery ? search.results : null;
+  const handleQueryChange = (text: string) => {
+    setQuery(text);
+    if (!text.trim()) {
+      setSearchMatches(null);
+    }
+  };
 
+  // Search effect: semantic + local
   useEffect(() => {
-    if (!trimmedQuery) return;
+    if (!trimmedQuery) {
+      return;
+    }
 
     let active = true;
     const timer = setTimeout(() => {
-      void searchNotes(trimmedQuery).then((result) => {
-        if (active) setSearch({ query: trimmedQuery, results: result });
-      });
+      void searchNotes(trimmedQuery)
+        .then((result) => {
+          if (active) setSearchMatches(result);
+        })
+        .catch(() => {
+          if (active) setSearchMatches([]);
+        });
     }, 250);
 
     return () => {
@@ -94,12 +138,40 @@ export default function NotesScreen() {
     };
   }, [trimmedQuery]);
 
+  // Filter notes: title, path, tags, body
+  const filteredNotes = useMemo(() => {
+    if (!trimmedQuery) return notes;
+    const q = trimmedQuery.toLowerCase();
+    const isTagSearch = q.startsWith('#');
+    const tagTerm = isTagSearch ? q.slice(1) : q;
+
+    return notes.filter((n) => {
+      const titleMatch = (n.title ?? '').toLowerCase().includes(q);
+      const pathMatch = n.path.toLowerCase().includes(q);
+
+      // Tags match
+      const tags = Array.isArray(n.frontmatter?.tags)
+        ? (n.frontmatter.tags as string[]).map((t) => t.toLowerCase())
+        : [];
+      const tagMatch = tags.some((t) => t.includes(tagTerm));
+
+      // Body content match
+      const body = (noteContents[n.path] ?? '').toLowerCase();
+      const bodyMatch = body.includes(q);
+
+      // Semantic matches
+      const semanticMatch = searchMatches?.some((m) => m.path === n.path);
+
+      return titleMatch || pathMatch || tagMatch || bodyMatch || semanticMatch;
+    });
+  }, [notes, noteContents, trimmedQuery, searchMatches]);
+
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setNotice(null);
     try {
       const summary = await syncVault();
-      setNotice(summary.message ?? (summary.ok ? 'Vault synced successfully.' : 'Vault sync initiated.'));
+      setToastMessage(summary.message ?? (summary.ok ? 'Vault synced' : 'Sync initiated'));
       await load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -108,40 +180,117 @@ export default function NotesScreen() {
     }
   }, [load]);
 
-  const handleCreate = useCallback(async () => {
-    const title = newTitle.trim();
-    if (!title) return;
-    setCreating(true);
-    try {
-      const path = suggestNotePath(title);
-      const initial = `# ${title}\n\n`;
-      await saveNote(path, initial);
-      setNewOpen(false);
-      setNewTitle('');
-      router.push({ pathname: '/note', params: { path } });
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
-    } finally {
-      setCreating(false);
-    }
-  }, [newTitle, router]);
+  const handleCreate = useCallback(
+    async (customTitle?: string) => {
+      const title = (customTitle ?? newTitle).trim();
+      if (!title) return;
+      setCreating(true);
+      try {
+        const path = suggestNotePath(title);
+        const initial = `# ${title}\n\n`;
+        await saveNote(path, initial);
+        setNewOpen(false);
+        setNewTitle('');
+        router.push({ pathname: '/note', params: { path } });
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : String(error));
+      } finally {
+        setCreating(false);
+      }
+    },
+    [newTitle, router],
+  );
 
-  const grouped = useMemo(() => {
-    const folders = new Map<string, Note[]>();
-    for (const note of notes) {
-      const folder = note.path.includes('/') ? note.path.split('/')[0]! : 'General';
-      const list = folders.get(folder) ?? [];
-      list.push(note);
-      folders.set(folder, list);
+  const handleQuickCreate = (mode: QuickCreateMode) => {
+    if (mode === 'text') {
+      setNewTitle('');
+      setNewOpen(true);
+      return;
     }
-    return [...folders.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [notes]);
+
+    if (mode === 'checklist') {
+      const title = 'Checklist';
+      const path = suggestNotePath(title);
+      const template = `# Checklist\n\n- [ ] `;
+      void (async () => {
+        try {
+          await saveNote(path, template);
+          await load();
+          router.push({ pathname: '/note', params: { path } });
+        } catch {
+          setNewTitle('Checklist');
+          setNewOpen(true);
+        }
+      })();
+      return;
+    }
+  };
+
+  const handleDuplicate = async (note: Note) => {
+    try {
+      const raw = noteContents[note.path] ?? (await fetchNote(note.path))?.content ?? '';
+      const newPath = note.path.replace(/\.md$/i, '-copy.md');
+      await saveNote(newPath, raw);
+      setToastMessage('Note duplicated');
+      await load();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleTogglePin = async (note: Note, pinned: boolean) => {
+    try {
+      const current = await fetchNote(note.path);
+      const content = current?.content ?? '';
+      let updatedContent = content;
+
+      if (content.startsWith('---')) {
+        const parts = content.split('---');
+        if (parts.length >= 3) {
+          let fmMatter = parts[1] ?? '';
+          if (fmMatter.includes('pinned:')) {
+            fmMatter = fmMatter.replace(/pinned:\s*(true|false)/, `pinned: ${pinned}`);
+          } else {
+            fmMatter += `\npinned: ${pinned}\n`;
+          }
+          updatedContent = `---${fmMatter}---${parts.slice(2).join('---')}`;
+        }
+      } else {
+        updatedContent = `---\npinned: ${pinned}\n---\n\n${content}`;
+      }
+
+      await saveNote(note.path, updatedContent);
+      setToastMessage(pinned ? 'Note pinned' : 'Note unpinned');
+      await load();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDelete = (note: Note) => {
+    Alert.alert('Delete note', `Are you sure you want to delete "${note.title ?? note.path}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteNote(note.path);
+            setToastMessage('Note deleted');
+            await load();
+          } catch (err) {
+            setNotice(err instanceof Error ? err.message : String(err));
+          }
+        },
+      },
+    ]);
+  };
 
   const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
 
   return (
     <View style={styles.screen}>
-      {/* 6.1 Floating AppHeader */}
+      {/* Floating AppHeader */}
       <AppHeader
         left={
           <Pressable
@@ -157,15 +306,16 @@ export default function NotesScreen() {
             <Text style={styles.initialsText}>{userInitial}</Text>
           </Pressable>
         }
-        center={
-          <Text style={styles.headerTitle}>Notes</Text>
-        }
+        center={<Text style={styles.headerTitle}>Notes</Text>}
         right={
           <View style={styles.headerActions}>
             <RoundButton
               icon={RefreshCw}
-              onPress={() => void handleSync()}
+              onPress={() => {
+                if (!syncing) void handleSync();
+              }}
               accessibilityLabel="Sync vault"
+              style={{ opacity: syncing ? 0.5 : 1 }}
             />
             <RoundButton
               icon={Plus}
@@ -176,30 +326,20 @@ export default function NotesScreen() {
         }
       />
 
-      {/* Pill Search Input */}
-      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.xs }}>
-        <View style={styles.searchBar}>
-          <Search size={16} color={colors.textSecondary} strokeWidth={1.75} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search notes…"
-            placeholderTextColor={colors.textSecondary}
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {query ? (
-            <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear">
-              <X size={16} color={colors.textSecondary} />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
+      {/* Notice Banner */}
       {notice ? (
         <View style={styles.noticeBox}>
           <Text style={styles.noticeText}>{notice}</Text>
+          <Pressable onPress={() => setNotice(null)} hitSlop={8}>
+            <X size={16} color={colors.recording} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* Toast Notification */}
+      {toastMessage ? (
+        <View style={[styles.toastBox, shadow.floating]}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       ) : null}
 
@@ -210,12 +350,11 @@ export default function NotesScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={{
-            paddingHorizontal: space.lg,
-            paddingTop: space.sm,
-            paddingBottom: insets.bottom + 100, // accommodate pill dock
-            gap: space.lg,
+            paddingBottom: insets.bottom + 100, // accommodate tab bar dock
+            gap: space.xl,
           }}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -227,124 +366,110 @@ export default function NotesScreen() {
             />
           }
         >
-          {matches ? (
-            <View style={{ gap: space.sm }}>
-              <Text style={styles.sectionLabel}>
-                {`${matches.length} Result${matches.length === 1 ? '' : 's'}`}
-              </Text>
-              <GroupedCard>
-                {matches.map((match, index) => (
-                  <React.Fragment key={match.chunk_id}>
-                    {index > 0 && <HairlineDivider inset={60} />}
-                    <Pressable
-                      onPress={() =>
-                        router.push({ pathname: '/note', params: { path: match.path } })
-                      }
-                      accessibilityRole="button"
-                      accessibilityLabel={match.path}
-                      style={({ pressed }) => [
-                        styles.noteRow,
-                        { opacity: pressed ? 0.6 : 1 },
-                      ]}
-                    >
-                      <View style={styles.tileIcon}>
-                        <FileText size={18} color={colors.textSecondary} strokeWidth={1.75} />
-                      </View>
-                      <View style={styles.noteContent}>
-                        <Text numberOfLines={1} style={styles.noteName}>
-                          {match.path.replace(/\.md$/i, '')}
-                          <Text style={styles.noteExt}>.md</Text>
-                        </Text>
-                        <Text numberOfLines={1} style={styles.previewText}>
-                          {match.content.slice(0, 80)}
-                        </Text>
-                      </View>
-                      <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
-                    </Pressable>
-                  </React.Fragment>
-                ))}
-              </GroupedCard>
-              {matches.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  No matching notes found.
-                </Text>
+          {/* 1. Pill Search Bar */}
+          <View style={styles.searchSection}>
+            <View style={styles.searchBar}>
+              <Search size={18} color={colors.textSecondary} strokeWidth={2} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search notes, tags..."
+                placeholderTextColor={colors.textSecondary}
+                value={query}
+                onChangeText={handleQueryChange}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {query ? (
+                <Pressable
+                  onPress={() => {
+                    setQuery('');
+                    setSearchMatches(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={8}
+                >
+                  <X size={16} color={colors.textSecondary} />
+                </Pressable>
               ) : null}
             </View>
-          ) : notes.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconBox}>
-                <FileText size={32} color={colors.textSecondary} strokeWidth={1.5} />
-              </View>
-              <Text style={styles.emptyTitle}>No notes yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Add markdown notes to your vault or tap + to create one.
+          </View>
+
+          {/* 2. 2x2 Quick-Create Cards Grid (hidden during active search) */}
+          {!trimmedQuery ? (
+            <QuickCreateGrid onCreate={handleQuickCreate} />
+          ) : null}
+
+          {/* 3. Recent Notes Section */}
+          <View style={styles.recentSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>
+                {trimmedQuery ? 'Search Results' : 'Recent Notes'}
               </Text>
-              <PillButton
-                label="Create note"
-                onPress={() => setNewOpen(true)}
-                variant="primary"
-                style={{ marginTop: space.md }}
-              />
+              <Text style={styles.sectionCount}>
+                {`${filteredNotes.length} ${filteredNotes.length === 1 ? 'note' : 'notes'}`}
+              </Text>
             </View>
-          ) : (
-            grouped.map(([folder, folderNotes]) => (
-              <View key={folder} style={{ gap: space.xs }}>
-                <View style={styles.folderHeader}>
-                  <Folder size={14} color={colors.textSecondary} />
-                  <Text style={styles.sectionLabel}>{folder}</Text>
+
+            {filteredNotes.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconBox}>
+                  <FileText size={32} color={colors.textSecondary} strokeWidth={1.5} />
                 </View>
-                <GroupedCard>
-                  {folderNotes.map((note, index) => {
-                    const rawName = note.title || note.path.split('/').pop() || note.path;
-                    const baseName = rawName.replace(/\.md$/i, '');
-                    return (
-                      <React.Fragment key={note.id}>
-                        {index > 0 && <HairlineDivider inset={60} />}
-                        <Pressable
-                          onPress={() =>
-                            router.push({ pathname: '/note', params: { path: note.path } })
-                          }
-                          accessibilityRole="button"
-                          accessibilityLabel={note.title ?? note.path}
-                          style={({ pressed }) => [
-                            styles.noteRow,
-                            { opacity: pressed ? 0.6 : 1 },
-                          ]}
-                        >
-                          <View style={styles.tileIcon}>
-                            <FileText size={18} color={colors.textSecondary} strokeWidth={1.75} />
-                          </View>
-                          <View style={styles.noteContent}>
-                            <Text numberOfLines={1} style={styles.noteName}>
-                              {baseName}
-                              <Text style={styles.noteExt}>.md</Text>
-                            </Text>
-                            <Text numberOfLines={1} style={styles.noteSubtitle}>
-                              {formatNoteDate(note.updated_at)}
-                            </Text>
-                          </View>
-                          <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
-                        </Pressable>
-                      </React.Fragment>
-                    );
-                  })}
-                </GroupedCard>
+                <Text style={styles.emptyTitle}>
+                  {trimmedQuery ? 'No matching notes' : 'No notes yet'}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {trimmedQuery
+                    ? `No notes found matching "${trimmedQuery}".`
+                    : 'Create your first note above to start your second brain.'}
+                </Text>
+                {!trimmedQuery ? (
+                  <PillButton
+                    label="Create note"
+                    onPress={() => setNewOpen(true)}
+                    variant="primary"
+                    style={{ marginTop: space.sm }}
+                  />
+                ) : null}
               </View>
-            ))
-          )}
+            ) : (
+              <View style={styles.notesList}>
+                {filteredNotes.map((item) => (
+                  <NoteCard
+                    key={item.id}
+                    note={item}
+                    content={noteContents[item.path]}
+                    onPress={() =>
+                      router.push({ pathname: '/note', params: { path: item.path } })
+                    }
+                    onDelete={() => handleDelete(item)}
+                    onDuplicate={() => void handleDuplicate(item)}
+                    onTogglePin={(p) => void handleTogglePin(item, p)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
         </ScrollView>
       )}
 
-      {/* New Note Modal */}
-      <Modal visible={newOpen} transparent animationType="fade" onRequestClose={() => setNewOpen(false)}>
+      {/* New Note Creation Modal */}
+      <Modal
+        visible={newOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNewOpen(false)}
+      >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, shadow.floating]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Note</Text>
               <Pressable
                 onPress={() => setNewOpen(false)}
                 accessibilityRole="button"
-                accessibilityLabel="Close"
+                accessibilityLabel="Close dialog"
+                hitSlop={8}
               >
                 <X size={20} color={colors.textSecondary} />
               </Pressable>
@@ -352,7 +477,7 @@ export default function NotesScreen() {
             <TextInput
               autoFocus
               style={styles.modalInput}
-              placeholder="Note title or path (e.g. Ideas/Project)"
+              placeholder="Note title (e.g. Daily Journal Entry)"
               placeholderTextColor={colors.textSecondary}
               value={newTitle}
               onChangeText={setNewTitle}
@@ -376,6 +501,11 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
@@ -402,96 +532,80 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.sm,
   },
+  noticeBox: {
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    padding: space.md,
+    borderRadius: radius.card,
+    backgroundColor: colors.recordingBg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  noticeText: {
+    fontSize: 13,
+    color: colors.recording,
+    flex: 1,
+  },
+  toastBox: {
+    position: 'absolute',
+    top: 100,
+    alignSelf: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.lg,
+    paddingVertical: 10,
+    zIndex: 999,
+  },
+  toastText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  searchSection: {
+    paddingHorizontal: space.lg,
+    paddingTop: space.xs,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
     paddingHorizontal: space.md,
     height: 44,
+    gap: space.sm,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: colors.textPrimary,
   },
-  noticeBox: {
-    marginHorizontal: space.lg,
-    marginBottom: space.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  noticeText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  center: {
-    paddingVertical: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  folderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: space.xs,
-  },
-  sectionLabel: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
+  recentSection: {
     paddingHorizontal: space.lg,
-    paddingVertical: 12,
+    gap: space.md,
   },
-  tileIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.tile,
-    backgroundColor: colors.surfaceRaised,
+  sectionHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
   },
-  noteContent: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  noteName: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '500',
+  sectionTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
     color: colors.textPrimary,
   },
-  noteExt: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '400',
-    color: colors.textTertiary,
-  },
-  noteSubtitle: {
+  sectionCount: {
     fontSize: 13,
-    lineHeight: 16,
+    fontWeight: '500',
     color: colors.textSecondary,
   },
-  previewText: {
-    fontSize: 13,
-    lineHeight: 16,
-    color: colors.textSecondary,
+  notesList: {
+    gap: space.md,
   },
   emptyContainer: {
-    marginTop: 64,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: space.xl,
+    paddingVertical: 48,
     gap: space.xs,
   },
   emptyIconBox: {
@@ -504,39 +618,30 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   emptyTitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 17,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   emptySubtitle: {
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,
     textAlign: 'center',
     maxWidth: 280,
   },
-  emptyText: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: space.md,
-  },
   modalBackdrop: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: colors.overlay,
-    paddingHorizontal: space.lg,
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
   },
   modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: radius.sheet,
     backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.card,
     padding: space.xl,
-    gap: space.md,
-    ...shadow.floating,
+    gap: space.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -545,16 +650,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   modalInput: {
-    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    paddingHorizontal: space.md,
-    paddingVertical: 12,
-    fontSize: 17,
+    borderRadius: radius.card,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    fontSize: 16,
     color: colors.textPrimary,
   },
 });

@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Keyboard } from 'react-native';
+import { Keyboard, Platform } from 'react-native';
 
 /**
  * Height of the on-screen keyboard (0 when hidden).
  *
- * Used to keep bottom-aligned controls (the chat composer) clear of the
- * keyboard and of the home indicator.
+ * Used to keep bottom-aligned controls (the chat composer, note editor toolbar)
+ * clear of the keyboard and of the home indicator.
  */
 export function useKeyboardHeight(): number {
   const [height, setHeight] = useState(0);
 
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const show = Keyboard.addListener(showEvent, (event) => {
       setHeight(event.endCoordinates?.height ?? 0);
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
+    const hide = Keyboard.addListener(hideEvent, () => setHeight(0));
 
     return () => {
       show.remove();
