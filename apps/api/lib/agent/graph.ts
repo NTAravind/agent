@@ -9,8 +9,11 @@ import {
 import { generateObject, isStepCount, tool, type Tool } from "ai";
 import { z, type ZodType } from "zod";
 
-import { appendPerfRunEvent, appendRunEvent, failRun, updateRun } from "@/lib/agent/runs";
-import { persistOrdinaryRunResult } from "@/lib/agent/run-persistence";
+import { appendPerfRunEvent, appendRunEvent, failRun, updateRun, updateRunStrict } from "@/lib/agent/runs";
+import {
+  formatThreadContext,
+  type ThreadContext,
+} from "@/lib/agent/thread-context";
 import {
   RunCancelledError,
   RunPausedError,
@@ -331,7 +334,14 @@ function buildGraph(deps: GraphDeps) {
       userId,
       runId,
       usage,
-      prompt: `Break this goal into 2-4 concrete research steps (one sentence each). Tools: web search, page fetch, notes search, write note.\n\nGoal: ${state.goal}`,
+      prompt: [
+        "Break this goal into 2-4 concrete research steps (one sentence each). Tools: web search, page fetch, notes search, write note.",
+        "",
+        `Goal: ${state.goal}`,
+        ...(state.threadContext
+          ? ["", "Earlier turns in this conversation (use them for context, but plan only for the goal above):", state.threadContext]
+          : []),
+      ].join("\n"),
     });
 
     const planSteps = object.steps;
@@ -365,6 +375,9 @@ function buildGraph(deps: GraphDeps) {
             : "",
           state.toolLog.length > 0
             ? `Tool results from this step so far:\n${compactToolLog(state.toolLog)}`
+            : "",
+          state.threadContext
+            ? `Earlier turns in this conversation (context only — they were already handled):\n${state.threadContext}`
             : "",
           ``,
           `Either call tools for this round, or — when the step is done — write a concise summary of what you found (facts, numbers, citations as [title](url) or note paths). No tool calls means the step is complete.`,
@@ -830,7 +843,15 @@ async function finalizeRun(
   tokens: number,
 ): Promise<{ status: string; result?: string; handoff?: GroupHandoff }> {
   if (finalState.done && finalState.result) {
-    await updateRun(runId, {
+    // The answer is stored on the run row first. The visible transcript row
+    // is written by the caller's retryable `persist-run-transcript` step, so
+    // a transient database failure never loses the answer and never re-runs
+    // the agent (which would repeat its external side effects).
+    //
+    // The write is strict: if the answer does not land on the run row, the
+    // transcript step has nothing to publish and the run must fail loudly
+    // instead of finishing without an answer.
+    await updateRunStrict(runId, {
       status: "succeeded",
       result: {
         answer: finalState.result,
@@ -843,11 +864,6 @@ async function finalizeRun(
       tokens_used: tokens + (await persistedTokensUsed(runId)),
       finished_at: new Date().toISOString(),
     });
-    await persistOrdinaryRunResult(
-      runId,
-      finalState.result,
-      finalState.finalModel,
-    );
     return {
       status: "succeeded",
       result: finalState.result,
@@ -929,25 +945,25 @@ type InvokeableGraph = {
 /** One `invoke` of the compiled graph, input-first or checkpoint-resume. */
 export async function invokeGraph(
   compiled: InvokeableGraph,
-  input: { runId: string; userId: string; goal: string },
+  input: { runId: string; userId: string; goal: string; threadContext?: string },
   resume: boolean | undefined,
   options: { configurable: { thread_id: string }; recursionLimit: number },
 ): Promise<unknown> {
+  const graphInput = {
+    userId: input.userId,
+    runId: input.runId,
+    goal: input.goal,
+    ...(input.threadContext ? { threadContext: input.threadContext } : {}),
+  };
   if (!resume) {
-    return await compiled.invoke(
-      { userId: input.userId, runId: input.runId, goal: input.goal },
-      options,
-    );
+    return await compiled.invoke(graphInput, options);
   }
   try {
     return await compiled.invoke(null, options);
   } catch (error) {
     // Paused before the first node — no checkpoint exists yet, so start fresh.
     if (!isEmptyThreadError(error)) throw error;
-    return await compiled.invoke(
-      { userId: input.userId, runId: input.runId, goal: input.goal },
-      options,
-    );
+    return await compiled.invoke(graphInput, options);
   }
 }
 
@@ -959,6 +975,20 @@ async function runTimeZone(runId: string): Promise<string> {
     .eq("id", runId)
     .maybeSingle();
   return (data as { tz?: string } | null)?.tz ?? DEFAULT_TIMEZONE;
+}
+
+/**
+ * The earlier turns of the conversation this run continues, already rendered
+ * as a prompt block. Empty when the run is the conversation's first turn.
+ */
+async function runThreadContext(runId: string): Promise<string> {
+  const { data } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("thread_context")
+    .eq("id", runId)
+    .maybeSingle();
+  const context = (data as { thread_context?: unknown } | null)?.thread_context;
+  return formatThreadContext(context as ThreadContext | null | undefined);
 }
 
 /**
@@ -1006,6 +1036,8 @@ async function runAgentInternal(
     return null;
   });
 
+  const threadContext = await runThreadContext(runId);
+
   const compiled = buildGraph({
     runId,
     userId,
@@ -1021,7 +1053,7 @@ async function runAgentInternal(
   try {
     const finalState = (await invokeGraph(
       compiled,
-      { runId, userId, goal },
+      { runId, userId, goal, threadContext },
       input.resume,
       // Recursion limit: each act round is 3 super-steps (act_llm + gate +
       // exec); the graph's own guards (MAX_AGENT_STEPS, MAX_TOOL_ROUNDS_

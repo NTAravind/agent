@@ -7,21 +7,31 @@ import type {
   RunListItem,
   StartRunResponse,
 } from "@agent/shared";
+import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 
 import { authedFetch } from "@/lib/api-session";
 import { supabase } from "@/lib/supabase";
 
-/** Starts an agent run (executed durably by Inngest). */
+/**
+ * Starts an agent run (executed durably by Inngest).
+ *
+ * `idempotencyKey` makes the call safe to retry: the server returns the run
+ * that already owns the key instead of starting a second task. Pass the same
+ * key when retrying the same submission; a new submission gets a new key.
+ */
 export async function startRun(
   goal: string,
   model?: string | null,
   agentId?: string | null,
   threadId?: string | null,
   timezone?: string | null,
+  idempotencyKey?: string | null,
 ): Promise<StartRunResponse> {
+  const key = idempotencyKey ?? Crypto.randomUUID();
   return await authedFetch<StartRunResponse>("/api/agents/run", {
     method: "POST",
+    headers: { "idempotency-key": key },
     body: JSON.stringify({
       goal,
       ...(model ? { model } : {}),

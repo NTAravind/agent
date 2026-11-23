@@ -192,6 +192,14 @@ export async function listMessages(userId: string, threadId: string): Promise<St
   }));
 }
 
+/**
+ * Inserts one transcript row.
+ *
+ * A failed write is a hard error for callers that need the transcript to be
+ * durable (Task Mode user turns, ordinary-chat user turns). `optional: true`
+ * downgrades the failure to a warning for best-effort paths (group handoff
+ * bookkeeping, routine triggers) where losing the row must not fail the run.
+ */
 export async function insertMessage(
   userId: string,
   threadId: string,
@@ -203,6 +211,8 @@ export async function insertMessage(
     toAgentId?: string | null;
     handoff?: GroupHandoffPayload | null;
     runId?: string | null;
+    /** Treat a failed write as a warning instead of throwing. */
+    optional?: boolean;
   },
 ): Promise<void> {
   const { error } = await supabaseAdmin().from("messages").insert({
@@ -218,8 +228,11 @@ export async function insertMessage(
   });
 
   if (error) {
-    console.warn("[chat] could not persist message:", error.message);
-    return;
+    if (options?.optional) {
+      console.warn("[chat] could not persist message:", error.message);
+      return;
+    }
+    throw new Error(`Could not persist message: ${error.message}`);
   }
 
   // Keep the thread's updated_at fresh so the thread list sorts correctly.
@@ -238,6 +251,10 @@ export async function insertMessage(
  * chat: the first response inserts a UUID-backed assistant row, while an
  * inline-approval continuation updates that same row instead of creating a
  * duplicate. A foreign message id can therefore never be overwritten.
+ *
+ * A failed write throws. Transcript rows for ordinary chat and Task Mode are
+ * part of the durable contract, so a silent failure would acknowledge a
+ * response that the next reload cannot show.
  */
 export async function upsertOwnedMessage(input: {
   userId: string;
@@ -250,10 +267,16 @@ export async function upsertOwnedMessage(input: {
   toAgentId?: string | null;
   handoff?: GroupHandoffPayload | null;
   runId?: string | null;
+  /** Treat a failed write as a warning instead of throwing. */
+  optional?: boolean;
 }): Promise<boolean> {
   if (!z.string().uuid().safeParse(input.messageId).success) {
-    console.warn("[chat] refused to persist a message with a non-UUID id.");
-    return false;
+    const message = "Refused to persist a message with a non-UUID id.";
+    if (input.optional) {
+      console.warn(`[chat] ${message}`);
+      return false;
+    }
+    throw new Error(message);
   }
 
   const mutableFields: Record<string, unknown> = {
@@ -281,8 +304,12 @@ export async function upsertOwnedMessage(input: {
 
   const updated = await updateOwned();
   if (updated.error) {
-    console.warn("[chat] could not update message:", updated.error);
-    return false;
+    const message = `Could not update message: ${String(updated.error)}`;
+    if (input.optional) {
+      console.warn(`[chat] ${message}`);
+      return false;
+    }
+    throw new Error(message);
   }
   if (updated.found) {
     await touchThread(input.userId, input.threadId);
@@ -308,8 +335,12 @@ export async function upsertOwnedMessage(input: {
     // fall back to an unscoped upsert that could overwrite another user's row.
     const retried = await updateOwned();
     if (retried.error || !retried.found) {
-      console.warn("[chat] could not persist message:", insertError);
-      return false;
+      const message = `Could not persist message: ${insertError.message}`;
+      if (input.optional) {
+        console.warn(`[chat] ${message}`);
+        return false;
+      }
+      throw new Error(message);
     }
   }
 

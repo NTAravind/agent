@@ -19,7 +19,6 @@ import {
   beginResume,
 } from "@/lib/agent/pause";
 import { getCheckpointer } from "@/lib/agent/checkpointer";
-import { persistOrdinaryRunResult } from "@/lib/agent/run-persistence";
 import {
   appendPerfRunEvent,
   appendRunEvent,
@@ -27,6 +26,7 @@ import {
   failRun,
   listChildRuns,
   updateRun,
+  updateRunStrict,
 } from "@/lib/agent/runs";
 import { generateTextWithFallback } from "@/lib/models/generate";
 import { primeMobileModel } from "@/lib/models/catalog";
@@ -586,18 +586,17 @@ async function runSupervisorInternal(
     )) as SupervisorStateType;
 
     if (finalState.result) {
-      await updateRun(runId, {
+      // The answer is stored on the run row first; the visible transcript row
+      // is written by the caller's retryable `persist-run-transcript` step.
+      // The write is strict — without the answer on the run row the
+      // transcript step would have nothing to publish.
+      await updateRunStrict(runId, {
         status: "succeeded",
         result: { answer: finalState.result },
         model: finalState.finalModel,
         tokens_used: usage.total(),
         finished_at: new Date().toISOString(),
       });
-      await persistOrdinaryRunResult(
-        runId,
-        finalState.result,
-        finalState.finalModel,
-      );
       return { status: "succeeded", result: finalState.result };
     }
 

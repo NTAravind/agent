@@ -198,6 +198,7 @@ export async function executeGroupTool(
       {
         fromAgentId: context.actingAgentId,
         runId: context.runId,
+        optional: true,
       },
     );
     return { posted: true };

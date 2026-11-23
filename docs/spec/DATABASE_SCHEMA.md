@@ -482,6 +482,51 @@ create or replace function replace_group_members(
 ) returns void language plpgsql as $$ ... $$;
 ```
 
+## Ordinary-chat approval grants (Phase 6/7)
+
+The durable Task Mode gate keeps its decisions in `approvals`. Ordinary chat uses the AI SDK's
+inline approval flow, so it needs its own, server-side record of what was approved:
+
+```sql
+create table chat_approval_grants (
+  id uuid primary key default gen_random_uuid(),
+  tool_call_id text not null unique,           -- bound by the AI SDK approval signature
+  user_id uuid not null,
+  thread_id uuid not null references threads(id) on delete cascade,
+  agent_id uuid references agents(id) on delete set null,
+  connection_id uuid references user_mcp_connections(id) on delete set null,
+  tool_name text not null,
+  input_digest text not null,                  -- canonicalized input digest
+  status text not null default 'pending'
+    check (status in ('pending','denied','expired','consumed')),
+  expires_at timestamptz not null,
+  decided_at timestamptz,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+```
+
+The row is written when the approval is issued and consumed atomically (`pending → consumed`,
+guarded by `status = 'pending'`) before the MCP call runs. `tool_call_id` is unique, so one signed
+approval is one execution: it cannot be replayed, transplanted to another thread/agent, reused
+after the MCP connection changed, or used after `expires_at`. A denial flips the row to `denied`.
+
+## Task Mode run columns (Phase 7)
+
+```sql
+alter table agent_runs
+  add column idempotency_key text,
+  add column thread_context jsonb not null default '{}'::jsonb;
+
+create unique index agent_runs_user_idempotency_key
+  on agent_runs (user_id, idempotency_key) where idempotency_key is not null;
+```
+
+`idempotency_key` is the client-supplied UUID from the `idempotency-key` header. It is unique per
+user, so a retried start request resolves to the run that was already created instead of starting
+a second task. `thread_context` stores the bounded snapshot of the earlier turns of the
+conversation a task continues (`{ "turns": [{ "role", "text" }] }`).
+
 ## Search function (hybrid)
 Expose an RPC `search_notes(query_embedding, query_text, k)` that combines cosine distance on `note_chunks.embedding` with `ts_rank` on `tsv` (reciprocal-rank fusion) and returns chunk, note path, heading, score.
 

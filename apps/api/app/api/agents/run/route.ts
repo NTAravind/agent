@@ -2,8 +2,17 @@ import { z } from "zod";
 
 import { requireUser, toErrorResponse } from "@/lib/auth";
 import { executeRun } from "@/lib/agent/execute";
-import { createRun } from "@/lib/agent/runs";
+import { notifyRunOutcome } from "@/lib/agent/notifications";
+import {
+  createRun,
+  failRun,
+  findRunByIdempotencyKey,
+  RunCreationError,
+} from "@/lib/agent/runs";
 import { resolveTaskThreadScope } from "@/lib/agent/task-thread";
+import { parseIdempotencyKey, runStartStatus } from "@/lib/agent/idempotency";
+import { persistRunTranscript } from "@/lib/agent/run-persistence";
+import { loadThreadContext } from "@/lib/agent/thread-context";
 import {
   bindThreadToAgent,
   createThread,
@@ -17,6 +26,78 @@ import { defaultMobileModel, primeMobileModel } from "@/lib/models/catalog";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { defaultAgentId } from "@/lib/mcp/tools-loader";
 
+/** A run row as returned for an idempotent (retried) start request. */
+type ExistingRun = {
+  id: string;
+  status: string;
+  thread_id: string | null;
+  agent_id: string | null;
+  group_id: string | null;
+};
+
+/**
+ * Answers a retried start request with the run that already exists.
+ *
+ * The client polls the returned run id, so a retry never starts a second
+ * task and never repeats its side effects.
+ */
+function idempotentResponse(run: ExistingRun): Response {
+  return Response.json(
+    {
+      runId: run.id,
+      status: run.status,
+      threadId: run.thread_id,
+      agentId: run.agent_id,
+      groupId: run.group_id,
+      idempotent: true,
+    },
+    { status: runStartStatus(run.status) },
+  );
+}
+
+/**
+ * Creates the run, or returns the run a concurrent retry already created.
+ *
+ * The unique index on (user_id, idempotency_key) is the arbiter: exactly one
+ * request creates the run, the others read it back instead of starting a
+ * second one.
+ */
+async function createRunOnce(
+  input: Parameters<typeof createRun>[0],
+  userId: string,
+): Promise<{ id: string; status: string } | { existing: ExistingRun }> {
+  try {
+    return await createRun(input);
+  } catch (error) {
+    const key = input.idempotencyKey;
+    if (error instanceof RunCreationError && error.code === "23505" && key) {
+      const existing = await findRunByIdempotencyKey(userId, key);
+      if (existing) return { existing };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Sends the run event to Inngest.
+ *
+ * A dispatch failure must not leave a queued run that nobody will ever
+ * execute: the run is failed so the user sees the outcome instead of a task
+ * that is stuck at "queued" forever.
+ */
+async function dispatchRun(input: {
+  runId: string;
+  event: ReturnType<typeof agentRunRequested.create>;
+}): Promise<void> {
+  try {
+    await inngest.send(input.event);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await failRun(input.runId, `Could not start the task: ${message}`);
+    throw new Error(`Could not dispatch the run: ${message}`);
+  }
+}
+
 /**
  * POST /api/agents/run — start an agent or dynamic-group run.
  *
@@ -29,6 +110,27 @@ import { defaultAgentId } from "@/lib/mcp/tools-loader";
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
+
+    // Idempotency key from header (client-generated UUID)
+    const parsedKey = parseIdempotencyKey(request.headers.get("idempotency-key"));
+    if (!parsedKey.ok) {
+      return Response.json(
+        { error: { code: "bad_request", message: parsedKey.message } },
+        { status: 400 },
+      );
+    }
+    const idempotencyKey = parsedKey.key;
+
+    // If idempotency key provided, check for existing run
+    if (idempotencyKey) {
+      const existingRun = await findRunByIdempotencyKey(user.id, idempotencyKey);
+      if (existingRun) {
+        // The run already exists — the client polls it instead of starting a
+        // second task.
+        return idempotentResponse(existingRun);
+      }
+    }
+
     const body = (await request.json().catch(() => ({}))) as {
       goal?: string;
       threadId?: string;
@@ -176,15 +278,23 @@ export async function POST(request: Request) {
       }
 
       // The run row exists first so the user's message can be linked to it.
-      const run = await createRun({
-        userId: user.id,
-        goal,
-        threadId,
-        agentId: null,
-        model: null,
-        tz: body.tz ?? null,
-        groupId: group.id,
-      });
+      const createdRun = await createRunOnce(
+        {
+          userId: user.id,
+          goal,
+          threadId,
+          agentId: null,
+          model: null,
+          tz: body.tz ?? null,
+          groupId: group.id,
+          idempotencyKey,
+        },
+        user.id,
+      );
+      if ("existing" in createdRun) {
+        return idempotentResponse(createdRun.existing);
+      }
+      const run = createdRun;
 
       // The user's message is part of the durable group conversation. The
       // member graph receives a compact brief, never this full transcript.
@@ -204,6 +314,15 @@ export async function POST(request: Request) {
           goal,
           tz: body.tz,
         });
+        if (result.status === "succeeded") {
+          // Inline runs do not pass through the Inngest transcript step, so
+          // the visible transcript row is written here. A failed write fails
+          // the request instead of acknowledging a missing answer.
+          await persistRunTranscript(run.id);
+        }
+        if (result.status === "succeeded" || result.status === "failed") {
+          await notifyRunOutcome({ runId: run.id, userId: user.id, status: result.status, result: result.result });
+        }
         return Response.json({
           runId: run.id,
           status: result.status,
@@ -212,8 +331,9 @@ export async function POST(request: Request) {
         });
       }
 
-      await inngest.send(
-        agentRunRequested.create({
+      await dispatchRun({
+        runId: run.id,
+        event: agentRunRequested.create({
           runId: run.id,
           userId: user.id,
           goal,
@@ -221,7 +341,7 @@ export async function POST(request: Request) {
           groupId: group.id,
           ...(body.tz ? { tz: body.tz } : {}),
         }),
-      );
+      });
       return Response.json(
         { runId: run.id, status: "queued", groupId: group.id, threadId },
         { status: 202 },
@@ -308,14 +428,30 @@ export async function POST(request: Request) {
       agentId = effectiveAgentId;
     }
 
-    const run = await createRun({
-      userId: user.id,
-      goal,
-      threadId,
-      agentId,
-      model: preferredModel,
-      tz: body.tz ?? null,
-    });
+    // A Task Mode turn on an existing thread continues that conversation: the
+    // run carries a bounded snapshot of the earlier turns so a follow-up can
+    // refer to what was already said and found.
+    const threadContext = threadExists
+      ? await loadThreadContext(user.id, threadId!)
+      : { turns: [] };
+
+    const createdRun = await createRunOnce(
+      {
+        userId: user.id,
+        goal,
+        threadId,
+        agentId,
+        model: preferredModel,
+        tz: body.tz ?? null,
+        idempotencyKey,
+        threadContext: threadContext as unknown as Record<string, unknown>,
+      },
+      user.id,
+    );
+    if ("existing" in createdRun) {
+      return idempotentResponse(createdRun.existing);
+    }
+    const run = createdRun;
 
     // The user's Task Mode turn belongs to the same durable conversation as
     // the final answer. Linking both messages to the run keeps the transcript
@@ -331,6 +467,15 @@ export async function POST(request: Request) {
 
     if (body.inline) {
       const result = await executeRun({ runId: run.id, userId: user.id, goal, preferredModel, tz: body.tz });
+      if (result.status === "succeeded") {
+        // Inline runs do not pass through the Inngest transcript step, so
+        // the visible transcript row is written here. A failed write fails
+        // the request instead of acknowledging a missing answer.
+        await persistRunTranscript(run.id);
+      }
+      if (result.status === "succeeded" || result.status === "failed") {
+        await notifyRunOutcome({ runId: run.id, userId: user.id, status: result.status, result: result.result });
+      }
       return Response.json({
         runId: run.id,
         status: result.status,
@@ -339,8 +484,9 @@ export async function POST(request: Request) {
       });
     }
 
-    await inngest.send(
-      agentRunRequested.create({
+    await dispatchRun({
+      runId: run.id,
+      event: agentRunRequested.create({
         runId: run.id,
         userId: user.id,
         ...(agentId ? { agentId } : {}),
@@ -349,7 +495,7 @@ export async function POST(request: Request) {
         preferredModel,
         ...(body.tz ? { tz: body.tz } : {}),
       }),
-    );
+    });
 
     return Response.json(
       { runId: run.id, status: "queued", threadId, agentId },

@@ -17,9 +17,22 @@ export type ChatStreamAttempt = {
   ttftMs?: number;
 };
 
+/**
+ * Per-tool approval policy for `streamText.toolApproval`.
+ *
+ * A tool may use a static status or a function. The function form is what
+ * lets the application record a one-time approval grant before the signed
+ * request is issued.
+ */
 export type ChatToolApproval = Record<
   string,
-  { type: "user-approval"; reason: string }
+  | { type: "user-approval"; reason: string }
+  | ((
+      input: unknown,
+      options: { toolCallId: string },
+    ) =>
+      | { type: "user-approval"; reason: string }
+      | Promise<{ type: "user-approval"; reason: string }>)
 >;
 
 export type ChatStreamOptions = {

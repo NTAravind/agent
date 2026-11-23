@@ -195,6 +195,12 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
    * applied by the effect below once the new Chat instance exists.
    */
   const pendingMessagesRef = useRef<UIMessage[] | null>(null);
+  /**
+   * Idempotency key of the Task Mode submission that is in flight (or that
+   * failed). A retry of the same text reuses it, so the server returns the
+   * run it already created instead of starting a second one.
+   */
+  const taskSubmissionRef = useRef<{ text: string; key: string } | null>(null);
   const scrollRef = useRef<ScrollViewInstance>(null);
   const atBottomRef = useRef(true);
 
@@ -488,6 +494,14 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
         };
         setMessages((current) => [...current, localMessage]);
 
+        // A retry of the same submission reuses its idempotency key, so the
+        // server answers with the run it already created.
+        const submission =
+          taskSubmissionRef.current?.text === text
+            ? taskSubmissionRef.current
+            : { text, key: Crypto.randomUUID() };
+        taskSubmissionRef.current = submission;
+
         try {
           const response = await startRun(
             text,
@@ -495,7 +509,9 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             contextAgentId,
             threadId,
             deviceTimeZone(),
+            submission.key,
           );
+          taskSubmissionRef.current = null;
 
           setTaskRunIds((current) =>
             current.includes(response.runId) ? current : [...current, response.runId],

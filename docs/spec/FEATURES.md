@@ -85,6 +85,7 @@ All **$ / P3**. X API is paid. Hide behind a tool/MCP interface so it can be add
 | Skills (progressive disclosure) | P1 | Vault markdown bundles; name + description in the prompt, body loaded on demand; tool allow-list can only narrow |
 | Tasks & calendar | P1 | Lists, subtasks, due dates, priorities, recurring events (RRULE expanded on read), soft delete |
 | Reminders | P1 | `reminder/tick` cron → Expo push, claimed in `reminder_log` so each fires once |
+| Agent run alerts | P1 | Expo push on top-level agent task success or failure; supervisor child runs are grouped under the parent alert |
 | Routines (chat-first scheduling) | P1 | Agent proposes a schedule, user confirms, result posts back into the agent's chat |
 | Agent groups & handoff | P1 | Dynamic groups are durable chats; members consult or hand off sequentially, with server-side membership, hop/token/depth guards, approval-gated child runs, visible handoff chips, and `@agent` entry routing. A group conversation is never an ordinary chat: `/api/chat` refuses it (409 `group_thread`) and the app routes it to the group screen (Phase 11) |
 

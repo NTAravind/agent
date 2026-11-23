@@ -1,6 +1,8 @@
 type MessagePartLike = {
   type?: unknown;
   state?: unknown;
+  toolCallId?: unknown;
+  approval?: { approved?: unknown } | unknown;
 };
 
 type MessageLike = {
@@ -45,4 +47,34 @@ export function hasPendingToolApproval(message: MessageLike | undefined): boolea
   return partsOf(message).some(
     (part) => isToolPart(part) && part.state === "approval-requested",
   );
+}
+
+/** One inline approval decision carried by the UI history. */
+export type ApprovalDecision = {
+  toolCallId: string;
+  approved: boolean;
+};
+
+/**
+ * Reads the approval decisions of the last assistant message.
+ *
+ * The client sends the complete UI history, so the last assistant message
+ * holds the tool parts that moved from `approval-requested` to
+ * `approval-responded`. When a tool call carries more than one decision the
+ * last one wins, matching how the AI SDK resolves it.
+ */
+export function approvalDecisions(messages: MessageLike[]): ApprovalDecision[] {
+  const last = messages.at(-1);
+  if (last?.role !== "assistant") return [];
+
+  const decisions = new Map<string, boolean>();
+  for (const part of partsOf(last)) {
+    if (!isToolPart(part) || part.state !== "approval-responded") continue;
+    if (typeof part.toolCallId !== "string") continue;
+    const approval = part.approval as { approved?: unknown } | undefined;
+    if (!approval || typeof approval.approved !== "boolean") continue;
+    decisions.set(part.toolCallId, approval.approved);
+  }
+
+  return [...decisions].map(([toolCallId, approved]) => ({ toolCallId, approved }));
 }

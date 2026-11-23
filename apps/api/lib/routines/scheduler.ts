@@ -136,6 +136,7 @@ async function fireRoutine(
         routineTriggerPart(routine),
       ],
       null,
+      { optional: true },
     );
     if (advance) {
       await advanceRoutine(routine.id, {
@@ -178,6 +179,7 @@ async function fireRoutine(
     "user",
     [{ type: "text", text: routine.prompt }, routineTriggerPart(routine)],
     null,
+    { optional: true },
   );
 
   // Advance the schedule from the *scheduled* instant — a missed occurrence
@@ -326,6 +328,7 @@ export async function handleRoutineOutcome(
         "assistant",
         [{ type: "text", text: routineResultText(routine.name, answer) }],
         null,
+        { optional: true },
       );
     }
 
@@ -376,6 +379,7 @@ export async function handleRoutineOutcome(
         routineTriggerPart({ id: routine.id, name: routine.name } as Routine),
       ],
       null,
+      { optional: true },
     );
 
     if (paused) {

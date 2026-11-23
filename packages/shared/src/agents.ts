@@ -151,6 +151,11 @@ export const StartRunResponseSchema = z.object({
   threadId: z.string().uuid().optional(),
   /** Agent that owns the resolved task/conversation, when one applies. */
   agentId: z.string().uuid().nullable().optional(),
+  /**
+   * True when the request was a retry: the run already existed, so no second
+   * task was started.
+   */
+  idempotent: z.boolean().optional(),
 });
 
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>;

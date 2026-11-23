@@ -329,6 +329,7 @@ async function insertGroupMessageOnce(input: {
       toAgentId: input.toAgentId ?? null,
       handoff: input.handoff ?? null,
       runId: input.runId,
+      optional: true,
     },
   );
 }

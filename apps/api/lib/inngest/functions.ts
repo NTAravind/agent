@@ -2,6 +2,8 @@ import { step } from "inngest";
 
 import { resumeAgentRun } from "@/lib/agent/graph";
 import { executeRun, resumeExecution } from "@/lib/agent/execute";
+import { persistRunTranscript } from "@/lib/agent/run-persistence";
+import { notifyFailedRun, notifyRunOutcome } from "@/lib/agent/notifications";
 import { resumeGroupParentForChild } from "@/lib/agent/group";
 import { appendPerfRunEvent, failRun } from "@/lib/agent/runs";
 import { inngest } from "@/lib/inngest/client";
@@ -105,6 +107,7 @@ export const agentRunFunction = inngest.createFunction(
       const data = (event as { data?: { runId?: string } }).data;
       if (data?.runId) {
         await failRun(data.runId, error instanceof Error ? error.message : String(error));
+        await notifyFailedRun(data.runId);
       }
     },
   },
@@ -125,12 +128,34 @@ export const agentRunFunction = inngest.createFunction(
       ),
     );
 
+    // The answer is already stored on the run row. This separate, idempotent
+    // step writes the visible transcript row and retries on a database
+    // failure — retrying the graph instead would repeat its external side
+    // effects. Group, child and routine runs own their own transcript rows,
+    // so this step is a no-op for them.
+    if (result.status === "succeeded") {
+      await step.run("persist-run-transcript", () =>
+        tracedStep("persist-run-transcript", runId, () => persistRunTranscript(runId)),
+      );
+    }
+
     // A routine run books its own outcome (result posted in the thread,
     // failure streak, auto-pause after three failures).
     if (routineId) {
       await step.run("record-routine-outcome", () =>
         tracedStep("record-routine-outcome", runId, () =>
           handleRoutineOutcome(runId, result.status),
+        ),
+      );
+    } else if (result.status === "succeeded" || result.status === "failed") {
+      await step.run("notify-run-outcome", () =>
+        tracedStep("notify-run-outcome", runId, () =>
+          notifyRunOutcome({
+            runId,
+            userId,
+            status: result.status as "succeeded" | "failed",
+            result: result.result,
+          }),
         ),
       );
     }
@@ -152,6 +177,7 @@ export const approvalResumeFunction = inngest.createFunction(
       const data = (event as { data?: { runId?: string } }).data;
       if (data?.runId) {
         await failRun(data.runId, error instanceof Error ? error.message : String(error));
+        await notifyFailedRun(data.runId);
       }
     },
   },
@@ -162,15 +188,51 @@ export const approvalResumeFunction = inngest.createFunction(
       tracedStep("resume-agent-graph", runId, () => resumeAgentRun({ runId, userId })),
     );
 
+    // Same contract as the initial run: the answer lives on the run row and
+    // the visible transcript row is written by an idempotent, retryable step.
+    if (result.status === "succeeded") {
+      await step.run("persist-run-transcript", () =>
+        tracedStep("persist-run-transcript", runId, () => persistRunTranscript(runId)),
+      );
+    }
+
+    if (result.status === "succeeded" || result.status === "failed") {
+      await step.run("notify-run-outcome", () =>
+        tracedStep("notify-run-outcome", runId, () =>
+          notifyRunOutcome({ runId, userId, status: result.status as "succeeded" | "failed", result: result.result }),
+        ),
+      );
+    }
+
     // A group member's approval belongs to the child run. Once that child
     // finishes, resume the parked parent group graph so it can route or
     // finalize with the member's result.
     if (result.status !== "awaiting_approval" && result.status !== "paused") {
-      await step.run("resume-group-parent", () =>
+      const parentResult = await step.run("resume-group-parent", () =>
         tracedStep("resume-group-parent", runId, () =>
           resumeGroupParentForChild(runId, userId),
         ),
       );
+      if (parentResult?.status === "succeeded" || parentResult?.status === "failed") {
+        const { data: child } = await supabaseAdmin()
+          .from("agent_runs")
+          .select("parent_run_id")
+          .eq("id", runId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (child?.parent_run_id) {
+          await step.run("notify-group-parent-outcome", () =>
+            tracedStep("notify-group-parent-outcome", child.parent_run_id, () =>
+              notifyRunOutcome({
+                runId: child.parent_run_id,
+                userId,
+                status: parentResult.status as "succeeded" | "failed",
+                result: parentResult.result,
+              }),
+            ),
+          );
+        }
+      }
     }
 
     return result;
@@ -192,15 +254,29 @@ export const runResumeFunction = inngest.createFunction(
       const data = (event as { data?: { runId?: string } }).data;
       if (data?.runId) {
         await failRun(data.runId, error instanceof Error ? error.message : String(error));
+        await notifyFailedRun(data.runId);
       }
     },
   },
   async ({ event }) => {
     const { runId, userId } = event.data;
 
-    return await step.run("resume-paused-graph", () =>
+    const result = await step.run("resume-paused-graph", () =>
       tracedStep("resume-paused-graph", runId, () => resumeExecution({ runId, userId })),
     );
+    if (result.status === "succeeded") {
+      await step.run("persist-run-transcript", () =>
+        tracedStep("persist-run-transcript", runId, () => persistRunTranscript(runId)),
+      );
+    }
+    if (result.status === "succeeded" || result.status === "failed") {
+      await step.run("notify-run-outcome", () =>
+        tracedStep("notify-run-outcome", runId, () =>
+          notifyRunOutcome({ runId, userId, status: result.status as "succeeded" | "failed", result: result.result }),
+        ),
+      );
+    }
+    return result;
   },
 );
 

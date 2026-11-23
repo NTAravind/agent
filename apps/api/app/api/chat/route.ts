@@ -23,9 +23,11 @@ import {
 } from "@/lib/chat/persist";
 import { resolveChatAgentScope } from "@/lib/chat/agent-scope";
 import {
+  approvalDecisions,
   hasPendingToolApproval,
   isApprovalContinuation,
 } from "@/lib/chat/approval-continuation";
+import { denyApprovalGrant } from "@/lib/chat/approval-grant";
 import { createChatStream } from "@/lib/chat/stream";
 import { buildSystemPrompt } from "@/lib/chat/system-prompt";
 import { inngest } from "@/lib/inngest/client";
@@ -144,17 +146,27 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       );
     }
 
-    // Thread: the client generates the id, so a new chat needs no round trip.
-    // If the thread does not exist yet, create it with that id.
-    if (threadId && !knownThread) {
-      const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
-      const created = await createThread(user.id, {
-        id: threadId,
-        title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
-        model: requestedModel,
-        agentId,
-      });
-      threadId = created.id;
+    // MCP tools are scoped to this conversation's agent. The same loader and
+    // per-tool approval flags used by durable runs decide which tools are
+    // exposed and which ones require a human decision here. Resolve the
+    // approval configuration before creating or persisting conversation rows
+    // so a fail-closed 503 cannot leave an empty thread or orphaned user turn.
+    const mcpRuntime = await loadAgentMcpTools(user.id, agentId);
+    const approvalSecret = toolApprovalSecret();
+    const mcpApprovalRequired = [...mcpRuntime.tools.values()].filter((tool) =>
+      mcpRuntime.requiresApproval(tool.name),
+    );
+    if (mcpApprovalRequired.length > 0 && !approvalSecret) {
+      return Response.json(
+        {
+          error: {
+            code: "approval_not_configured",
+            message:
+              "Approval-gated integrations are unavailable until TOOL_APPROVAL_SECRET is configured on the server.",
+          },
+        },
+        { status: 503 },
+      );
     }
 
     // Attachments are resolved to bytes before the model call.
@@ -169,25 +181,17 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       ...(needsPdf ? { pdf: true } : {}),
     };
 
-    // MCP tools are scoped to this conversation's agent. The same loader and
-    // per-tool approval flags used by durable runs decide which tools are
-    // exposed and which ones require a human decision here. Resolve the
-    // approval configuration before creating or persisting conversation rows
-    // so a fail-closed 503 cannot leave an empty thread or orphaned user turn.
-    const mcpRuntime = await loadAgentMcpTools(user.id, agentId);
-    const mcpChat = buildMcpChatTools(mcpRuntime);
-    const approvalSecret = toolApprovalSecret();
-    if (Object.keys(mcpChat.approval).length > 0 && !approvalSecret) {
-      return Response.json(
-        {
-          error: {
-            code: "approval_not_configured",
-            message:
-              "Approval-gated integrations are unavailable until TOOL_APPROVAL_SECRET is configured on the server.",
-          },
-        },
-        { status: 503 },
-      );
+    // Thread: the client generates the id, so a new chat needs no round trip.
+    // If the thread does not exist yet, create it with that id.
+    if (threadId && !knownThread) {
+      const lastUser = [...body.messages].reverse().find((message) => message.role === "user");
+      const created = await createThread(user.id, {
+        id: threadId,
+        title: titleFromParts((lastUser?.parts ?? []) as Record<string, unknown>[]),
+        model: requestedModel,
+        agentId,
+      });
+      threadId = created.id;
     }
 
     if (!threadId) {
@@ -199,6 +203,15 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
       });
       threadId = thread.id;
     }
+
+    // The MCP tools are bound to this conversation. Every approval they issue
+    // is recorded against this user, thread, agent and connection, and is
+    // consumed once — a signed approval cannot be replayed or moved.
+    const mcpChat = buildMcpChatTools(mcpRuntime, {
+      userId: user.id,
+      threadId: threadId!,
+      agentId,
+    });
 
     // An approval continuation sends the complete UI history, ending with the
     // assistant's `approval-responded` tool part. It is not a new user turn,
@@ -214,6 +227,13 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
         lastUserMessage.parts as Record<string, unknown>[],
         requestedModel,
       );
+    }
+
+    // A denied approval is terminal: the grant is closed so the same call can
+    // never be approved and executed later.
+    for (const decision of approvalDecisions(body.messages)) {
+      if (decision.approved) continue;
+      await denyApprovalGrant(decision.toolCallId);
     }
 
     const modelIds = [requestedModel, ...DEFAULT_FALLBACK_ORDER.filter((id) => id !== requestedModel)];
@@ -304,6 +324,7 @@ async function handleChatPost(request: Request, requestStartedAt: number) {
         // so the app can render the confirmation card (the tool part alone
         // carries no affordance).
         const toolNames = new Map<string, string>();
+
         const withProposals = chunks.pipeThrough(
           new TransformStream<UIMessageChunk, UIMessageChunk>({
             transform(chunk, controller) {

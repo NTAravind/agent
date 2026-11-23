@@ -12,6 +12,23 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * that power the timeline UI.
  */
 
+/**
+ * A run could not be created.
+ *
+ * `code` carries the database error code so callers can react to a unique
+ * violation (a concurrent request won the idempotency race) instead of
+ * treating every failure as fatal.
+ */
+export class RunCreationError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "RunCreationError";
+  }
+}
+
 export async function createRun(input: {
   userId: string;
   goal: string;
@@ -32,6 +49,10 @@ export async function createRun(input: {
   groupContext?: Record<string, unknown> | null;
   /** Nested-ask depth for a group member turn. */
   groupDepth?: number;
+  /** Idempotency key to prevent duplicate runs on retry. */
+  idempotencyKey?: string | null;
+  /** Bounded prior-conversation context for a Task Mode turn. */
+  threadContext?: Record<string, unknown> | null;
 }): Promise<{ id: string; status: RunStatus }> {
   const { data, error } = await supabaseAdmin()
     .from("agent_runs")
@@ -47,6 +68,8 @@ export async function createRun(input: {
       ...(input.routineId ? { routine_id: input.routineId } : {}),
       ...(input.scheduledFor ? { scheduled_for: input.scheduledFor } : {}),
       ...(input.groupId ? { group_id: input.groupId } : {}),
+      ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+      ...(input.threadContext ? { thread_context: input.threadContext } : {}),
       group_context: input.groupContext ?? {},
       group_depth: input.groupDepth ?? 0,
     })
@@ -54,28 +77,89 @@ export async function createRun(input: {
     .single();
 
   if (error || !data) {
-    throw new Error(`Could not create the run: ${error?.message ?? "insert failed"}`);
+    throw new RunCreationError(
+      `Could not create the run: ${error?.message ?? "insert failed"}`,
+      error?.code,
+    );
   }
 
   return { id: data.id as string, status: data.status as RunStatus };
 }
 
-export async function updateRun(
-  runId: string,
-  patch: Partial<{
-    status: RunStatus;
-    result: unknown;
-    error: string | null;
-    model: string | null;
-    tokens_used: number;
-    finished_at: string | null;
-  }>,
-): Promise<void> {
+/**
+ * The run that already owns an idempotency key (if any).
+ *
+ * Used by the start-task route to answer a retried request with the run that
+ * was created the first time.
+ */
+export async function findRunByIdempotencyKey(
+  userId: string,
+  idempotencyKey: string,
+): Promise<{
+  id: string;
+  status: RunStatus;
+  thread_id: string | null;
+  agent_id: string | null;
+  group_id: string | null;
+} | null> {
+  const { data } = await supabaseAdmin()
+    .from("agent_runs")
+    .select("id, status, thread_id, agent_id, group_id")
+    .eq("user_id", userId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  return (
+    (data as {
+      id: string;
+      status: RunStatus;
+      thread_id: string | null;
+      agent_id: string | null;
+      group_id: string | null;
+    } | null) ?? null
+  );
+}
+
+/** The mutable columns of a run row. */
+export type RunPatch = Partial<{
+  status: RunStatus;
+  result: unknown;
+  error: string | null;
+  model: string | null;
+  tokens_used: number;
+  finished_at: string | null;
+}>;
+
+export async function updateRun(runId: string, patch: RunPatch): Promise<void> {
   try {
     const { error } = await supabaseAdmin().from("agent_runs").update(patch).eq("id", runId);
     if (error) console.warn("[agent/runs] could not update run:", error.message);
   } catch (error) {
     console.warn("[agent/runs] could not update run:", error);
+  }
+}
+
+/**
+ * Updates a run row and fails loudly when the write did not happen.
+ *
+ * The final write of a run stores the answer that the transcript step reads
+ * back. A swallowed error there would leave the run without an answer, and the
+ * transcript step would then write nothing at all — a silent loss. This
+ * variant throws so the run step fails and is retried.
+ */
+export async function updateRunStrict(runId: string, patch: RunPatch): Promise<void> {
+  const { data, error } = await supabaseAdmin()
+    .from("agent_runs")
+    .update(patch)
+    .eq("id", runId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Could not update run ${runId}: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error(`Could not update run ${runId}: no row matched.`);
   }
 }
 

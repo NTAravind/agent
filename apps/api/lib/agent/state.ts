@@ -23,6 +23,15 @@ export const AgentState = Annotation.Root({
   runId: Annotation<string>,
   goal: Annotation<string>,
 
+  /**
+   * Earlier turns of the conversation this run continues, already rendered as
+   * a compact prompt block. Empty for a first turn.
+   */
+  threadContext: Annotation<string>({
+    reducer: (_prev, next) => next ?? _prev ?? "",
+    default: () => "",
+  }),
+
   /** The research steps produced by the plan node. */
   planSteps: Annotation<string[]>({
     reducer: (_prev, next) => next ?? _prev,

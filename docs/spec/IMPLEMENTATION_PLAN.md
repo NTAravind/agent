@@ -243,6 +243,7 @@ canvases via the API and they appear in the Canvas tab.
 
 ## Phase 12: Extras (as wanted)
 Website monitors → image generation (verify free) → voice (device APIs) → code sandbox → X data (paid).
+- [x] Agent run outcome alerts through Expo push for top-level task completion/failure, including approval/resume flows; nested runs suppressed and routine-specific alerts retained.
 
 ## Phase 13: Universal visual output — dashboards and chat canvases
 

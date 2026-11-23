@@ -32,15 +32,17 @@
 5. On finish: persist the UUID-backed assistant message; emit `chat/completed` to Inngest for memory extraction. An approval continuation updates the same assistant message rather than duplicating the turn.
 
 ### 3.2 Long/background task
-1. Chat or button creates `agent_runs` row (`queued`) and sends `agent/run.requested`.
+1. Chat or button creates `agent_runs` row (`queued`) and sends `agent/run.requested`. A client-supplied `idempotency-key` (UUID) makes the start retry-safe: the key is unique per user, and a repeated request is answered with the run that already owns it instead of starting a second task.
 2. Inngest function executes graph node-by-node in `step.run`s; each node writes `run_events`.
 3. App polls or subscribes (Supabase Realtime, verify) to `run_events` for a live timeline.
-4. Completion posts a result message and optionally a canvas.
+4. The answer is written to the run row first (a strict write), then a separate idempotent step publishes it into the conversation (message id = run id). A failed publish is retried instead of silently dropped, and it never re-runs the agent.
+5. A task started on an existing thread continues that conversation: the server snapshots the earlier turns (bounded) into `agent_runs.thread_context` and the graph renders them into the plan and act prompts.
 
 ### 3.3 Human approval
 1. Durable runs use the graph gate: a tool flagged `requires_approval` (or a graph `interrupt()`) moves the run to `awaiting_approval` and creates an `approvals` row.
 2. User taps Approve/Deny → `POST /api/approvals/:id` → Inngest event `approval/decided`; the function resumes the graph with `Command({ resume })`. The deny path lets the agent re-plan, and approvals expire after a timeout (default 24 h).
 3. Ordinary chat uses the AI SDK's inline approval flow instead. The server signs the approval request with the server-only `TOOL_APPROVAL_SECRET`; the client returns only its decision, while the server verifies the signature and approved input before executing the MCP call.
+4. The signature alone does not say *where* an approval may be used, so every issued approval also gets a server-side grant (`chat_approval_grants`): user, thread, agent, MCP connection, tool, input digest, expiry. The tool's `execute` callback consumes the grant atomically before the MCP call, so an approval is one execution — never replayed, never moved to another conversation, and never valid after expiry or after the connection changed. A denial closes the grant.
 
 ### 3.4 Memory
 - Short-term: thread messages + checkpointer state.
@@ -111,10 +113,13 @@ Phase 13.2 adds global agent tools. The runtime derives user/run/agent identity 
 
 Agents use canvases for one-off reports and visual answers. They use dashboards for explicitly requested persistent views and ongoing monitoring, and should update an existing dashboard when appropriate instead of creating duplicates. Data must come from configured sources or supplied evidence; agents label sample values and return the dashboard ID and destination after creation. Chat-inline canvas presentation is a separate Phase 13.3 slice.
 
+### 3.15 Agent run notifications
+Top-level, non-routine runs send an Expo push when they succeed or fail, including runs completed through approval or resume. The notification opens the run timeline. Routine runs keep their existing routine-specific push; nested supervisor/member runs do not notify separately. Push delivery is best-effort and never changes the run outcome.
+
 ## 4. Security model
 - One app account; Supabase Auth accepts email/password and a database trigger rejects additional users. Every API route verifies the Supabase JWT; RLS and explicit `user_id` filters scope data.
 - Secrets only in Vercel env; MCP credentials encrypted at rest; decrypted only server-side at run time.
-- **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list. Ordinary-chat MCP approval requests are HMAC-signed server-side; the decision may authorize only the exact signed tool call and input.
+- **Prompt injection:** treat all web content, files, and MCP tool descriptions/results as untrusted. Sensitive tools (send, delete, pay, write notes, push to repo) require approval by default. Never let tool output change the tool allow-list. Ordinary-chat MCP approval requests are HMAC-signed server-side; the decision may authorize only the exact signed tool call and input, and a server-side grant makes that authorization single-use and bound to the user, thread, agent and MCP connection it was issued for.
 - Canvas actions are a fixed enum; no eval, no model-supplied code. WebView HTML is sandboxed (no network, no native bridge).
 - Dashboard widget configs and source mappings are Zod-validated and bounded; no generated JavaScript or expressions run. Agent dashboard tools derive owner/agent/run IDs from trusted server context; widget removal uses approval. Refresh queries only configured sources and preserves old values for failed widgets.
 - Context derived from your notes/memories is sent only to models marked `private_ok`. Treat free tiers of any provider as possibly logged/trained on unless its terms say otherwise (verify). The same rule applies to group handoffs and consults: a non-private target receives neither private context nor note/memory retrieval tools, and a private-capable member may not hand that work to a non-private member at all.
