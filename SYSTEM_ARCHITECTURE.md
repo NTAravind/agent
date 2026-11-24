@@ -616,7 +616,7 @@ user_mcp_connections:
 **OAuth flow:**
 1. `POST /api/mcp/connections` → returns `{ authorizationUrl, connectionId }` (PKCE + DCR)
 2. User completes in browser → `/api/mcp/oauth/callback` (direct) or `/api/mcp/composio/callback` (Composio)
-3. Callback: exchanges code, encrypts tokens, discovers tools, redirects to `agentapp://mcp/:serverId?status=connected`
+3. Callback: exchanges code, encrypts tokens, discovers tools, redirects to `pacbot://mcp/:serverId?status=connected`
 
 **API Key flow:** Direct insert with encrypted key.
 

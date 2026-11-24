@@ -8,9 +8,10 @@ import { supabase } from '@/lib/supabase';
  *
  * Native (Expo Go / dev build): `exp://<host>:8081/--/auth/callback`, where
  * <host> is the machine running `expo start` (127.0.0.1 on a simulator, your
- * LAN IP on a real device). Supabase must have the exact string in its
- * redirect allow-list, otherwise it falls back to the Site URL and the phone
- * cannot reach it.
+ * LAN IP on a real device). In a production native build the same route uses
+ * the configured app scheme: `pacbot://auth/callback`. Supabase must have the
+ * exact string in its redirect allow-list, otherwise it falls back to the Site
+ * URL and the phone cannot reach it.
  *
  * Web: the browser cannot open `exp://` URLs, so the current origin is used.
  *

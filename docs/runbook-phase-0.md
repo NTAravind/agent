@@ -12,7 +12,7 @@ Everything in this document is a one-time manual setup. The code for it is alrea
    - `anon` public key → `SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server only!)
 3. **Project settings → Auth → URL Configuration → Redirect URLs** — add:
-   - `agentapp://auth/callback` (the Expo app email-confirmation deep link)
+   - `pacbot://auth/callback` (the Expo app email-confirmation deep link)
    - `http://localhost:3000/**` for local web experiments
 4. Keep the project awake: the workflow in `.github/workflows/keepalive.yml` pings it every 3 days.
    Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as repository secrets.
@@ -110,7 +110,7 @@ npm run dev:mobile
 ```
 
 The app stores only the Supabase session in `expo-secure-store`. Email confirmation may use the
-`agentapp://auth/callback` deep link in a development build.
+`pacbot://auth/callback` deep link in a development build.
 
 ## 8. Acceptance check (Phase 0 "done when")
 

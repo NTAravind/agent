@@ -18,7 +18,7 @@ import type { ConnectionRow } from "@/lib/mcp/connections";
  *
  * It runs the same `verifyComposio()` as POST /connections/:id/verify and
  * then deep-links back into the app with the outcome
- * (`agentapp://mcp/<serverId>?status=…`), mirroring the OAuth callback.
+ * (`pacbot://mcp/<serverId>?status=…`), mirroring the OAuth callback.
  */
 
 function htmlRedirect(target: string, error?: string): Response {
@@ -28,7 +28,7 @@ function htmlRedirect(target: string, error?: string): Response {
   const safeTarget = target.replace(/"/g, "&quot;");
   const safeMessage = message.replace(/</g, "&lt;");
   return new Response(
-    `<!doctype html><html><head><meta charset="utf-8"><title>Agent</title></head>
+    `<!doctype html><html><head><meta charset="utf-8"><title>Pacbot</title></head>
 <body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b0b0f;color:#eee">
 <div style="text-align:center;max-width:28rem;padding:1.5rem">
 <p style="font-size:1.05rem">${safeMessage}</p>
@@ -46,7 +46,7 @@ function htmlRedirect(target: string, error?: string): Response {
 /** Deep link to this listing's detail screen (serverId only as a path segment). */
 function appTarget(query: string, serverId?: string): string {
   const path = serverId && /^[A-Za-z0-9-]{1,64}$/.test(serverId) ? `mcp/${serverId}` : "mcp";
-  return `agentapp://${path}${query ? `?${query}` : ""}`;
+  return `pacbot://${path}${query ? `?${query}` : ""}`;
 }
 
 export async function GET(request: Request) {

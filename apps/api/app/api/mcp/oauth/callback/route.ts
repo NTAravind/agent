@@ -11,7 +11,7 @@ import type { ConnectionRow } from "@/lib/mcp/connections";
  * The browser lands here with ?code&state&iss. The code is exchanged
  * SERVER-SIDE (it never reaches the phone), tokens are persisted encrypted,
  * tools are discovered, then the user is deep-linked back into the app
- * (`agentapp://mcp?...`). The `state` parameter encodes the connection id and
+ * (`pacbot://mcp?...`). The `state` parameter encodes the connection id and
  * is verified by `auth()` against the stored state (CSRF/PKCE).
  *
  * This route must stay public (no Bearer header exists in a browser
@@ -25,7 +25,7 @@ function htmlRedirect(target: string, error?: string): Response {
   const safeTarget = target.replace(/"/g, "&quot;");
   const safeMessage = message.replace(/</g, "&lt;");
   return new Response(
-    `<!doctype html><html><head><meta charset="utf-8"><title>Agent</title></head>
+    `<!doctype html><html><head><meta charset="utf-8"><title>Pacbot</title></head>
 <body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b0b0f;color:#eee">
 <div style="text-align:center;max-width:28rem;padding:1.5rem">
 <p style="font-size:1.05rem">${safeMessage}</p>
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   const appTarget = (query: string, serverId?: string): string => {
     const path =
       serverId && /^[A-Za-z0-9-]{1,64}$/.test(serverId) ? `mcp/${serverId}` : "mcp";
-    return `agentapp://${path}${query ? `?${query}` : ""}`;
+    return `pacbot://${path}${query ? `?${query}` : ""}`;
   };
 
   if (errorParam) {

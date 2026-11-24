@@ -191,8 +191,8 @@ stream.
 | DELETE | `/api/mcp/servers/:id` | Admin delete (cascades to tools/connections) |
 | POST | `/api/mcp/connections` | `{ serverId | toolkit, apiKey? }` or returns `{ authorizationUrl, connectionId }` when sign-in is required; Composio toolkit connects also return `serverId`. `toolkit` materializes its `composio-<toolkit>` listing on first connect, then connects it |
 | GET | `/api/mcp/composio/catalog` | Composio-as-source tab: browsable toolkit catalog (`?q=&category=`) with this user's connection state merged in; `{ configured:false }` (200) when `COMPOSIO_API_KEY` is unset |
-| GET | `/api/mcp/oauth/callback` | Completes direct MCP OAuth, stores encrypted creds, discovers tools, then redirects to `agentapp://mcp/:serverId?status=connected` (or `status=error`) |
-| GET | `/api/mcp/composio/callback` | Verifies Composio hosted sign-in and redirects to `agentapp://mcp/:serverId?status=connected`, `pending`, or `error`; the app polls `/verify` while pending |
+| GET | `/api/mcp/oauth/callback` | Completes direct MCP OAuth, stores encrypted creds, discovers tools, then redirects to `pacbot://mcp/:serverId?status=connected` (or `status=error`) |
+| GET | `/api/mcp/composio/callback` | Verifies Composio hosted sign-in and redirects to `pacbot://mcp/:serverId?status=connected`, `pending`, or `error`; the app polls `/verify` while pending |
 | POST | `/api/mcp/connections/:id/verify` | Returns authoritative connection status; `{ issueLink:false }` is used for side-effect-free verification polling |
 | DELETE | `/api/mcp/connections/:id` | Disconnect |
 | GET | `/api/mcp/connections/:id/tools` | Live tool list |

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
-import { AgentAvatar } from '@/components/agent-avatar';
+import { Image } from 'expo-image';
 import { PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
@@ -128,7 +128,12 @@ export default function SignInScreen() {
       >
         {/* Brand Mark */}
         <View style={styles.brandContainer}>
-          <AgentAvatar size={56} name="Agent" forcedShape="pill" forcedColor={colors.mark.black} />
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.brandIcon}
+            contentFit="cover"
+            accessibilityLabel="Pacbot logo"
+          />
           <Text style={styles.brandTitle}>
             {mode === 'sign-in' ? 'Welcome back' : 'Create your account'}
           </Text>
@@ -270,6 +275,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: space.sm,
     paddingBottom: space.xs,
+  },
+  brandIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   brandTitle: {
     fontSize: 24,
