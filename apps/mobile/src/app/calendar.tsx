@@ -17,6 +17,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Plus, Trash2, X } from
 import type { CalendarEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
@@ -199,7 +200,7 @@ export default function CalendarScreen() {
       setEditorOpen(false);
       await load();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      reportAppError(error, { title: editing ? 'Could not update event' : 'Could not create event' });
     } finally {
       setSaving(false);
     }
@@ -218,9 +219,7 @@ export default function CalendarScreen() {
                 setEditorOpen(false);
                 return load();
               })
-              .catch((error) =>
-                setNotice(error instanceof Error ? error.message : String(error)),
-              );
+              .catch((error) => reportAppError(error, { title: 'Could not delete event' }));
           },
         },
       ]);

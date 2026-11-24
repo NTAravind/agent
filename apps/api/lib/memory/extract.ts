@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { DEFAULT_FALLBACK_ORDER, DEFAULT_MODEL_ID, FAST_MODEL_ID } from "@/lib/models";
@@ -83,15 +83,15 @@ export async function extractMemories(
   const { result } = await withFallback(
     [FAST_MODEL_ID, DEFAULT_MODEL_ID, ...DEFAULT_FALLBACK_ORDER],
     (model) =>
-      generateObject({
+      generateText({
         model,
-        schema: ExtractionSchema,
+        output: Output.object({ schema: ExtractionSchema }),
         prompt: `${EXTRACTION_PROMPT}\n\nConversation:\n${transcript}`,
       }),
     { userId },
   );
 
-  const extracted = result.object.memories
+  const extracted = result.output.memories
     .map((memory) => ({ ...memory, content: memory.content.trim() }))
     .filter((memory) => memory.content.length >= 3)
     .slice(0, 12);

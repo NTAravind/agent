@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import * as Crypto from 'expo-crypto';
 import type { AgentSummary } from '@agent/shared';
-import { Alert, Button, Spinner } from 'heroui-native';
+import { Spinner } from 'heroui-native';
 import { lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
 import {
   Alert as RNAlert,
@@ -37,6 +37,7 @@ import { MessageBubble } from '@/components/message-bubble';
 import { RoutineListSheet } from '@/components/routine-sheet';
 import { ModelPicker } from '@/components/model-picker';
 import { RunTaskBubble } from '@/components/run-task-bubble';
+import { useErrorDialog } from '@/components/error-dialog-provider';
 import { colors, radius, shadow } from '@/theme';
 import {
   pickAndUploadDocument,
@@ -153,6 +154,7 @@ export default function ChatScreen() {
 
 function ChatSession({ params }: { params: ChatRouteParams }) {
   const router = useRouter();
+  const { showError } = useErrorDialog();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
 
@@ -178,8 +180,6 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   const [agentRuns, setAgentRuns] = useState<RunListItem[]>([]);
   /** Task runs launched from this free-chat conversation. */
   const [taskRunIds, setTaskRunIds] = useState<string[]>([]);
-  /** Task Mode launch errors are separate from the streaming chat error. */
-  const [taskError, setTaskError] = useState<string | null>(null);
   /** Live event detail for the primary active run (drives the step line). */
   const [activeRunDetail, setActiveRunDetail] = useState<RunDetail | null>(null);
   /** Set once the user types/sends — blocks thread resumption from clobbering. */
@@ -201,6 +201,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
    * run it already created instead of starting a second one.
    */
   const taskSubmissionRef = useRef<{ text: string; key: string } | null>(null);
+  const reportedRunFailuresRef = useRef<Set<string>>(new Set());
   const scrollRef = useRef<ScrollViewInstance>(null);
   const atBottomRef = useRef(true);
 
@@ -482,7 +483,6 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
       // Attachments are handed to ordinary chat below. Task Mode never sends
       // them to the durable endpoint, so both paths clear them consistently.
       setAttachments([]);
-      setTaskError(null);
 
       if (taskModeActive) {
         // The durable endpoint returns a run, not a streamed UI message. Add
@@ -542,7 +542,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           await refreshAgentRuns();
           if (LIVE.has(response.status)) setActiveRunId(response.runId);
         } catch (err) {
-          setTaskError(err instanceof Error ? err.message : String(err));
+          showError(err, { title: 'Task could not start' });
         }
         return;
       }
@@ -567,6 +567,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
       refreshAgentRuns,
       sendMessage,
       setMessages,
+      showError,
       taskModeActive,
       threadId,
     ],
@@ -702,6 +703,15 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
       ? activeRunDetail
       : null;
 
+  useEffect(() => {
+    const failedRun = liveRunDetail?.run;
+    if (!failedRun || failedRun.status !== 'failed' || reportedRunFailuresRef.current.has(failedRun.id)) return;
+    reportedRunFailuresRef.current.add(failedRun.id);
+    showError(failedRun.error || new Error('The task did not finish successfully.'), {
+      title: 'Task could not finish',
+    });
+  }, [liveRunDetail, showError]);
+
   // Active task running for this agent or in this conversation
   const activeTaskRun = useMemo(() => {
     return (
@@ -714,13 +724,19 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
 
   const isTaskActive = isStreaming || Boolean(activeTaskRun || primaryActiveRunId);
 
+  useEffect(() => {
+    if (error) {
+      showError(error, { title: 'Message could not send', retry: () => regenerate() });
+    }
+  }, [error, regenerate, showError]);
+
   const handlePauseTask = useCallback(async () => {
     // 1. Stop streaming if chat response is in flight
     if (isStreaming) {
       try {
         stop();
       } catch (err) {
-        console.warn('Error stopping chat stream:', err);
+        showError(err, { title: 'Could not stop request' });
       }
     }
 
@@ -742,10 +758,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           )?.id ?? null,
         );
       } catch (err) {
-        console.warn('Error pausing agent run:', err);
+        showError(err, { title: 'Could not pause task' });
       }
     }
-  }, [isStreaming, stop, activeTaskRun, primaryActiveRunId, activeRunId, contextAgentId]);
+  }, [isStreaming, stop, activeTaskRun, primaryActiveRunId, activeRunId, contextAgentId, showError]);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -930,7 +946,6 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 setMessages([]);
                 setAttachments([]);
                 setInput('');
-                setTaskError(null);
                 setTaskRunIds([]);
                 setAgentRuns([]);
                 setThreadAgent(null);
@@ -1125,28 +1140,6 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             />
           ))}
 
-          {taskError ? (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Title>Task could not start</Alert.Title>
-                <Alert.Description>{taskError}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          ) : null}
-
-          {error ? (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Title>Request failed</Alert.Title>
-                <Alert.Description>{error.message}</Alert.Description>
-                <View style={{ marginTop: 8 }}>
-                  <Button size="sm" variant="secondary" onPress={() => void regenerate()}>
-                    <Button.Label>Retry</Button.Label>
-                  </Button>
-                </View>
-              </Alert.Content>
-            </Alert>
-          ) : null}
         </ScrollView>
       )}
 
@@ -1161,12 +1154,20 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           onChangeText={setInput}
           onSend={() => void handleSend()}
           onAttachImage={async () => {
-            const picked = await pickAndUploadImages();
-            setAttachments((current) => [...current, ...picked]);
+            try {
+              const picked = await pickAndUploadImages();
+              setAttachments((current) => [...current, ...picked]);
+            } catch (err) {
+              showError(err, { title: 'Could not attach images' });
+            }
           }}
           onAttachDocument={async () => {
-            const picked = await pickAndUploadDocument();
-            setAttachments((current) => [...current, ...picked]);
+            try {
+              const picked = await pickAndUploadDocument();
+              setAttachments((current) => [...current, ...picked]);
+            } catch (err) {
+              showError(err, { title: 'Could not attach document' });
+            }
           }}
           attachments={attachments}
           onRemoveAttachment={(documentId) =>

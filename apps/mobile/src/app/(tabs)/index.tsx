@@ -15,6 +15,7 @@ import { CalendarDays, Check, Clock, ListTodo, MapPin, Plus } from 'lucide-react
 import type { CalendarEvent, Task, TaskList } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
 import { colors, radius, shadow, space } from '@/theme';
@@ -119,7 +120,7 @@ export default function TodayScreen() {
       try {
         await updateTask(task.id, { status: nextStatus });
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not update task' });
         void load();
       }
     },
@@ -132,7 +133,7 @@ export default function TodayScreen() {
         await updateTask(task.id, { status: 'open' });
         setTasks((current) => current.filter((item) => item.id !== task.id));
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not accept task' });
       }
     },
     [],
@@ -144,7 +145,7 @@ export default function TodayScreen() {
         await deleteTask(task.id);
         setTasks((current) => current.filter((item) => item.id !== task.id));
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not dismiss task' });
       }
     },
     [],
@@ -171,7 +172,7 @@ export default function TodayScreen() {
       setTasks((current) => [task, ...current]);
       setDraft('');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      reportAppError(error, { title: 'Could not add task' });
     } finally {
       setSaving(false);
     }

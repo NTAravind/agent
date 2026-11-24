@@ -29,6 +29,7 @@ import {
 } from 'react-native-enriched-markdown';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { RoundButton } from '@/components/design-system';
 import { EditorToolbar } from '@/components/notes/editor-toolbar';
 import { TagChip } from '@/components/notes/tag-chip';
@@ -246,7 +247,7 @@ export default function NoteScreen() {
             await deleteNote(path);
             handleBack();
           } catch (err) {
-            Alert.alert('Error', err instanceof Error ? err.message : String(err));
+            reportAppError(err, { title: 'Could not delete note' });
           }
         },
       },

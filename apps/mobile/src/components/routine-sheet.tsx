@@ -20,6 +20,7 @@ import {
   RoundButton,
   SectionLabel,
 } from '@/components/design-system';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, space } from '@/theme';
 import { formatDateTime } from '@/lib/dates';
 import {
@@ -221,7 +222,7 @@ export function RoutineDetailSheet({ routine, onClose, onChanged, onRunNow }: De
         await action();
         onChanged?.();
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not update routine' });
       } finally {
         setBusy(false);
       }

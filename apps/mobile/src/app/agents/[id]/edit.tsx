@@ -18,6 +18,7 @@ import { BookMarked, Check, ChevronLeft, ChevronRight, Blocks, Trash2, Upload, W
 
 import { AppHeader } from '@/components/app-header';
 import { AgentToolsSheet } from '@/components/agent-tools-sheet';
+import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
@@ -187,7 +188,7 @@ export default function AgentEditorScreen() {
         await setAgentSkills(id, [...updated]);
       } catch (err) {
         setAssignedSkillIds(previous);
-        RNAlert.alert('Could not update skills', err instanceof Error ? err.message : String(err));
+        reportAppError(err, { title: 'Could not update skills' });
       }
     },
     [assignedSkillIds, id, isNew],
@@ -209,7 +210,7 @@ export default function AgentEditorScreen() {
       });
       setAvatar(saved.avatar);
     } catch (err) {
-      RNAlert.alert('Could not upload avatar', err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not upload avatar' });
     } finally {
       setUploadingAvatar(false);
     }
@@ -236,7 +237,7 @@ export default function AgentEditorScreen() {
       else await updateAgent(id, payload);
       router.back();
     } catch (err) {
-      RNAlert.alert('Could not save', err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not save agent' });
     } finally {
       setSaving(false);
     }
@@ -257,7 +258,7 @@ export default function AgentEditorScreen() {
                 await deleteAgent(id);
                 router.back();
               } catch (err) {
-                RNAlert.alert('Could not delete', err instanceof Error ? err.message : String(err));
+                reportAppError(err, { title: 'Could not delete agent' });
               }
             })();
           },

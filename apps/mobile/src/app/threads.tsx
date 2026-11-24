@@ -7,6 +7,7 @@ import { ChevronLeft, MessageSquare, Plus, Search, Trash2, Users, X } from 'luci
 import type { Thread } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
@@ -104,7 +105,9 @@ export default function ThreadsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            void deleteThread(thread.id).then(() => load());
+            void deleteThread(thread.id)
+              .then(() => load())
+              .catch((err) => reportAppError(err, { title: 'Could not delete conversation' }));
           },
         },
       ],

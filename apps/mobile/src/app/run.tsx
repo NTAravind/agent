@@ -7,6 +7,7 @@ import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Wrench, 
 import { DEFAULT_AGENT_AVATAR, type Approval, type RunEvent } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { useErrorDialog } from '@/components/error-dialog-provider';
 import { AgentAvatar } from '@/components/agent-avatar';
 import {
   GroupedCard,
@@ -51,6 +52,7 @@ const NODE_LABEL: Record<string, string> = {
 
 export default function RunScreen() {
   const router = useRouter();
+  const { showError } = useErrorDialog();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -58,6 +60,7 @@ export default function RunScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reportedFailureRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -98,6 +101,13 @@ export default function RunScreen() {
   }, [status, load]);
 
   const run = detail?.run;
+  useEffect(() => {
+    if (!run || run.status !== 'failed' || reportedFailureRef.current === run.id) return;
+    reportedFailureRef.current = run.id;
+    showError(run.error || new Error('The task did not finish successfully.'), {
+      title: 'Task could not finish',
+    });
+  }, [run, showError]);
   const isGroupRun = Boolean(run?.group_id);
   const events = detail?.events ?? [];
   const children = detail?.children ?? [];
@@ -113,10 +123,10 @@ export default function RunScreen() {
         await decideApproval(approval.id, decision);
         await load();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        showError(err, { title: 'Could not update approval' });
       }
     },
-    [load],
+    [load, showError],
   );
 
   /** Pause/resume this run via the real endpoints (see lib/agents). */
@@ -129,9 +139,9 @@ export default function RunScreen() {
       setError(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      showError(err, { title: resuming ? 'Could not resume task' : 'Could not pause task' });
     }
-  }, [run, load]);
+  }, [run, load, showError]);
 
   /** Cancels this run (and a supervisor's unfinished children). */
   const handleCancel = useCallback(() => {
@@ -151,14 +161,14 @@ export default function RunScreen() {
                 setError(null);
                 await load();
               } catch (err) {
-                setError(err instanceof Error ? err.message : String(err));
+                showError(err, { title: 'Could not cancel task' });
               }
             })();
           },
         },
       ],
     );
-  }, [run, load]);
+  }, [run, load, showError]);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {

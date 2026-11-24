@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider, useSession } from '@/lib/session';
 import { registerForPushNotifications } from '@/lib/push';
+import { ErrorDialogProvider } from '@/components/error-dialog-provider';
 
 // Lets expo-web-browser close the auth popup / custom tab once the OAuth
 // redirect lands (required by Expo's authentication guide).
@@ -85,10 +86,12 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
         <SafeAreaProvider>
-          <SessionProvider>
-            <StatusBar style="auto" />
-            <Shell />
-          </SessionProvider>
+          <ErrorDialogProvider>
+            <SessionProvider>
+              <StatusBar style="auto" />
+              <Shell />
+            </SessionProvider>
+          </ErrorDialogProvider>
         </SafeAreaProvider>
       </HeroUINativeProvider>
     </GestureHandlerRootView>

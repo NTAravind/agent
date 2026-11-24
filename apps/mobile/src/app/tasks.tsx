@@ -17,6 +17,7 @@ import { ChevronLeft, FolderPlus, ListTodo, Plus, Trash2, X } from 'lucide-react
 import type { Task, TaskList } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { GroupedCard, HairlineDivider, PillButton, RoundButton } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
 import { colors, radius, shadow, space } from '@/theme';
@@ -92,7 +93,7 @@ export default function TasksScreen() {
       try {
         await updateTask(task.id, { status: nextStatus });
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not update task' });
         setTasks((current) =>
           current.map((item) => (item.id === task.id ? { ...item, status: task.status } : item)),
         );
@@ -121,7 +122,7 @@ export default function TasksScreen() {
       setDraftParentId(null);
       setComposerOpen(false);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      reportAppError(error, { title: 'Could not add task' });
     } finally {
       setSaving(false);
     }
@@ -138,7 +139,7 @@ export default function TasksScreen() {
             void deleteTask(task.id)
               .then(() => setTasks((current) => current.filter((item) => item.id !== task.id)))
               .catch((error) =>
-                setNotice(error instanceof Error ? error.message : String(error)),
+                reportAppError(error, { title: 'Could not delete task' }),
               );
           },
         },
@@ -163,7 +164,7 @@ export default function TasksScreen() {
       setListModalOpen(false);
       setDraftListName('');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      reportAppError(error, { title: 'Could not create list' });
     } finally {
       setSaving(false);
     }

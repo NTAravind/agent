@@ -17,6 +17,7 @@ import { ChevronLeft, Trash2 } from 'lucide-react-native';
 import type { Skill } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
@@ -116,7 +117,7 @@ export default function SkillEditorScreen() {
       }
       router.back();
     } catch (err) {
-      RNAlert.alert('Could not save', err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not save skill' });
     } finally {
       setSaving(false);
     }
@@ -135,7 +136,7 @@ export default function SkillEditorScreen() {
             void deleteSkill(id)
               .then(() => router.back())
               .catch((err: unknown) =>
-                RNAlert.alert('Could not delete', err instanceof Error ? err.message : String(err)),
+                reportAppError(err, { title: 'Could not delete skill' }),
               );
           },
         },

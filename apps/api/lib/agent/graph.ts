@@ -6,7 +6,7 @@ import {
   StateGraph,
   interrupt,
 } from "@langchain/langgraph";
-import { generateObject, isStepCount, tool, type Tool } from "ai";
+import { generateText, isStepCount, Output, tool, type Tool } from "ai";
 import { z, type ZodType } from "zod";
 
 import { appendPerfRunEvent, appendRunEvent, failRun, updateRun, updateRunStrict } from "@/lib/agent/runs";
@@ -177,9 +177,9 @@ export async function generateObjectWithFallback<SCHEMA extends ZodType>(options
   const { result } = await withFallback(
     options.modelIds,
     (model) =>
-      generateObject({
+      generateText({
         model,
-        schema: options.schema,
+        output: Output.object<z.output<SCHEMA>>({ schema: options.schema }),
         prompt: options.prompt,
         ...(options.system ? { system: options.system } : {}),
         maxRetries: 1,
@@ -328,7 +328,7 @@ function buildGraph(deps: GraphDeps) {
       steps: z.array(z.string().min(3)).max(4).describe("Concrete research steps, in order."),
     });
 
-    const { object } = await generateObjectWithFallback({
+    const { output } = await generateObjectWithFallback({
       schema,
       modelIds: planningModelIds,
       userId,
@@ -344,7 +344,7 @@ function buildGraph(deps: GraphDeps) {
       ].join("\n"),
     });
 
-    const planSteps = object.steps;
+    const planSteps = output.steps;
     await nodeEvent("plan", "node_end", { plan: planSteps });
     return { planSteps, stepIndex: 0 };
   };
@@ -680,7 +680,7 @@ function buildGraph(deps: GraphDeps) {
       note: z.string().max(300).describe("One line: what to do next, or why we are done."),
     });
 
-    const { object } = await generateObjectWithFallback({
+    const { output } = await generateObjectWithFallback({
       schema,
       modelIds: planningModelIds,
       userId,
@@ -701,19 +701,19 @@ function buildGraph(deps: GraphDeps) {
         .join("\n"),
     });
 
-    await nodeEvent("observe", "node_end", { action: object.action, note: object.note });
+    await nodeEvent("observe", "node_end", { action: output.action, note: output.note });
 
     const nextStepIndex =
-      object.action === "continue" && !state.failed ? state.stepIndex + 1 : state.stepIndex;
+      output.action === "continue" && !state.failed ? state.stepIndex + 1 : state.stepIndex;
 
-    if (object.action === "finish" || state.iterations >= MAX_AGENT_STEPS) {
+    if (output.action === "finish" || state.iterations >= MAX_AGENT_STEPS) {
       return { nextAction: "finish", done: true, stepIndex: nextStepIndex };
     }
-    if (object.action === "revise" && !state.failed) {
+    if (output.action === "revise" && !state.failed) {
       // A revise on a successful step means the plan itself needs adjusting.
-      return { nextAction: "continue", stepIndex: nextStepIndex, revisionNote: object.note };
+      return { nextAction: "continue", stepIndex: nextStepIndex, revisionNote: output.note };
     }
-    return { nextAction: object.action, stepIndex: nextStepIndex, revisionNote: state.revisionNote };
+    return { nextAction: output.action, stepIndex: nextStepIndex, revisionNote: state.revisionNote };
   };
 
   const selfCorrectNode = async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
@@ -723,7 +723,7 @@ function buildGraph(deps: GraphDeps) {
       approach: z.string().min(3).max(400).describe("How to retry the failed step differently."),
     });
 
-    const { object } = await generateObjectWithFallback({
+    const { output } = await generateObjectWithFallback({
       schema,
       modelIds: planningModelIds,
       userId,
@@ -738,8 +738,8 @@ function buildGraph(deps: GraphDeps) {
       ].join("\n"),
     });
 
-    await nodeEvent("self_correct", "node_end", { approach: object.approach });
-    return { failed: false, revisionNote: `Retry differently: ${object.approach}` };
+    await nodeEvent("self_correct", "node_end", { approach: output.approach });
+    return { failed: false, revisionNote: `Retry differently: ${output.approach}` };
   };
 
   const finalizeNode = async (state: AgentStateType): Promise<Partial<AgentStateType>> => {

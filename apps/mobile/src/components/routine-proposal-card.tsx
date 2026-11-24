@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarClock, Check, Pencil } from 'lucide-react-native';
 
 import { PillButton } from '@/components/design-system';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { formatDateTime } from '@/lib/dates';
 import { activateRoutine } from '@/lib/routines';
 import { colors, radius, space, typography } from '@/theme';
@@ -28,20 +29,18 @@ type Props = {
 };
 
 export function RoutineProposalCard({ proposal, onEdit }: Props) {
-  const [state, setState] = useState<'pending' | 'confirming' | 'confirmed' | 'error'>(
+  const [state, setState] = useState<'pending' | 'confirming' | 'confirmed'>(
     'pending',
   );
-  const [error, setError] = useState<string | null>(null);
 
   const confirm = async () => {
     setState('confirming');
-    setError(null);
     try {
       await activateRoutine(proposal.routineId);
       setState('confirmed');
     } catch (err) {
-      setState('error');
-      setError(err instanceof Error ? err.message : String(err));
+      setState('pending');
+      reportAppError(err, { title: 'Could not activate routine', retry: confirm });
     }
   };
 
@@ -85,11 +84,6 @@ export function RoutineProposalCard({ proposal, onEdit }: Props) {
         </View>
       ) : null}
 
-      {error ? (
-        <Text style={styles.errorText}>
-          {error}
-        </Text>
-      ) : null}
 
       {!confirmed ? (
         <View style={styles.actions}>

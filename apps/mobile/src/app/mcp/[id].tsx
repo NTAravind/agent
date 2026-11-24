@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Spinner, Switch } from 'heroui-native';
 import {
-  Alert as RNAlert,
   Linking,
   Pressable,
   RefreshControl,
@@ -33,6 +32,7 @@ import {
 import { AppHeader } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { GroupedCard, HairlineDivider, PillButton, RoundButton, SectionLabel } from '@/components/design-system';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, shadow, space } from '@/theme';
 import { fetchAgents, type Agent } from '@/lib/agents';
 import {
@@ -190,7 +190,7 @@ export default function IntegrationDetailScreen() {
       const loaded = await fetchServer(serverId).catch(() => null);
       if (cancelled) return;
       if (oauthParams.status === 'error') {
-        setNotice({ kind: 'danger', text: oauthParams.message ?? 'Connection failed.' });
+        reportAppError(new Error(oauthParams.message ?? 'Connection failed.'), { title: 'Could not connect integration' });
         return;
       }
       const cid = loaded?.connection?.id;
@@ -239,7 +239,7 @@ export default function IntegrationDetailScreen() {
       await load();
       setNotice({ kind: 'success', text: 'Connected. Tools discovered below.' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not connect' });
     } finally {
       setBusy(null);
       setOauthPending(false);
@@ -255,7 +255,7 @@ export default function IntegrationDetailScreen() {
       await load();
       setNotice({ kind: 'success', text: 'Tools refreshed.' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not refresh integration' });
     } finally {
       setBusy(null);
     }
@@ -270,7 +270,7 @@ export default function IntegrationDetailScreen() {
       await load();
       setNotice({ kind: 'success', text: 'Disconnected.' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not disconnect integration' });
     } finally {
       setBusy(null);
     }
@@ -285,7 +285,7 @@ export default function IntegrationDetailScreen() {
       await load();
       setNotice({ kind: 'success', text: `Attached to ${selectedAgent?.name ?? 'agent'}.` });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not attach integration' });
     } finally {
       setBusy(null);
     }
@@ -300,7 +300,7 @@ export default function IntegrationDetailScreen() {
       await load();
       setNotice({ kind: 'success', text: `Removed from ${selectedAgent?.name ?? 'agent'}.` });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not remove integration' });
     } finally {
       setBusy(null);
     }
@@ -334,7 +334,7 @@ export default function IntegrationDetailScreen() {
       ]);
     } catch (err) {
       setAttachments(previous);
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not update tool settings' });
     }
   };
 

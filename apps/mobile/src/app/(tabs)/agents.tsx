@@ -18,6 +18,7 @@ import { Plus, Search } from 'lucide-react-native';
 import { AgentListRow } from '@/components/agent-list-row';
 import { AgentSearch } from '@/components/agent-search';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { RoundButton, PillButton } from '@/components/design-system';
 import { colors, radius, shadow, space, typography } from '@/theme';
 import {
@@ -117,10 +118,7 @@ export default function AgentsScreen() {
             else await pauseRun(run.id);
             await load();
           } catch (err) {
-            RNAlert.alert(
-              resuming ? 'Could not resume' : 'Could not pause',
-              err instanceof Error ? err.message : String(err),
-            );
+            reportAppError(err, { title: resuming ? 'Could not resume task' : 'Could not pause task' });
           }
         })();
         return;

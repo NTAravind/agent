@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { Image } from 'expo-image';
 import { PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
@@ -72,18 +73,19 @@ export default function SignInScreen() {
         router.replace('/');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: mode === 'sign-in' ? 'Could not sign in' : 'Could not create account' });
     } finally {
       setBusy(false);
     }
   };
 
-  const handleEmailAuth = () =>
-    run(async () => {
-      const cleanEmail = email.trim();
-      if (!cleanEmail || !password) {
-        throw new Error('Enter an email address and password.');
-      }
+  const handleEmailAuth = () => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setError('Enter an email address and password.');
+      return;
+    }
+    return run(async () => {
       if (mode === 'sign-up') {
         const needsConfirmation = await signUpWithEmail(cleanEmail, password);
         setNotice(
@@ -96,6 +98,7 @@ export default function SignInScreen() {
       }
       await signInWithEmail(cleanEmail, password);
     });
+  };
 
   const bottomPadding = keyboardHeight > 0 ? 16 : insets.bottom + 24;
 

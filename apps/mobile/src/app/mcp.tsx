@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Spinner } from 'heroui-native';
 import {
-  Alert as RNAlert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -27,6 +26,7 @@ import {
 import { AppHeader } from '@/components/app-header';
 import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
 import { IntegrationIcon } from '@/components/integration-icon';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, shadow, space } from '@/theme';
 import {
   connectComposioToolkit,
@@ -178,11 +178,7 @@ export default function MarketplaceScreen() {
         }
       }
     } catch (err) {
-      RNAlert.alert(
-        'Could not connect',
-        err instanceof Error ? err.message : String(err),
-        [{ text: 'OK' }],
-      );
+      reportAppError(err, { title: 'Could not connect' });
       await load();
     } finally {
       setConnecting(null);

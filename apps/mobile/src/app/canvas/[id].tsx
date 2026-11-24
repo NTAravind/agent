@@ -8,6 +8,7 @@ import type { CanvasAction, CanvasRow } from '@agent/shared';
 import { validateCanvasSpec } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { CanvasView } from '@/components/canvas-renderer';
 import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, space } from '@/theme';
@@ -46,7 +47,7 @@ export default function CanvasDetailScreen() {
       setCanvas(await refreshCanvas(id));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not refresh canvas' });
     } finally {
       setRefreshing(false);
     }
@@ -75,7 +76,7 @@ export default function CanvasDetailScreen() {
       await deleteCanvas(id);
       router.replace('/canvas');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not delete canvas' });
       setConfirmingDelete(false);
     }
   }, [id, router]);

@@ -3,14 +3,29 @@ import { fetch as expoFetch } from 'expo/fetch';
 export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export class ApiRequestError extends Error {
+  readonly rawMessage: string;
+
   constructor(
     readonly status: number,
     readonly code: string,
     message: string
   ) {
-    super(message);
+    super(humanizeApiFailure(status, message));
+    this.rawMessage = message;
     this.name = 'ApiRequestError';
   }
+}
+
+function humanizeApiFailure(status: number, message: string): string {
+  if (status === 0) return 'The app could not reach its service. Check the configuration or try again later.';
+  if (status === 401 || status === 403) return 'Your session may have expired. Sign in again, then retry.';
+  if (status === 404) return 'The requested item could not be found. Refresh the screen and try again.';
+  if (status === 408) return 'The service took too long to respond. Please try again.';
+  if (status === 409) return 'That change conflicts with existing data. Refresh the screen and try again.';
+  if (status === 429) return 'The service is handling too many requests. Try again shortly.';
+  if (status === 503) return 'The service needed for this request is temporarily unavailable. Please try again shortly.';
+  if (status >= 500) return 'Something went wrong on the service side. Please try again shortly.';
+  return message;
 }
 
 type ApiFetchOptions = {

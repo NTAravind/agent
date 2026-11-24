@@ -38,6 +38,7 @@ import {
   TextAction,
 } from '@/components/design-system';
 import { RoutineListSheet } from '@/components/routine-sheet';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, shadow, space, typography } from '@/theme';
 import {
   deleteAgent,
@@ -137,8 +138,8 @@ export default function AgentDetailScreen() {
           color,
         },
       });
-    } catch {
-      // Background sync
+    } catch (err) {
+      reportAppError(err, { title: 'Could not update agent avatar' });
     }
   };
 
@@ -156,8 +157,8 @@ export default function AgentDetailScreen() {
           color: defaultCreature.color,
         },
       });
-    } catch {
-      // Ignored
+    } catch (err) {
+      reportAppError(err, { title: 'Could not reset agent avatar' });
     }
   };
 
@@ -170,8 +171,8 @@ export default function AgentDetailScreen() {
       });
       setAgent((prev) => (prev ? { ...prev, instructions: instructionText } : prev));
       setInstructionsModalOpen(false);
-    } catch {
-      RNAlert.alert('Error', 'Failed to save instructions');
+    } catch (err) {
+      reportAppError(err, { title: 'Could not save instructions' });
     } finally {
       setSavingInstructions(false);
     }
@@ -193,7 +194,7 @@ export default function AgentDetailScreen() {
                 await deleteAgent(agent.id);
                 router.replace('/agents' as never);
               } catch (err) {
-                RNAlert.alert('Could not delete', err instanceof Error ? err.message : String(err));
+                reportAppError(err, { title: 'Could not delete agent' });
               }
             })();
           },

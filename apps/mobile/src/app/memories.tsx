@@ -7,6 +7,7 @@ import { Bookmark, ChevronLeft, Trash2 } from 'lucide-react-native';
 import type { Memory } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
 import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
@@ -54,7 +55,9 @@ export default function MemoriesScreen() {
         text: 'Forget',
         style: 'destructive',
         onPress: () => {
-          void deleteMemory(memory.id).then(() => load());
+          void deleteMemory(memory.id)
+            .then(() => load())
+            .catch((error) => reportAppError(error, { title: 'Could not forget memory' }));
         },
       },
     ]);

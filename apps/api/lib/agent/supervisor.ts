@@ -223,7 +223,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
         .max(4),
     });
 
-    const { object } = await generateObjectWithFallback({
+    const { output } = await generateObjectWithFallback({
       schema,
       modelIds: [...(preferredModel ? [preferredModel] : []), ...FAST_MODELS],
       userId,
@@ -241,7 +241,7 @@ function buildSupervisorGraph(deps: SupervisorDeps) {
       ].join("\n"),
     });
 
-    const briefs = normalizeBriefs(object.delegations, specialists, goal);
+    const briefs = normalizeBriefs(output.delegations, specialists, goal);
     await nodeEvent("delegate", "node_end", {
       delegations: briefs.map((brief) => ({
         agentId: brief.agentId,

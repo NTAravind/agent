@@ -16,6 +16,7 @@ import { useFocusEffect } from 'expo-router';
 import { Check, Minus, Plus, Trash2, Users } from 'lucide-react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
+import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
@@ -164,11 +165,11 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
       }
       onSaved(saved);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: editing ? 'Could not save group' : 'Could not create group' });
     } finally {
       setSaving(false);
     }
-  }, [description, groupId, leadAgentId, maxHops, memberIds, mode, name, onSaved, selectedCount, tokenBudget]);
+  }, [description, editing, groupId, leadAgentId, maxHops, memberIds, mode, name, onSaved, selectedCount, tokenBudget]);
 
   const handleDelete = useCallback(() => {
     if (!groupId) return;
@@ -183,9 +184,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           onPress: () => {
             void deleteGroup(groupId)
               .then(() => onDeleted?.())
-              .catch((err: unknown) =>
-                RNAlert.alert('Could not delete', err instanceof Error ? err.message : String(err)),
-              );
+              .catch((err: unknown) => reportAppError(err, { title: 'Could not delete group' }));
           },
         },
       ],

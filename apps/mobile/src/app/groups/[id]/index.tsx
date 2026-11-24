@@ -1,7 +1,6 @@
 import type { AgentGroup, StoredMessage, Thread } from '@agent/shared';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert as RNAlert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -32,6 +31,7 @@ import {
   TextAction,
 } from '@/components/design-system';
 import { GroupMessageBubble } from '@/components/group-message-bubble';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, shadow, space } from '@/theme';
 import { fetchRun, pauseRun } from '@/lib/agents';
 import { createGroupThread, fetchGroup, startGroupRun } from '@/lib/groups';
@@ -155,7 +155,7 @@ export default function GroupChatScreen() {
       })
       .catch((err: unknown) => {
         setInput(goal);
-        setError(err instanceof Error ? err.message : String(err));
+        reportAppError(err, { title: 'Could not send group message' });
       })
       .finally(() => setSending(false));
   }, [group, input, thread]);
@@ -169,7 +169,7 @@ export default function GroupChatScreen() {
         await pauseRun(activeRunId);
         setRunStatus('paused');
       } catch (err) {
-        console.warn('Failed to pause group run:', err);
+        reportAppError(err, { title: 'Could not pause group task' });
       }
     }
   }, [activeRunId, runStatus]);

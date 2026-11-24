@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert as RNAlert,
   Modal,
   Pressable,
   ScrollView,
@@ -28,6 +27,7 @@ import {
   TextAction,
 } from '@/components/design-system';
 import { IntegrationIcon } from '@/components/integration-icon';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, space } from '@/theme';
 import {
   attachServer,
@@ -177,7 +177,7 @@ export function AgentToolsSheet({
         0,
       );
       onToolCountChanged?.(revertCount);
-      RNAlert.alert('Could not update tool', err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not update tool' });
     } finally {
       setTogglingToolId(null);
     }
@@ -215,10 +215,7 @@ export function AgentToolsSheet({
         0,
       );
       onToolCountChanged?.(revertCount);
-      RNAlert.alert(
-        'Could not update integration',
-        err instanceof Error ? err.message : String(err),
-      );
+      reportAppError(err, { title: 'Could not update integration' });
     } finally {
       setTogglingAttachmentId(null);
     }
@@ -233,10 +230,7 @@ export function AgentToolsSheet({
       await attachServer(agentId, server.connectionId);
       await loadData();
     } catch (err) {
-      RNAlert.alert(
-        'Could not attach integration',
-        err instanceof Error ? err.message : String(err),
-      );
+      reportAppError(err, { title: 'Could not attach integration' });
     } finally {
       setAttachingConnectionId(null);
     }

@@ -17,6 +17,7 @@ import { FileText, Plus, RefreshCw, Search, X } from 'lucide-react-native';
 import type { Note, NoteChunk } from '@agent/shared';
 
 import { AppHeader } from '@/components/app-header';
+import { reportAppError } from '@/components/error-dialog-provider';
 import { PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import {
@@ -174,7 +175,7 @@ export default function NotesScreen() {
       setToastMessage(summary.message ?? (summary.ok ? 'Vault synced' : 'Sync initiated'));
       await load();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      reportAppError(error, { title: 'Could not sync notes' });
     } finally {
       setSyncing(false);
     }
@@ -193,7 +194,7 @@ export default function NotesScreen() {
         setNewTitle('');
         router.push({ pathname: '/note', params: { path } });
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
+        reportAppError(error, { title: 'Could not create note' });
       } finally {
         setCreating(false);
       }
@@ -234,7 +235,7 @@ export default function NotesScreen() {
       setToastMessage('Note duplicated');
       await load();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: 'Could not duplicate note' });
     }
   };
 
@@ -263,7 +264,7 @@ export default function NotesScreen() {
       setToastMessage(pinned ? 'Note pinned' : 'Note unpinned');
       await load();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      reportAppError(err, { title: pinned ? 'Could not pin note' : 'Could not unpin note' });
     }
   };
 
@@ -279,7 +280,7 @@ export default function NotesScreen() {
             setToastMessage('Note deleted');
             await load();
           } catch (err) {
-            setNotice(err instanceof Error ? err.message : String(err));
+            reportAppError(err, { title: 'Could not delete note' });
           }
         },
       },
