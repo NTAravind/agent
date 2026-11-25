@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -8,8 +9,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react-native';
-
 import { PillButton } from '@/components/design-system';
 import { describeError, type FriendlyError } from '@/lib/error-message';
 import { colors, radius, shadow, space, typography } from '@/theme';
@@ -109,7 +108,12 @@ export function ErrorDialogProvider({ children }: { children: React.ReactNode })
             style={styles.dialog}
           >
             <View style={styles.iconWrap}>
-              <AlertTriangle size={22} color={colors.recording} strokeWidth={1.8} />
+              <Image
+                source={require('@/assets/images/error.png')}
+                accessibilityLabel="Error"
+                resizeMode="contain"
+                style={styles.errorImage}
+              />
             </View>
             <Text accessibilityRole="header" style={styles.title}>{current?.title}</Text>
             <Text style={styles.message}>{current?.message}</Text>
@@ -122,10 +126,9 @@ export function ErrorDialogProvider({ children }: { children: React.ReactNode })
                   accessibilityState={{ expanded: showDetails }}
                   style={styles.detailsToggle}
                 >
-                  <Text style={styles.detailsToggleText}>Technical details</Text>
-                  {showDetails
-                    ? <ChevronUp size={18} color={colors.textSecondary} />
-                    : <ChevronDown size={18} color={colors.textSecondary} />}
+                  <Text style={styles.detailsToggleText}>
+                    {showDetails ? 'Hide technical details' : 'Show technical details'}
+                  </Text>
                 </Pressable>
                 {showDetails ? (
                   <ScrollView style={styles.detailsScroll}>
@@ -178,13 +181,13 @@ const styles = StyleSheet.create({
     ...shadow.floating,
   },
   iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.recordingBg,
     marginBottom: space.md,
+  },
+  errorImage: {
+    width: 56,
+    height: 56,
   },
   title: {
     ...typography.sheetTitle,

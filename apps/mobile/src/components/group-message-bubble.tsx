@@ -1,5 +1,6 @@
 import type { AgentGroupMember, StoredMessage } from '@agent/shared';
 import { ArrowUpRight, GitBranch } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AgentAvatar } from '@/components/agent-avatar';
@@ -82,14 +83,14 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
         {message.handoff ? (
           <View style={styles.handoffCard}>
             <View style={styles.handoffHeader}>
-              <GitBranch size={14} color={colors.textSecondary} />
+              <SymbolIcon icon={GitBranch} size={14} color={colors.textSecondary} />
               {handoffFrom ? (
                 <AgentAvatar avatar={handoffFrom.avatar} name={handoffFrom.name} size={20} />
               ) : null}
               <Text style={styles.handoffAgentText}>
                 {handoffFrom?.name ?? 'Agent'}
               </Text>
-              <ArrowUpRight size={12} color={colors.textSecondary} />
+              <SymbolIcon icon={ArrowUpRight} size={12} color={colors.textSecondary} />
               {handoffTo ? (
                 <AgentAvatar avatar={handoffTo.avatar} name={handoffTo.name} size={20} />
               ) : null}
@@ -129,7 +130,7 @@ export function GroupMessageBubble({ message, members, onOpenRun }: Props) {
               style={styles.runTimelinePill}
             >
               <Text style={styles.runTimelineText}>View run timeline</Text>
-              <ArrowUpRight size={11} color={colors.textSecondary} />
+              <SymbolIcon icon={ArrowUpRight} size={11} color={colors.textSecondary} />
             </Pressable>
           ) : null}
         </View>

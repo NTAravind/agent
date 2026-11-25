@@ -38,21 +38,18 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceRaised,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
     alignSelf: 'flex-start',
   },
   chipSelected: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
   chipPressed: {
     opacity: 0.7,
   },
   text: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
     color: colors.textSecondary,
   },
   textSelected: {

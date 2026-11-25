@@ -4,10 +4,11 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, Vie
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, LayoutDashboard, Plus, Search } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { CanvasSummary } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
-import { PillButton, RoundButton } from '@/components/design-system';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
+import { InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import { fetchCanvases } from '@/lib/canvases';
 
@@ -51,6 +52,8 @@ export default function CanvasListScreen() {
     return canvases.filter((c) => c.title.toLowerCase().includes(query));
   }, [canvases, searchQuery]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -67,7 +70,7 @@ export default function CanvasListScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.md }}
+        contentContainerStyle={{ padding: space.lg, paddingTop: headerInset, paddingBottom: insets.bottom + space.xxl, gap: space.md }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -82,7 +85,7 @@ export default function CanvasListScreen() {
         {/* Search Bar */}
         {canvases && canvases.length > 0 ? (
           <View style={styles.searchBar}>
-            <Search size={18} color={colors.textSecondary} />
+            <SymbolIcon icon={Search} size={18} color={colors.textSecondary} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -102,7 +105,7 @@ export default function CanvasListScreen() {
         {canvases?.length === 0 ? (
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconBox}>
-              <LayoutDashboard size={32} color={colors.textSecondary} strokeWidth={1.5} />
+              <SymbolIcon icon={LayoutDashboard} size={32} color={colors.textSecondary} strokeWidth={1.5} />
             </View>
             <Text style={styles.emptyTitle}>No canvases yet</Text>
             <Text style={styles.emptySubtitle}>
@@ -129,7 +132,7 @@ export default function CanvasListScreen() {
             ]}
           >
             <View style={styles.iconBox}>
-              <LayoutDashboard size={22} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={LayoutDashboard} size={22} color={colors.textPrimary} strokeWidth={1.75} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text numberOfLines={1} style={styles.cardTitle}>
@@ -149,7 +152,7 @@ export default function CanvasListScreen() {
                 </Text>
               </View>
             </View>
-            <ChevronRight size={18} color={colors.textSecondary} strokeWidth={2} />
+            <SymbolIcon icon={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={2} />
           </Pressable>
         ))}
 
@@ -161,11 +164,7 @@ export default function CanvasListScreen() {
           </View>
         ) : null}
 
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
+        {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
       </ScrollView>
     </View>
   );
@@ -269,18 +268,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: colors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
   cardMetaText: {
     fontSize: 13,
     color: colors.textSecondary,
-  },
-  errorBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: space.md,
-  },
-  errorText: {
-    fontSize: 15,
-    color: colors.recording,
   },
 });

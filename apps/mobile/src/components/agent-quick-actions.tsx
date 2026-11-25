@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AGENT_OVERVIEW_ICONS, SLEEP_ICON } from '@/constants/icons';
 import { colors, radius, space } from '@/theme';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 type Props = {
   /** The agent these actions belong to (kept for future per-agent prefs). */
@@ -120,7 +121,8 @@ export function AgentQuickActions({
             pressed && !disabled && styles.tilePressed,
           ]}
         >
-          <Icon
+          <SymbolIcon
+            icon={Icon}
             size={20}
             color={active ? colors.onPrimary : colors.textPrimary}
             strokeWidth={1.75}

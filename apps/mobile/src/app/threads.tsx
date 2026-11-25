@@ -1,15 +1,16 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert as RNAlert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, MessageSquare, Plus, Search, Trash2, Users, X } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Thread } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { PillButton, RoundButton } from '@/components/design-system';
+import { InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import { deleteThread, fetchThreads } from '@/lib/models';
 
@@ -114,6 +115,8 @@ export default function ThreadsScreen() {
     );
   }, [load]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -137,9 +140,9 @@ export default function ThreadsScreen() {
       />
 
       {/* Pill Search Bar */}
-      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.xs }}>
+      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.xs, marginTop: headerInset }}>
         <View style={styles.searchBar}>
-          <Search size={18} color={colors.textSecondary} />
+          <SymbolIcon icon={Search} size={18} color={colors.textSecondary} />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -148,8 +151,13 @@ export default function ThreadsScreen() {
             style={styles.searchInput}
           />
           {query ? (
-            <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear">
-              <X size={16} color={colors.textSecondary} />
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={10}
+            >
+              <SymbolIcon icon={X} size={16} color={colors.textSecondary} />
             </Pressable>
           ) : null}
         </View>
@@ -160,49 +168,11 @@ export default function ThreadsScreen() {
           <Spinner size="lg" color="default" />
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={{
-            paddingHorizontal: space.lg,
-            paddingTop: space.xs,
-            paddingBottom: insets.bottom + space.xxl,
-            gap: space.sm,
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => void load('refresh')}
-              tintColor={colors.textPrimary}
-            />
-          }
-        >
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-              <PillButton label="Retry" onPress={() => void load()} variant="secondary" style={{ marginTop: space.sm }} />
-            </View>
-          ) : null}
-
-          {filteredThreads.length === 0 && !error ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconBox}>
-                <MessageSquare size={32} color={colors.textSecondary} strokeWidth={1.5} />
-              </View>
-              <Text style={styles.emptyTitle}>No conversations found</Text>
-              <Text style={styles.emptySubtitle}>
-                {query ? 'Try a different search term.' : 'Start a new chat to explore ideas and run agent tasks.'}
-              </Text>
-              <PillButton
-                label="Start a conversation"
-                onPress={() => router.push('/chat')}
-                variant="primary"
-                style={{ marginTop: space.md }}
-              />
-            </View>
-          ) : null}
-
-          {filteredThreads.map((thread) => (
+        <FlatList
+          data={filteredThreads}
+          keyExtractor={(thread) => thread.id}
+          renderItem={({ item: thread }) => (
             <Pressable
-              key={thread.id}
               onPress={() => openThread(thread)}
               accessibilityRole="button"
               accessibilityLabel={thread.title ?? 'Untitled thread'}
@@ -214,7 +184,7 @@ export default function ThreadsScreen() {
               <View style={{ marginRight: space.md }}>
                 {thread.group ? (
                   <View style={styles.groupIconBox}>
-                    <Users size={20} color={colors.textPrimary} />
+                    <SymbolIcon icon={Users} size={20} color={colors.textPrimary} />
                   </View>
                 ) : thread.agent ? (
                   <AgentAvatar
@@ -224,7 +194,7 @@ export default function ThreadsScreen() {
                   />
                 ) : (
                   <View style={styles.defaultAvatarBox}>
-                    <MessageSquare size={18} color={colors.textSecondary} />
+                    <SymbolIcon icon={MessageSquare} size={18} color={colors.textSecondary} />
                   </View>
                 )}
               </View>
@@ -253,13 +223,49 @@ export default function ThreadsScreen() {
                 onPress={() => handleDelete(thread)}
                 accessibilityRole="button"
                 accessibilityLabel="Delete thread"
+                hitSlop={6}
                 style={styles.deleteButton}
               >
-                <Trash2 size={16} color={colors.recording} />
+                <SymbolIcon icon={Trash2} size={16} color={colors.danger} />
               </Pressable>
             </Pressable>
-          ))}
-        </ScrollView>
+          )}
+          ListHeaderComponent={
+            error ? <InlineError message={error} onRetry={() => void load()} /> : undefined
+          }
+          ListEmptyComponent={
+            filteredThreads.length === 0 && !error ? (
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconBox}>
+                  <SymbolIcon icon={MessageSquare} size={32} color={colors.textSecondary} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyTitle}>No conversations found</Text>
+                <Text style={styles.emptySubtitle}>
+                  {query ? 'Try a different search term.' : 'Start a new chat to explore ideas and run agent tasks.'}
+                </Text>
+                <PillButton
+                  label="Start a conversation"
+                  onPress={() => router.push('/chat')}
+                  variant="primary"
+                  style={{ marginTop: space.md }}
+                />
+              </View>
+            ) : undefined
+          }
+          contentContainerStyle={{
+            paddingTop: space.xs,
+            paddingHorizontal: space.lg,
+            paddingBottom: insets.bottom + space.xxl,
+            gap: space.sm,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void load('refresh')}
+              tintColor={colors.textPrimary}
+            />
+          }
+        />
       )}
     </View>
   );
@@ -295,16 +301,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
     color: colors.textPrimary,
-  },
-  errorBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: space.md,
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 15,
-    color: colors.recording,
   },
   emptyContainer: {
     marginTop: 64,
@@ -374,6 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     color: colors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
   threadEntity: {
     fontSize: 15,
@@ -384,6 +381,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },

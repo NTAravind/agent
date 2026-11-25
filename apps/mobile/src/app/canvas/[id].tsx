@@ -7,10 +7,10 @@ import { ChevronLeft, RotateCw, Trash2 } from 'lucide-react-native';
 import type { CanvasAction, CanvasRow } from '@agent/shared';
 import { validateCanvasSpec } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { CanvasView } from '@/components/canvas-renderer';
-import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
+import { GroupedCard, InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { colors, radius, space } from '@/theme';
 import { deleteCanvas, fetchCanvas, refreshCanvas } from '@/lib/canvases';
 
@@ -92,6 +92,8 @@ export default function CanvasDetailScreen() {
   const spec = canvas?.spec;
   const valid = spec ? validateCanvasSpec(spec) : null;
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <AppHeader
@@ -147,7 +149,7 @@ export default function CanvasDetailScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + 24, gap: space.lg }}
+        contentContainerStyle={{ padding: space.lg, paddingTop: headerInset, paddingBottom: insets.bottom + 24, gap: space.lg }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -189,6 +191,7 @@ export default function CanvasDetailScreen() {
                       fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                       fontSize: 12,
                       color: colors.textSecondary,
+                      fontVariant: ['tabular-nums'],
                     }}
                   >
                     v{canvas.version}
@@ -216,19 +219,7 @@ export default function CanvasDetailScreen() {
           </View>
         ) : null}
 
-        {error ? (
-          <View
-            style={{
-              backgroundColor: colors.recordingBg,
-              borderRadius: radius.card,
-              padding: space.lg,
-            }}
-          >
-            <Text style={{ color: colors.recording, fontSize: 15, lineHeight: 20 }}>
-              {error}
-            </Text>
-          </View>
-        ) : null}
+        {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
       </ScrollView>
     </View>
   );

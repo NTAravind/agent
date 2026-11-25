@@ -17,6 +17,7 @@ import {
   Redo2,
   Undo2,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { StyleState } from 'react-native-enriched-markdown';
 import { colors, radius, shadow, space } from '@/theme';
 
@@ -70,7 +71,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Bold
+          <SymbolIcon icon={Bold}
             size={18}
             color={isBold ? colors.onPrimary : colors.textPrimary}
             strokeWidth={2.5}
@@ -88,7 +89,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Italic
+          <SymbolIcon icon={Italic}
             size={18}
             color={isItalic ? colors.onPrimary : colors.textPrimary}
             strokeWidth={2.5}
@@ -106,7 +107,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Heading2
+          <SymbolIcon icon={Heading2}
             size={18}
             color={isHeading ? colors.onPrimary : colors.textPrimary}
             strokeWidth={2.5}
@@ -123,7 +124,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <CheckSquare
+          <SymbolIcon icon={CheckSquare}
             size={18}
             color={colors.textPrimary}
             strokeWidth={2}
@@ -141,7 +142,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <List
+          <SymbolIcon icon={List}
             size={18}
             color={isList ? colors.onPrimary : colors.textPrimary}
             strokeWidth={2}
@@ -159,7 +160,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Link2
+          <SymbolIcon icon={Link2}
             size={18}
             color={isLink ? colors.onPrimary : colors.textPrimary}
             strokeWidth={2}
@@ -179,7 +180,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Undo2 size={18} color={colors.textSecondary} strokeWidth={2} />
+          <SymbolIcon icon={Undo2} size={18} color={colors.textSecondary} strokeWidth={2} />
         </Pressable>
 
         {/* Redo */}
@@ -192,7 +193,7 @@ export function EditorToolbar({
             pressed && styles.toolButtonPressed,
           ]}
         >
-          <Redo2 size={18} color={colors.textSecondary} strokeWidth={2} />
+          <SymbolIcon icon={Redo2} size={18} color={colors.textSecondary} strokeWidth={2} />
         </Pressable>
       </ScrollView>
     </View>
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: colors.surface,
   },
   toolButtonActive: {
     backgroundColor: colors.primary,
@@ -227,7 +228,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   divider: {
-    width: 1,
+    width: StyleSheet.hairlineWidth,
     height: 24,
     backgroundColor: colors.divider,
     marginHorizontal: 4,

@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,14 +15,32 @@ import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, FolderPlus, ListTodo, Plus, Trash2, X } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Task, TaskList } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
-import { GroupedCard, HairlineDivider, PillButton, RoundButton } from '@/components/design-system';
+import { HairlineDivider, InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
 import { colors, radius, shadow, space } from '@/theme';
 import { createTask, createTaskList, deleteTask, fetchTaskLists, fetchTasks, updateTask } from '@/lib/productivity';
+
+/**
+ * One row of the virtualized task list. The hierarchy is flattened into
+ * cells in render order (task, its actions, then each child preceded by a
+ * divider), and each cell renders its own slice of the grouped card.
+ */
+type TaskCell =
+  | {
+      key: string;
+      type: 'task';
+      task: Task;
+      depth: number;
+      first: boolean;
+      last: boolean;
+    }
+  | { key: string; type: 'actions'; task: Task; first: boolean; last: boolean }
+  | { key: string; type: 'divider'; inset: number; first: boolean; last: boolean };
 
 export default function TasksScreen() {
   const router = useRouter();
@@ -170,48 +189,61 @@ export default function TasksScreen() {
     }
   }, [draftListName]);
 
-  const renderTask = (task: Task, depth = 0) => {
-    const children = childrenOf(task.id);
-    return (
-      <View key={task.id}>
-        <View style={depth > 0 ? { paddingLeft: 24 } : undefined}>
-          <TaskRow
-            task={task}
-            onToggle={(t) => void handleToggle(t)}
-            listName={undefined}
-          />
-        </View>
-        <View style={styles.subtaskActionsRow}>
-          <Pressable
-            onPress={() => {
-              setDraftParentId(task.id);
-              setComposerOpen(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Add subtask"
-            style={styles.subtaskAction}
-          >
-            <Plus size={14} color={colors.textSecondary} />
-            <Text style={styles.subtaskActionText}>Subtask</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => handleDelete(task)}
-            accessibilityRole="button"
-            accessibilityLabel="Delete task"
-            style={styles.subtaskAction}
-          >
-            <Trash2 size={14} color={colors.recording} />
-          </Pressable>
-        </View>
-        {children.map((child) => (
-          <React.Fragment key={child.id}>
-            <HairlineDivider inset={48} />
-            {renderTask(child, depth + 1)}
-          </React.Fragment>
-        ))}
-      </View>
-    );
-  };
+  const headerInset = useHeaderInset();
+
+  // Flatten the task tree into virtualizable cells, in the same order the
+  // old recursive render produced: task, its actions row, then each child
+  // preceded by a divider.
+  const taskCells = useMemo<TaskCell[]>(() => {
+    const cells: TaskCell[] = [];
+
+    const emit = (task: Task, depth: number) => {
+      cells.push({
+        key: `task-${task.id}`,
+        type: 'task',
+        task,
+        depth,
+        first: false,
+        last: false,
+      });
+      cells.push({
+        key: `actions-${task.id}`,
+        type: 'actions',
+        task,
+        first: false,
+        last: false,
+      });
+      childrenOf(task.id).forEach((child) => {
+        cells.push({
+          key: `divider-${child.id}`,
+          type: 'divider',
+          inset: 48,
+          first: false,
+          last: false,
+        });
+        emit(child, depth + 1);
+      });
+    };
+
+    roots.forEach((task, index) => {
+      if (index > 0) {
+        cells.push({
+          key: `divider-root-${task.id}`,
+          type: 'divider',
+          inset: 0,
+          first: false,
+          last: false,
+        });
+      }
+      emit(task, 0);
+    });
+
+    return cells.map((cell, index) => ({
+      ...cell,
+      first: index === 0,
+      last: index === cells.length - 1,
+    }));
+  }, [roots, childrenOf]);
 
   return (
     <View style={styles.screen}>
@@ -238,8 +270,121 @@ export default function TasksScreen() {
         }
       />
 
-      <ScrollView
-        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.md }}
+      <FlatList
+        data={loading || roots.length === 0 ? [] : taskCells}
+        keyExtractor={(cell) => cell.key}
+        renderItem={({ item: cell }) => (
+          <View
+            style={[
+              styles.cardSlice,
+              cell.first && styles.cardSliceTop,
+              cell.last && styles.cardSliceBottom,
+            ]}
+          >
+            {cell.type === 'task' ? (
+              <View style={cell.depth > 0 ? styles.taskIndent : undefined}>
+                <TaskRow
+                  task={cell.task}
+                  onToggle={(t) => void handleToggle(t)}
+                  listName={undefined}
+                />
+              </View>
+            ) : null}
+
+            {cell.type === 'actions' ? (
+              <View style={styles.subtaskActionsRow}>
+                <Pressable
+                  onPress={() => {
+                    setDraftParentId(cell.task.id);
+                    setComposerOpen(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add subtask"
+                  style={styles.subtaskAction}
+                >
+                  <SymbolIcon icon={Plus} size={14} color={colors.textSecondary} />
+                  <Text style={styles.subtaskActionText}>Subtask</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleDelete(cell.task)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete task"
+                  style={styles.subtaskAction}
+                >
+                  <SymbolIcon icon={Trash2} size={14} color={colors.danger} />
+                </Pressable>
+              </View>
+            ) : null}
+
+            {cell.type === 'divider' ? <HairlineDivider inset={cell.inset} /> : null}
+          </View>
+        )}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            {/* List chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipsRow}>
+                {lists.map((list) => {
+                  const active = list.id === activeListId;
+                  return (
+                    <Pressable
+                      key={list.id}
+                      onPress={() => setActiveListId(list.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filter ${list.name}`}
+                      style={[
+                        styles.chip,
+                        active && styles.chipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          active && styles.chipTextActive,
+                        ]}
+                      >
+                        {list.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  onPress={handleAddList}
+                  accessibilityRole="button"
+                  accessibilityLabel="New list"
+                  style={styles.addListChip}
+                >
+                  <SymbolIcon icon={FolderPlus} size={14} color={colors.textSecondary} />
+                  <Text style={styles.addListChipText}>List</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+
+            {notice ? <InlineError message={notice} onRetry={() => void load()} /> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.center}>
+              <Spinner size="lg" color="default" />
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <SymbolIcon icon={ListTodo} size={32} color={colors.textSecondary} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyTitle}>No tasks yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Tap + to add your first task, or ask an agent to create one for you.
+              </Text>
+            </View>
+          )
+        }
+        contentContainerStyle={{
+          padding: space.lg,
+          paddingTop: headerInset,
+          paddingBottom: insets.bottom + space.xxl,
+        }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -251,77 +396,7 @@ export default function TasksScreen() {
             tintColor={colors.textPrimary}
           />
         }
-      >
-        {/* List chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.chipsRow}>
-            {lists.map((list) => {
-              const active = list.id === activeListId;
-              return (
-                <Pressable
-                  key={list.id}
-                  onPress={() => setActiveListId(list.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Filter ${list.name}`}
-                  style={[
-                    styles.chip,
-                    active && styles.chipActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      active && styles.chipTextActive,
-                    ]}
-                  >
-                    {list.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-            <Pressable
-              onPress={handleAddList}
-              accessibilityRole="button"
-              accessibilityLabel="New list"
-              style={styles.addListChip}
-            >
-              <FolderPlus size={14} color={colors.textSecondary} />
-              <Text style={styles.addListChipText}>List</Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-
-        {notice ? (
-          <View style={styles.noticeBox}>
-            <Text style={styles.noticeText}>{notice}</Text>
-          </View>
-        ) : null}
-
-        {loading ? (
-          <View style={styles.center}>
-            <Spinner size="lg" color="default" />
-          </View>
-        ) : roots.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconBox}>
-              <ListTodo size={32} color={colors.textSecondary} strokeWidth={1.5} />
-            </View>
-            <Text style={styles.emptyTitle}>No tasks yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Tap + to add your first task, or ask an agent to create one for you.
-            </Text>
-          </View>
-        ) : (
-          <GroupedCard style={{ paddingVertical: space.sm }}>
-            {roots.map((task, index) => (
-              <React.Fragment key={task.id}>
-                {index > 0 && <HairlineDivider />}
-                {renderTask(task)}
-              </React.Fragment>
-            ))}
-          </GroupedCard>
-        )}
-      </ScrollView>
+      />
 
       {/* Composer Modal */}
       <Modal visible={composerOpen} transparent animationType="fade" onRequestClose={() => setComposerOpen(false)}>
@@ -336,7 +411,7 @@ export default function TasksScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <X size={20} color={colors.textSecondary} />
+                <SymbolIcon icon={X} size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
@@ -370,7 +445,7 @@ export default function TasksScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <X size={20} color={colors.textSecondary} />
+                <SymbolIcon icon={X} size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
@@ -444,21 +519,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.textSecondary,
   },
-  noticeBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  noticeText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
   center: {
     paddingVertical: 64,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  listHeader: {
+    gap: space.md,
+    // Replaces the content container's old 12pt gap below the header.
+    marginBottom: space.md,
+  },
+  cardSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+  },
+  cardSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    // The old GroupedCard's vertical padding.
+    paddingTop: space.sm,
+  },
+  cardSliceBottom: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
+    paddingBottom: space.sm,
+  },
+  taskIndent: {
+    paddingLeft: 24,
   },
   emptyContainer: {
     marginTop: 64,

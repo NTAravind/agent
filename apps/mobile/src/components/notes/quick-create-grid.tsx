@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CheckSquare, PenLine } from 'lucide-react-native';
-import { colors, radius, shadow, space } from '@/theme';
+import { SymbolIcon } from '@/components/symbol-icon';
+import { colors, radius, space } from '@/theme';
 
 export type QuickCreateMode = 'text' | 'checklist';
 
@@ -20,16 +21,15 @@ export function QuickCreateGrid({ onCreate }: Props) {
           accessibilityLabel="Create text note"
           style={({ pressed }) => [
             styles.card,
-            shadow.floating,
             pressed && styles.cardPressed,
           ]}
         >
           <View style={styles.iconTile}>
-            <PenLine size={20} color={colors.textPrimary} strokeWidth={2} />
+            <SymbolIcon icon={PenLine} size={20} color={colors.textPrimary} strokeWidth={1.75} />
           </View>
           <View style={styles.textContainer}>
             <Text numberOfLines={1} style={styles.title}>
-              Text Note
+              Text note
             </Text>
             <Text numberOfLines={2} style={styles.subtitle}>
               Write thoughts & markdown
@@ -44,12 +44,11 @@ export function QuickCreateGrid({ onCreate }: Props) {
           accessibilityLabel="Create checklist note"
           style={({ pressed }) => [
             styles.card,
-            shadow.floating,
             pressed && styles.cardPressed,
           ]}
         >
           <View style={styles.iconTile}>
-            <CheckSquare size={20} color={colors.textPrimary} strokeWidth={2} />
+            <SymbolIcon icon={CheckSquare} size={20} color={colors.textPrimary} strokeWidth={1.75} />
           </View>
           <View style={styles.textContainer}>
             <Text numberOfLines={1} style={styles.title}>
@@ -80,12 +79,10 @@ const styles = StyleSheet.create({
     padding: space.lg,
     justifyContent: 'space-between',
     backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   cardPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+    // DESIGN.md §6.2: opacity 0.6 only — no scale bounce.
+    opacity: 0.6,
   },
   iconTile: {
     width: 40,
@@ -94,21 +91,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow.floating,
   },
   textContainer: {
-    gap: 3,
+    gap: 4,
     marginTop: space.sm,
   },
   title: {
-    fontSize: 16,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   subtitle: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 20,
     color: colors.textSecondary,
   },
 });

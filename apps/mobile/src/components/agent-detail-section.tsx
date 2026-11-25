@@ -41,7 +41,9 @@ export function AgentDetailSection({ label, children, action, secondaryAction }:
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    gap: space.xs,
+    // The label lives in the header row, so the row-to-card gap is what puts
+    // the label 8pt above its card (DESIGN.md 6.6).
+    gap: space.sm,
   },
   header: {
     flexDirection: 'row',

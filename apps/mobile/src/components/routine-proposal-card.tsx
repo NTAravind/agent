@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarClock, Check, Pencil } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { PillButton } from '@/components/design-system';
 import { reportAppError } from '@/components/error-dialog-provider';
@@ -49,13 +50,13 @@ export function RoutineProposalCard({ proposal, onEdit }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <CalendarClock size={16} color={colors.textSecondary} strokeWidth={1.75} />
+        <SymbolIcon icon={CalendarClock} size={16} color={colors.textSecondary} strokeWidth={1.75} />
         <Text style={styles.title} numberOfLines={1}>
           {proposal.name}
         </Text>
         {confirmed ? (
           <View style={styles.confirmedBadge}>
-            <Check size={13} color={colors.success} strokeWidth={2.2} />
+            <SymbolIcon icon={Check} size={13} color={colors.success} strokeWidth={2.2} />
             <Text style={styles.confirmedText}>Scheduled</Text>
           </View>
         ) : null}
@@ -102,7 +103,7 @@ export function RoutineProposalCard({ proposal, onEdit }: Props) {
                 { opacity: pressed ? 0.6 : 1 },
               ]}
             >
-              <Pencil size={14} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={Pencil} size={14} color={colors.textPrimary} strokeWidth={1.75} />
               <Text style={styles.editText}>Edit</Text>
             </Pressable>
           ) : null}
@@ -162,8 +163,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   runDateText: {
     fontSize: 13,
@@ -172,7 +171,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 13,
-    color: colors.recording,
+    color: colors.danger,
   },
   actions: {
     flexDirection: 'row',
@@ -184,7 +183,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 36,
+    height: 44,
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
     paddingHorizontal: space.md,

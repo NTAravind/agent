@@ -6,30 +6,33 @@ import { Spinner } from 'heroui-native';
 import { lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
 import {
   Alert as RNAlert,
+  FlatList,
   KeyboardAvoidingView,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollViewInstance,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  Brain,
   CalendarClock,
   ChevronLeft,
+  Code,
   FileText,
   Globe,
   Menu,
+  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
 import { AgentPicker } from '@/components/agent-picker';
 import { Composer } from '@/components/composer';
@@ -42,6 +45,7 @@ import { colors, radius, shadow } from '@/theme';
 import {
   pickAndUploadDocument,
   pickAndUploadImages,
+  takeAndUploadPhoto,
   type PendingAttachment,
 } from '@/lib/attachments';
 import {
@@ -63,6 +67,7 @@ import {
 } from '@/lib/models';
 import { supabase } from '@/lib/supabase';
 import { useKeyboardHeight } from '@/lib/use-keyboard-height';
+import { useFocusedPoll } from '@/lib/use-focused-poll';
 
 /** Run statuses that no longer need live updates. */
 const FINISHED = new Set(['succeeded', 'failed', 'cancelled']);
@@ -83,24 +88,22 @@ const SUGGESTIONS = [
   {
     label: 'DeepSearch',
     prompt: 'Search the web for the latest updates on ',
-    icon: 'deepSearch' as const,
-    deepSearch: true,
+    icon: Globe,
   },
   {
-    label: 'Think & Reason',
+    label: 'Think & reason',
     prompt: 'Provide a deep, step-by-step reasoning analysis of ',
-    icon: 'think' as const,
-    think: true,
+    icon: Brain,
   },
   {
-    label: 'Draft & Write',
+    label: 'Draft & write',
     prompt: 'Help me draft a concise, professional message about ',
-    icon: 'sparkles' as const,
+    icon: Pencil,
   },
   {
-    label: 'Debug Code',
+    label: 'Debug code',
     prompt: 'Help me analyze and fix this issue: ',
-    icon: 'wrench' as const,
+    icon: Code,
   },
 ];
 
@@ -202,7 +205,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
    */
   const taskSubmissionRef = useRef<{ text: string; key: string } | null>(null);
   const reportedRunFailuresRef = useRef<Set<string>>(new Set());
-  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollRef = useRef<FlatList<UIMessage>>(null);
   const atBottomRef = useRef(true);
 
   useEffect(() => {
@@ -626,22 +629,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
   // Poll the agent's runs while an agent chat is open so task bubbles update
   // in place (Plan → Act → tool calls → completion) without leaving the chat.
   // Free chat starts the same polling after it launches its first Task Mode run.
-  useEffect(() => {
-    if (!isAgentContext && taskRunIds.length === 0) return;
-    let active = true;
-
-    const refreshRuns = async () => {
-      if (!active) return;
-      await refreshAgentRuns();
-    };
-
-    void refreshRuns();
-    const interval = setInterval(() => void refreshRuns(), 4000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [isAgentContext, refreshAgentRuns, taskRunIds.length]);
+  // Focus-aware (stops while another screen covers the tab) and never
+  // overlapping, so a slow fetch can't race the next tick.
+  useFocusedPoll(
+    refreshAgentRuns,
+    4_000,
+    isAgentContext || taskRunIds.length > 0,
+  );
 
   // Agent context shows the agent's task history. Free chat shows only the
   // tasks launched from this conversation.
@@ -667,24 +661,17 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
     );
   }, [conversationRuns, taskRunIds]);
 
-  useEffect(() => {
+  const pollActiveRun = useCallback(async () => {
     if (!primaryActiveRunId) return;
-    let active = true;
-    const refreshDetail = async () => {
-      try {
-        const detail = await fetchRun(primaryActiveRunId);
-        if (active) setActiveRunDetail(detail);
-      } catch {
-        // Transient — the next tick retries.
-      }
-    };
-    void refreshDetail();
-    const interval = setInterval(() => void refreshDetail(), 3000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+    try {
+      const detail = await fetchRun(primaryActiveRunId);
+      if (mountedRef.current) setActiveRunDetail(detail);
+    } catch {
+      // Transient — the next tick retries.
+    }
   }, [primaryActiveRunId]);
+
+  useFocusedPoll(pollActiveRun, 3_000, Boolean(primaryActiveRunId));
 
   // Runs surfaced in the timeline: executing runs first, then paused ones,
   // then the most recent finished ones (the list is newest-first) — capped
@@ -771,6 +758,8 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
     }
   }, [router]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -786,12 +775,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 onPress={handleBack}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
+                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     borderRadius: radius.pill,
-                    backgroundColor: colors.surfaceRaised,
+                    backgroundColor: colors.surface,
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: pressed ? 0.6 : 1,
@@ -799,7 +789,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <ChevronLeft size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={ChevronLeft} size={20} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -816,11 +806,11 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 8,
+                    height: 36,
                     borderRadius: radius.pill,
-                    backgroundColor: colors.surfaceRaised,
-                    paddingVertical: 6,
-                    paddingHorizontal: 12,
-                    maxWidth: 180,
+                    backgroundColor: colors.surface,
+                    paddingHorizontal: 10,
+                    maxWidth: 210,
                     opacity: pressed ? 0.6 : 1,
                   },
                   shadow.floating,
@@ -836,7 +826,9 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 <Text
                   numberOfLines={1}
                   style={{
-                    fontSize: 16,
+                    flexShrink: 1,
+                    fontSize: 17,
+                    lineHeight: 22,
                     fontWeight: '600',
                     color: colors.textPrimary,
                   }}
@@ -850,12 +842,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               onPress={() => router.push('/threads')}
               accessibilityRole="button"
               accessibilityLabel="Open threads"
+              hitSlop={4}
               style={({ pressed }) => [
                 {
-                  width: 40,
-                  height: 40,
+                  width: 36,
+                  height: 36,
                   borderRadius: radius.pill,
-                  backgroundColor: colors.surfaceRaised,
+                  backgroundColor: colors.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
                   opacity: pressed ? 0.6 : 1,
@@ -863,7 +856,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 shadow.floating,
               ]}
             >
-              <Menu size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={Menu} size={20} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
           )
         }
@@ -875,12 +868,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 onPress={() => setRoutineSheetOpen(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Routines for this agent"
+                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     borderRadius: radius.pill,
-                    backgroundColor: colors.surfaceRaised,
+                    backgroundColor: colors.surface,
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: pressed ? 0.6 : 1,
@@ -888,7 +882,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <CalendarClock size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={CalendarClock} size={20} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -900,12 +894,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Search in this conversation"
+                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     borderRadius: radius.pill,
-                    backgroundColor: colors.surfaceRaised,
+                    backgroundColor: colors.surface,
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: pressed ? 0.6 : 1,
@@ -913,7 +908,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <Search size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={Search} size={20} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -924,12 +919,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="View agent details"
+                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     borderRadius: radius.pill,
-                    backgroundColor: colors.surfaceRaised,
+                    backgroundColor: colors.surface,
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: pressed ? 0.6 : 1,
@@ -937,7 +933,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <SlidersHorizontal size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={SlidersHorizontal} size={20} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
             </View>
           ) : (
@@ -953,12 +949,13 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               }}
               accessibilityRole="button"
               accessibilityLabel="New chat"
+              hitSlop={4}
               style={({ pressed }) => [
                 {
-                  width: 40,
-                  height: 40,
+                  width: 36,
+                  height: 36,
                   borderRadius: radius.pill,
-                  backgroundColor: colors.surfaceRaised,
+                  backgroundColor: colors.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
                   opacity: pressed ? 0.6 : 1,
@@ -966,7 +963,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 shadow.floating,
               ]}
             >
-              <Plus size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={Plus} size={20} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
           )
         }
@@ -1010,8 +1007,8 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
           <View
             style={[
               {
-                width: 64,
-                height: 64,
+                width: 72,
+                height: 72,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: radius.card,
@@ -1019,15 +1016,16 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               },
             ]}
           >
-            <AgentAvatar size={48} name="SLMob" />
+            {/* The Pacbot mascot (same mark as the app icon). */}
+            <AgentAvatar size={56} name="Pacbot" forcedShape="ghost" forcedColor={colors.mark.black} />
           </View>
 
           <Text
             style={{
               marginTop: 20,
               textAlign: 'center',
-              fontSize: 24,
-              lineHeight: 30,
+              fontSize: 20,
+              lineHeight: 26,
               fontWeight: '600',
               color: colors.textPrimary,
             }}
@@ -1038,7 +1036,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             style={{
               marginTop: 8,
               textAlign: 'center',
-              fontSize: 17,
+              fontSize: 15,
               lineHeight: 22,
               color: colors.textSecondary,
             }}
@@ -1046,52 +1044,45 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             Multi-provider intelligence & autonomous workflows
           </Text>
 
-          {/* Calm Capability Pills */}
-          <View style={{ marginTop: 28, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 380 }}>
+          {/* Calm Capability Pills as prompt starters */}
+          <View style={{ marginTop: 24, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 360 }}>
             {SUGGESTIONS.map((item) => (
               <Pressable
                 key={item.label}
                 onPress={() => {
                   setInput(item.prompt);
-                  if (item.deepSearch) setDeepSearchActive(true);
-                  if (item.think) toggleThink();
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
                 style={({ pressed }) => [
                   {
+                    height: 38,
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: 8,
+                    justifyContent: 'center',
+                    gap: 6,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
+                    paddingHorizontal: 14,
                     opacity: pressed ? 0.6 : 1,
                   },
                 ]}
               >
-                {item.icon === 'deepSearch' && <Globe size={16} color={colors.textSecondary} strokeWidth={1.75} />}
-                {item.icon === 'think' && <CalendarClock size={16} color={colors.textSecondary} strokeWidth={1.75} />}
-                {item.icon === 'sparkles' && <SlidersHorizontal size={16} color={colors.textSecondary} strokeWidth={1.75} />}
-                {item.icon === 'wrench' && <FileText size={16} color={colors.textSecondary} strokeWidth={1.75} />}
-                <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textPrimary }}>{item.label}</Text>
+                <SymbolIcon icon={item.icon} size={15} color={colors.textSecondary} strokeWidth={1.75} />
+                <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textPrimary }}>
+                  {item.label}
+                </Text>
               </Pressable>
             ))}
           </View>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
           ref={scrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 20 }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          onScroll={onScroll}
-          onContentSizeChange={scrollToBottom}
-          scrollEventThrottle={32}
-        >
-          {messages.map((message, index) => {
+          data={messages}
+          keyExtractor={(message) => message.id}
+          renderItem={({ item: message, index }) => {
             const parts = message.parts as { type: string; [key: string]: unknown }[];
             // Assistant messages containing tool calls belong to a background
             // run — offer "View task" for the most recent active run.
@@ -1103,7 +1094,6 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
 
             return (
               <MessageBubble
-                key={message.id}
                 role={message.role}
                 parts={parts}
                 modelLabel={message.role === 'assistant' ? modelLabel : null}
@@ -1119,28 +1109,36 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 isStreaming={isStreaming && index === messages.length - 1}
               />
             );
-          })}
+          }}
+          ListFooterComponent={
+            <>
+              {status === 'submitted' ? (
+                <View style={{ alignItems: 'flex-start' }}>
+                  <Spinner size="sm" />
+                </View>
+              ) : null}
 
-          {status === 'submitted' ? (
-            <View style={{ alignItems: 'flex-start' }}>
-              <Spinner size="sm" />
-            </View>
-          ) : null}
-
-          {/* Agent runs surfaced as live task bubbles: current step and tool
-              chips update in place while the run polls. */}
-          {visibleRuns.map((run) => (
-            <RunTaskBubble
-              key={run.id}
-              run={run}
-              detail={run.id === primaryActiveRunId ? liveRunDetail : null}
-              onViewTask={(id) => {
-                router.push({ pathname: '/run', params: { id } });
-              }}
-            />
-          ))}
-
-        </ScrollView>
+              {/* Agent runs surfaced as live task bubbles: current step and tool
+                  chips update in place while the run polls. */}
+              {visibleRuns.map((run) => (
+                <RunTaskBubble
+                  key={run.id}
+                  run={run}
+                  detail={run.id === primaryActiveRunId ? liveRunDetail : null}
+                  onViewTask={(id) => {
+                    router.push({ pathname: '/run', params: { id } });
+                  }}
+                />
+              ))}
+            </>
+          }
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: headerInset, paddingBottom: 24, gap: 10 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          onScroll={onScroll}
+          onContentSizeChange={scrollToBottom}
+          scrollEventThrottle={32}
+        />
       )}
 
       {/* Composer: pinned at the bottom; the agent picker only shows in the
@@ -1167,6 +1165,14 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               setAttachments((current) => [...current, ...picked]);
             } catch (err) {
               showError(err, { title: 'Could not attach document' });
+            }
+          }}
+          onTakePhoto={async () => {
+            try {
+              const picked = await takeAndUploadPhoto();
+              setAttachments((current) => [...current, ...picked]);
+            } catch (err) {
+              showError(err, { title: 'Could not take photo' });
             }
           }}
           attachments={attachments}

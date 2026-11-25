@@ -19,8 +19,9 @@ import {
   Lock,
   Mail,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { Image } from 'expo-image';
 import { PillButton, RoundButton } from '@/components/design-system';
@@ -102,6 +103,8 @@ export default function SignInScreen() {
 
   const bottomPadding = keyboardHeight > 0 ? 16 : insets.bottom + 24;
 
+  const headerInset = useHeaderInset();
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -121,8 +124,8 @@ export default function SignInScreen() {
 
       <ScrollView
         contentContainerStyle={{
+          paddingTop: headerInset,
           paddingHorizontal: space.lg,
-          paddingTop: space.sm,
           paddingBottom: bottomPadding,
           gap: space.md,
         }}
@@ -155,7 +158,7 @@ export default function SignInScreen() {
               setError(null);
             }}
             accessibilityRole="button"
-            accessibilityLabel="Switch to Sign In"
+            accessibilityLabel="Switch to Sign in"
             style={[
               styles.modeTab,
               mode === 'sign-in' && styles.modeTabActive,
@@ -167,7 +170,7 @@ export default function SignInScreen() {
                 mode === 'sign-in' && styles.modeTabTextActive,
               ]}
             >
-              Sign In
+              Sign in
             </Text>
           </Pressable>
           <Pressable
@@ -176,7 +179,7 @@ export default function SignInScreen() {
               setError(null);
             }}
             accessibilityRole="button"
-            accessibilityLabel="Switch to Create Account"
+            accessibilityLabel="Switch to Create account"
             style={[
               styles.modeTab,
               mode === 'sign-up' && styles.modeTabActive,
@@ -188,7 +191,7 @@ export default function SignInScreen() {
                 mode === 'sign-up' && styles.modeTabTextActive,
               ]}
             >
-              Create Account
+              Create account
             </Text>
           </Pressable>
         </View>
@@ -196,7 +199,7 @@ export default function SignInScreen() {
         {/* Inputs */}
         <View style={{ gap: space.sm }}>
           <View style={styles.inputPill}>
-            <Mail size={18} color={colors.textSecondary} />
+            <SymbolIcon icon={Mail} size={18} color={colors.textSecondary} />
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -212,7 +215,7 @@ export default function SignInScreen() {
           </View>
 
           <View style={styles.inputPill}>
-            <Lock size={18} color={colors.textSecondary} />
+            <SymbolIcon icon={Lock} size={18} color={colors.textSecondary} />
             <TextInput
               value={password}
               onChangeText={setPassword}
@@ -232,8 +235,8 @@ export default function SignInScreen() {
             busy
               ? 'Please wait…'
               : mode === 'sign-up'
-                ? 'Create Account'
-                : 'Sign In'
+                ? 'Create account'
+                : 'Sign in'
           }
           onPress={() => void handleEmailAuth()}
           disabled={busy || !isSupabaseConfigured}
@@ -244,7 +247,7 @@ export default function SignInScreen() {
         {/* Alerts */}
         {!isSupabaseConfigured ? (
           <View style={styles.alertNotice}>
-            <AlertCircle size={16} color={colors.textSecondary} />
+            <SymbolIcon icon={AlertCircle} size={16} color={colors.textSecondary} />
             <Text style={styles.alertText}>
               Supabase not configured. Set EXPO_PUBLIC_SUPABASE_URL and ANON_KEY in .env
             </Text>
@@ -253,14 +256,14 @@ export default function SignInScreen() {
 
         {error ? (
           <View style={styles.errorNotice}>
-            <AlertCircle size={16} color={colors.recording} />
+            <SymbolIcon icon={AlertCircle} size={16} color={colors.danger} />
             <Text style={styles.errorNoticeText}>{error}</Text>
           </View>
         ) : null}
 
         {notice ? (
           <View style={styles.successNotice}>
-            <CheckCircle2 size={16} color={colors.success} />
+            <SymbolIcon icon={CheckCircle2} size={16} color={colors.success} />
             <Text style={styles.successNoticeText}>{notice}</Text>
           </View>
         ) : null}
@@ -360,12 +363,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.xs,
     borderRadius: radius.card,
-    backgroundColor: colors.recordingBg,
+    backgroundColor: colors.surface,
     padding: space.md,
   },
   errorNoticeText: {
     fontSize: 14,
-    color: colors.recording,
+    color: colors.danger,
     flex: 1,
   },
   successNotice: {

@@ -56,4 +56,19 @@ if (typeof globalScope.TransformStream !== "function") {
   globalScope.TransformStream = PolyfillTransformStream;
 }
 
+// Global Text & TextInput accessibility cap (maxFontSizeMultiplier = 1.15)
+try {
+  const { Text, TextInput } = require('react-native');
+  if (Text) {
+    Text.defaultProps = Text.defaultProps || {};
+    Text.defaultProps.maxFontSizeMultiplier = 1.15;
+  }
+  if (TextInput) {
+    TextInput.defaultProps = TextInput.defaultProps || {};
+    TextInput.defaultProps.maxFontSizeMultiplier = 1.15;
+  }
+} catch {
+  // Ignore in environments without react-native
+}
+
 export {};

@@ -1,14 +1,15 @@
 import { useCallback, useState } from 'react';
-import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert as RNAlert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bookmark, ChevronLeft, Trash2 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Memory } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
-import { GroupedCard, PillButton, RoundButton } from '@/components/design-system';
+import { GroupedCard, InlineError, RoundButton } from '@/components/design-system';
 import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
 import { deleteMemory, fetchMemories } from '@/lib/knowledge';
@@ -63,6 +64,8 @@ export default function MemoriesScreen() {
     ]);
   }, [load]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -83,10 +86,55 @@ export default function MemoriesScreen() {
           <Spinner size="lg" color="default" />
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={memories}
+          keyExtractor={(memory) => memory.id}
+          renderItem={({ item: memory }) => (
+            <View style={styles.memoryCard}>
+              <View style={{ flex: 1, minWidth: 0, gap: space.xs }}>
+                <View style={styles.metaRow}>
+                  <View style={styles.kindBadge}>
+                    <Text style={styles.kindText}>
+                      {memory.kind}
+                    </Text>
+                  </View>
+                  <Text style={styles.dateText}>
+                    {new Date(memory.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  </Text>
+                </View>
+                <MarkdownText markdown={memory.content} fontSize={17} />
+              </View>
+
+              <Pressable
+                onPress={() => handleDelete(memory)}
+                accessibilityRole="button"
+                accessibilityLabel="Delete memory"
+                hitSlop={4}
+                style={styles.deleteBtn}
+              >
+                <SymbolIcon icon={Trash2} size={16} color={colors.danger} />
+              </Pressable>
+            </View>
+          )}
+          ListHeaderComponent={
+            error ? <InlineError message={error} onRetry={() => void load()} /> : undefined
+          }
+          ListEmptyComponent={
+            memories.length === 0 && !error ? (
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconBox}>
+                  <SymbolIcon icon={Bookmark} size={32} color={colors.textSecondary} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyTitle}>Nothing remembered yet</Text>
+                <Text style={styles.emptySubtitle}>
+                  Key facts, preferences, and decisions are extracted from conversations and used in future tasks.
+                </Text>
+              </View>
+            ) : undefined
+          }
           contentContainerStyle={{
+            paddingTop: headerInset,
             paddingHorizontal: space.lg,
-            paddingTop: space.xs,
             paddingBottom: insets.bottom + space.xxl,
             gap: space.md,
           }}
@@ -100,57 +148,7 @@ export default function MemoriesScreen() {
               tintColor={colors.textPrimary}
             />
           }
-        >
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {memories.length === 0 && !error ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconBox}>
-                <Bookmark size={32} color={colors.textSecondary} strokeWidth={1.5} />
-              </View>
-              <Text style={styles.emptyTitle}>Nothing remembered yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Key facts, preferences, and decisions are extracted from conversations and used in future tasks.
-              </Text>
-            </View>
-          ) : null}
-
-          {memories.map((memory) => {
-            return (
-              <View
-                key={memory.id}
-                style={styles.memoryCard}
-              >
-                <View style={{ flex: 1, minWidth: 0, gap: space.xs }}>
-                  <View style={styles.metaRow}>
-                    <View style={styles.kindBadge}>
-                      <Text style={styles.kindText}>
-                        {memory.kind}
-                      </Text>
-                    </View>
-                    <Text style={styles.dateText}>
-                      {new Date(memory.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                    </Text>
-                  </View>
-                  <MarkdownText markdown={memory.content} fontSize={17} />
-                </View>
-
-                <Pressable
-                  onPress={() => handleDelete(memory)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Delete memory"
-                  style={styles.deleteBtn}
-                >
-                  <Trash2 size={16} color={colors.recording} />
-                </Pressable>
-              </View>
-            );
-          })}
-        </ScrollView>
+        />
       )}
     </View>
   );
@@ -171,16 +169,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
-  },
-  errorBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: space.md,
-  },
-  errorText: {
-    fontSize: 15,
-    color: colors.recording,
-    textAlign: 'center',
   },
   emptyContainer: {
     marginTop: 64,
@@ -245,6 +233,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },

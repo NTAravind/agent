@@ -30,13 +30,14 @@ Values were sampled from the reference screens. Treat as exact.
 export const colors = {
   // Surfaces
   background: '#FCFCFC',      // screen background (near white, not pure white)
+  backgroundFade: 'rgba(252,252,252,0)', // background at 0 alpha — end stop for the top fade
   surface: '#F3F3F3',         // cards, grouped rows, agent bubbles, input fields
   surfaceRaised: '#FFFFFF',   // floating round buttons, header pill, sheets, option list
   overlay: 'rgba(0,0,0,0.20)',// dim behind bottom sheets (page turns light gray)
 
   // Text
   textPrimary: '#0A0A0A',
-  textSecondary: '#8E8E93',   // section labels, previews, timestamps, placeholders
+  textSecondary: '#6E6E73',   // section labels, previews, timestamps, placeholders (AA on background)
   textTertiary: '#B5B5BA',    // file extensions, disabled
 
   // Lines
@@ -47,6 +48,7 @@ export const colors = {
   onPrimary: '#FFFFFF',
   link: '#2F6BDB',            // text actions ("Add member", "Reset to default") and hyperlinks
   success: '#4CAF6A',         // check mark on a selected option, online status dot
+  danger: '#E8404A',          // errors, failed states, destructive actions, attention badges
   recording: '#E8404A',       // recording square + timer text only
   recordingBg: '#FBE9EA',     // recording pill background
 
@@ -70,6 +72,8 @@ export const colors = {
 Notes:
 - `link` blue is for text actions and hyperlinks only (underline hyperlinks inside message text). Never use it as a fill.
 - Mark colors are picked by the user per agent. They never appear on buttons, headers or backgrounds.
+- `danger` carries errors, failed states, destructive actions (delete) and attention badges. `recording` is reserved for the composer recording state; both share the same red so the screen stays quiet.
+- `textSecondary` was darkened from the sampled `#8E8E93` to `#6E6E73` so normal-size secondary text clears WCAG AA (4.94:1 on `background`). `textTertiary` remains disabled/decorative only.
 
 ## 4. Typography
 
@@ -125,17 +129,20 @@ export const shadow = {
 
 ### 6.1 Floating header (all screens)
 - No navigation bar background. Content scrolls underneath; add a soft fade at the top (background color to transparent, about 120pt tall) using `expo-linear-gradient` with background-to-transparent only (never colored).
-- Left: round **back button**, 44x44, `surfaceRaised`, chevron-left icon, `floating` shadow.
-- Center (chat screens): a **title pill**, `surfaceRaised`, pill radius, height 44, containing the agent mark (28pt) + agent name (20/500). `floating` shadow.
+- The header overlays the page, so every screen reserves its height above its content: scroll containers get `paddingTop: headerInset` from `useHeaderInset()`, and screens with non-scrolling content under the header use the same value as a top spacer/margin. Both numbers come from one source so they cannot drift.
+- Left: round **back button**, 44x44, grey `surface`, chevron-left icon, `floating` shadow.
+- Center (chat screens): a **title pill**, grey `surface`, pill radius, height 44, containing the agent mark (28pt) + agent name (20/500). `floating` shadow.
 - Right: round 44x44 button (desktop/monitor icon on chat, `ellipsis` on settings and sheets).
 - Settings screens show the back button and ellipsis only, with the large agent mark centered below.
 - A header with a primary action (e.g. Instructions) puts a black pill **Save** button on the right (see 6.2) instead of the round icon.
 
 ### 6.2 Buttons
+- **Two variants only**: `primary` (black `primary` fill, white content) and `secondary` (grey `surface` fill, `textPrimary` content). Use `primary` for the single main action on a screen, `secondary` for everything else.
+- **No transparent buttons.** A control must read as a filled object against whatever sits behind it. When a button floats on a grey card, the fill is white (`surfaceRaised`) so it still separates from the card; when it sits on the screen background it is grey. Never leave a button unfilled.
 - **Primary pill**: height 44, horizontal padding 24, `primary` fill, white 17/600 text, pill radius ("Save").
 - **Secondary / completed pill**: `surface` fill, `textPrimary` 17/600 text ("Added" state of a connector). No border.
-- **Text action**: `link` color, 17/400, leading outline icon when relevant ("+ Add routine", "Add member", "Reset to default"). No background.
-- **Round icon button**: 44x44 `surfaceRaised` with `floating` shadow. Inside sheets, round buttons use `surface` fill and no shadow (close X on the left, ellipsis on the right, both 44x44).
+- **Text action**: `link` color, 17/400, leading outline icon when relevant ("+ Add routine", "Add member", "Reset to default"). No background — this is an inline link, not a button.
+- **Round icon button**: 44x44 in `secondary` (grey) or `primary` (black) fill with `floating` shadow. Inside sheets, round buttons use the grey fill and no shadow (close X on the left, ellipsis on the right, both 44x44).
 - Pressed state: opacity 0.6 (`Pressable`). No ripple, no scale bounce, no color change.
 
 ### 6.3 Chat bubbles
@@ -147,13 +154,14 @@ export const shadow = {
 
 ### 6.4 Quick-reply options inside an agent bubble
 - Agent bubble contains the question (17/22), then a white (`surfaceRaised`) list with radius 20 and no shadow.
+- **Only render the option list when the message itself carries an options payload.** Never fabricate options or infer them from question phrasing; without a payload the question renders as plain message text.
 - Each row is 60 tall with a leading letter badge (A, B, C...): 32x32, radius 10, `surface` fill, `textSecondary` 15pt letter. Then the option text 20/400.
 - Rows are separated by a hairline divider inset from the left.
 - After a choice is made, the list collapses to only the chosen row, badge replaced by nothing, with a `success` green check icon on the right. Other options disappear.
 
 ### 6.5 Composer
-- Row at the bottom with safe-area padding: a round **+** button (44, `surfaceRaised`, floating shadow) and a pill text field (`surfaceRaised`, floating shadow, height 52, placeholder "Ask {AgentName}" in `textSecondary`).
-- Right inside the field: a small mic button, 36x36 circle, `surface` fill, `textSecondary` mic icon.
+- Row at the bottom with safe-area padding: a round **+** button (44, grey `surface`, floating shadow) and a pill text field (grey `surface`, floating shadow, height 52, placeholder "Ask {AgentName}" in `textSecondary`).
+- Right inside the field: a small mic button, 36x36 circle, white `surfaceRaised` fill, `textSecondary` mic icon.
 - **Recording state**: the mic is replaced by a pill with `recordingBg`, a small `recording` red rounded square (stop), and a timer `0:10` in `recording` color; next to it a round **send** button, 40x40, `primary` fill with a white arrow-up icon.
 - **+ menu**: a popover above the button, `surfaceRaised`, radius 32, `floating` shadow, rows with a 28pt outline icon plus label 20/400: "Attach Image", "Take Photo", "Choose File". No dividers, 16 vertical padding per row.
 
@@ -174,7 +182,7 @@ export const shadow = {
 - Hairline divider, then a "Reset to default" text action in `link` color.
 
 ### 6.8 Bottom sheet (e.g. connector detail)
-- Slides up, top radius 32, `background` fill with a very subtle fade, page behind dimmed with `overlay`.
+- Slides up, top radius 32, `surfaceRaised` fill (the §3 token comment: sheets are `surfaceRaised`), page behind dimmed with `overlay`.
 - Top row: round close button (X) left, round ellipsis button right (both `surface`, 44).
 - Content: 56pt app icon (rounded square, as supplied by the service), title 24/600, domain/subtitle 17 `textSecondary` beneath, description 17/22 `textSecondary`.
 - "Includes" label (15 `textSecondary`) over a `surface` card with a row: "1 connector" left, "View source ↗" right in `textSecondary`.
@@ -187,7 +195,7 @@ export const shadow = {
 - No dividers between results; use about 24pt vertical rhythm.
 
 ### 6.10 Chat list (home)
-- Top row: a 44pt initials avatar on the left (circle, `#E5E5E7` fill, initials in `textSecondary` 20/500, thin white ring) and two round buttons on the right (search, plus), 44 each, `surfaceRaised`, floating shadow.
+- Top row: a 44pt initials avatar on the left (circle, `#E5E5E7` fill, initials in `textSecondary` 20/500, thin white ring) and two round buttons on the right (search, plus), 44 each, grey `surface`, floating shadow.
 - Row: mark/avatar 64pt on the left, then name 20/500 followed by an optional **tag pill** (`surface`, pill radius, 15 `textSecondary`, padding 12x4, truncates with an ellipsis), timestamp 15 `textSecondary` right aligned, and a one-line preview 17 `textSecondary` below.
 - Rows are about 120pt apart with no dividers and no card backgrounds.
 - Group chats show a cluster of up to 3 marks arranged as a triangle (one on top, two below) in one 64pt avatar slot.
@@ -197,6 +205,7 @@ export const shadow = {
 
 Every agent has a flat-colored shape with two small white slanted highlight marks near the upper right, reading as eyes. This is the only illustrative element in the product.
 
+- **Pacbot mascot**: the app's own character — a black ghost body with two white eyes and dark pupils, matching the app icon. Use it for the app's own avatar and for empty states (the empty chat page shows it). It is always black, never a user-picked mark.
 - Shapes: circle, blob (soft ellipse), rounded square (squircle), pill, triangle (heavily rounded corners), hexagon (rounded), cloud (three overlapping circles), drop (teardrop).
 - Fill: a flat color from the `mark` palette. Black marks use a pure black fill.
 - Highlights: two short, rounded, white strokes (about 12% of the shape width long, 6% wide) tilted about 20 degrees, sitting close together at the upper right. In small sizes they stay visible, never smaller than 2pt.
@@ -229,11 +238,12 @@ Every agent has a flat-colored shape with two small white slanted highlight mark
 
 ## 11. Pre-Merge Checklist
 
-- [ ] The only colorful pixels on the screen belong to agent marks, the green check/status dot, link text, or the recording state.
+- [ ] The only colorful pixels on the screen belong to agent marks, the green check/status dot, link text, `danger` states, or the recording state.
 - [ ] No gradient fills, glows or colored shadows anywhere.
 - [ ] No sparkle/wand/robot/brain icons or emoji in UI.
 - [ ] Every card, bubble and pill uses a radius from the token list, with no borders.
 - [ ] Body text is 17/22 system font, in sentence case.
-- [ ] Floating round buttons are 44pt, white, softly shadowed.
+- [ ] Floating round buttons are 44pt, filled (grey or black), softly shadowed.
+- [ ] No transparent buttons: every control reads as a filled object against its background.
 - [ ] Primary actions are black pills; text actions are link blue with no background.
 - [ ] Bottom sheets (not centered modals) are used for detail, search and pickers.

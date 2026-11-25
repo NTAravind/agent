@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.agent.app"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "package": "com.agent.app",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -37,6 +38,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-web-browser",
         {

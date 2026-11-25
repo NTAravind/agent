@@ -1,10 +1,12 @@
 import React from 'react';
 import type { Task } from '@agent/shared';
 import { Check, Circle, X } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, space } from '@/theme';
 import { formatDayLabel, formatTime } from '@/lib/dates';
+import { hapticTap } from '@/lib/haptics';
 
 export type TaskRowProps = {
   task: Task;
@@ -44,7 +46,12 @@ export function TaskRow({
   return (
     <View style={styles.container}>
       <Pressable
-        onPress={() => onToggle?.(task)}
+        onPress={() => {
+          // DESIGN.md §9: a light haptic on option selection — ticking a
+          // task off is a committed change.
+          hapticTap();
+          onToggle?.(task);
+        }}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: done }}
         accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
@@ -53,10 +60,10 @@ export function TaskRow({
       >
         {done ? (
           <View style={styles.checkboxDone}>
-            <Check size={12} color={colors.onPrimary} strokeWidth={3} />
+            <SymbolIcon icon={Check} size={12} color={colors.onPrimary} strokeWidth={3} />
           </View>
         ) : (
-          <Circle size={20} color={colors.textSecondary} strokeWidth={1.75} />
+          <SymbolIcon icon={Circle} size={20} color={colors.textSecondary} strokeWidth={1.75} />
         )}
       </Pressable>
 
@@ -93,16 +100,18 @@ export function TaskRow({
             accessibilityRole="button"
             accessibilityLabel={`Accept ${task.title}`}
             style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.6 : 1 }]}
+            hitSlop={6}
           >
-            <Check size={14} color={colors.success} strokeWidth={2.5} />
+            <SymbolIcon icon={Check} size={14} color={colors.success} strokeWidth={2.5} />
           </Pressable>
           <Pressable
             onPress={() => onDismiss?.(task)}
             accessibilityRole="button"
             accessibilityLabel={`Dismiss ${task.title}`}
             style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.6 : 1 }]}
+            hitSlop={6}
           >
-            <X size={14} color={colors.textSecondary} strokeWidth={2} />
+            <SymbolIcon icon={X} size={14} color={colors.textSecondary} strokeWidth={2} />
           </Pressable>
         </View>
       ) : null}
@@ -159,15 +168,16 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   suggestedText: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 13,
+    lineHeight: 18,
     color: colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '400',
   },
   subtitle: {
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 20,
     color: colors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
   actions: {
     flexDirection: 'row',

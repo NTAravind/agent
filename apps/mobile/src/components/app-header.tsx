@@ -1,7 +1,37 @@
 import React, { type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, space } from '@/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { colors, radius, shadow, space } from '@/theme';
+
+export const HEADER_BAR_HEIGHT = 52;
+/** 6.1: the top fade is ~120pt of the screen background dissolving to nothing. */
+export const HEADER_FADE_HEIGHT = 120;
+
+export function HeaderAvatar({
+  initial,
+  onPress,
+}: {
+  initial: string;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Open settings"
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.avatarButton,
+        shadow.floating,
+        { opacity: pressed ? 0.6 : 1 },
+      ]}
+    >
+      <Text style={styles.avatarText}>{initial}</Text>
+    </Pressable>
+  );
+}
 
 type Props = {
   /** Left-hand control (usually RoundButton with ChevronLeft or X). */
@@ -15,41 +45,67 @@ type Props = {
 };
 
 /**
+ * The vertical space a screen must reserve above its content so nothing hides
+ * under the floating header. Every screen that renders an `AppHeader` passes
+ * this to its scroll container's `paddingTop` — the two numbers are computed
+ * from the same source, so they cannot drift.
+ */
+export function useHeaderInset(bottomInset = 0): number {
+  const insets = useSafeAreaInsets();
+  return insets.top + space.sm + HEADER_BAR_HEIGHT + space.sm + bottomInset;
+}
+
+/**
  * 6.1 Floating header conforming to design.md:
- * - No navigation bar background.
- * - Left: round back button (44x44, surfaceRaised, floating shadow).
+ * - Overlays the screen instead of pushing content down: the page scrolls
+ *   underneath, with a soft background-to-transparent fade at the top so
+ *   passing content dissolves instead of ending at a hard edge.
+ * - Left: round back button (44x44, grey surface, floating shadow).
  * - Center: title pill or clean text.
  * - Right: round button or primary pill action.
  */
 export function AppHeader({ left, center, right, bottomInset = 0 }: Props) {
-  const insets = useSafeAreaInsets();
+  const inset = useHeaderInset(bottomInset);
+  // Safe-area + the gap above the bar, and the gap below it.
+  const topPad = inset - HEADER_BAR_HEIGHT - space.sm;
+  const bottomPad = space.sm + bottomInset;
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          paddingTop: insets.top + space.sm,
-          paddingBottom: space.sm + bottomInset,
-        },
-      ]}
-    >
-      <View style={styles.bar}>
-        <View style={styles.leftSlot}>{left}</View>
-        {center ? <View style={styles.centerSlot}>{center}</View> : null}
-        <View style={styles.rightSlot}>{right}</View>
+    <View pointerEvents="box-none" style={styles.overlay}>
+      <LinearGradient
+        pointerEvents="none"
+        style={[styles.fade, { height: HEADER_FADE_HEIGHT }]}
+        colors={[colors.background, colors.backgroundFade]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      <View style={{ paddingTop: topPad, paddingBottom: bottomPad, paddingHorizontal: space.lg }}>
+        <View style={styles.bar}>
+          <View style={styles.leftSlot}>{left}</View>
+          {center ? <View style={styles.centerSlot}>{center}</View> : null}
+          <View style={styles.rightSlot}>{right}</View>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: space.lg,
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  fade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   bar: {
-    height: 44,
+    height: HEADER_BAR_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -71,5 +127,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     flexShrink: 0,
+    gap: space.sm,
+  },
+  avatarButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.profileAvatar,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 });

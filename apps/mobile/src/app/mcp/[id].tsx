@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Spinner, Switch } from 'heroui-native';
 import {
+  FlatList,
   Linking,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -28,10 +28,11 @@ import {
   UserCheck,
   Wrench,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { GroupedCard, HairlineDivider, PillButton, RoundButton, SectionLabel } from '@/components/design-system';
+import { GroupedCard, HairlineDivider, InlineError, PillButton, RoundButton, SectionLabel } from '@/components/design-system';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, shadow, space } from '@/theme';
 import { fetchAgents, type Agent } from '@/lib/agents';
@@ -51,6 +52,21 @@ import {
 } from '@/lib/mcp';
 
 type AttachmentTool = AgentAttachment['tools'][number];
+
+/**
+ * One row of the virtualized tool list: a section label, then the tools
+ * themselves. Each tool cell carries first/last flags so it renders only its
+ * slice of the grouped card.
+ */
+type ToolCell =
+  | { key: string; type: 'label' }
+  | {
+      key: string;
+      type: 'tool';
+      tool: CachedTool | AttachmentTool;
+      first: boolean;
+      last: boolean;
+    };
 type CachedTool = ServerDetail['tools'][number];
 type Notice = { kind: 'success' | 'warning' | 'danger'; text: string };
 
@@ -59,10 +75,11 @@ const POLL_ATTEMPTS = 30;
 
 function RiskBadge({ level }: { level: string }) {
   const isHigh = level === 'high';
+
   return (
     <View style={styles.riskBadge}>
-      {isHigh && <ShieldAlert size={12} color={colors.recording} />}
-      <Text style={[styles.riskText, isHigh && { color: colors.recording }]}>
+      {isHigh && <SymbolIcon icon={ShieldAlert} size={12} color={colors.danger} />}
+      <Text style={[styles.riskText, isHigh && { color: colors.danger }]}>
         {`${level} risk`}
       </Text>
     </View>
@@ -342,6 +359,21 @@ export default function IntegrationDetailScreen() {
     ? (attachment?.tools ?? [])
     : (detail?.tools ?? []);
 
+  // Flat list of tool rows: a section label cell, then one cell per tool.
+  const toolCells: ToolCell[] =
+    tools.length === 0
+      ? []
+      : [
+          { key: 'tools-label', type: 'label' },
+          ...tools.map((tool, index) => ({
+            key: tool.id,
+            type: 'tool' as const,
+            tool,
+            first: index === 0,
+            last: index === tools.length - 1,
+          })),
+        ];
+
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -349,6 +381,9 @@ export default function IntegrationDetailScreen() {
       router.replace('/mcp');
     }
   }, [router]);
+
+
+  const headerInset = useHeaderInset();
 
   return (
     <View style={styles.screen}>
@@ -383,12 +418,303 @@ export default function IntegrationDetailScreen() {
           <Spinner size="lg" color="default" />
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={toolCells}
+          keyExtractor={(cell) => cell.key}
+          renderItem={({ item: cell }) => {
+            if (cell.type === 'label') {
+              return (
+                <View style={styles.toolsLabelCell}>
+                  <SectionLabel text={`Tools (${tools.length})`} />
+                </View>
+              );
+            }
+
+            const { tool } = cell;
+            return (
+              <View
+                style={[
+                  styles.cardSlice,
+                  cell.first && styles.cardSliceTop,
+                  cell.last && styles.cardSliceBottom,
+                ]}
+              >
+                {!cell.first ? <HairlineDivider inset={56} /> : null}
+                <View style={styles.toolRow}>
+                  <View style={styles.toolHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, flex: 1 }}>
+                      <View style={styles.toolIconBox}>
+                        <SymbolIcon icon={Wrench} size={14} color={colors.textPrimary} strokeWidth={1.75} />
+                      </View>
+                      <Text numberOfLines={1} style={styles.toolName}>
+                        {'name' in tool && tool.name ? tool.name : tool.externalToolId}
+                      </Text>
+                    </View>
+                    <RiskBadge level={'riskLevel' in tool ? tool.riskLevel : 'medium'} />
+                  </View>
+
+                  <Text style={styles.toolDescription}>
+                    {tool.description || 'No description provided.'}
+                  </Text>
+
+                  {attached ? (
+                    <View style={styles.toolSwitches}>
+                      <View style={styles.switchRow}>
+                        <Text style={styles.switchLabel}>Enabled</Text>
+                        <Switch
+                          isSelected={'enabled' in tool ? tool.enabled : true}
+                          onSelectedChange={(value) =>
+                            void handleToggleTool(tool as AttachmentTool, { enabled: value })
+                          }
+                          accessibilityLabel="Enable this tool"
+                        />
+                      </View>
+                      <View style={styles.switchRow}>
+                        <View>
+                          <Text style={styles.switchLabel}>Require user approval</Text>
+                          {'riskLevel' in tool && tool.riskLevel === 'high' ? (
+                            <Text style={styles.mandatoryText}>
+                              Mandatory for high-risk tools
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Switch
+                          isSelected={
+                            'approvalRequired' in tool ? tool.approvalRequired : false
+                          }
+                          isDisabled={'riskLevel' in tool && tool.riskLevel === 'high'}
+                          onSelectedChange={(value) =>
+                            void handleToggleTool(tool as AttachmentTool, {
+                              approvalRequired: value,
+                            })
+                          }
+                          accessibilityLabel="Require your approval before this tool runs"
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            );
+          }}
+          ListHeaderComponent={
+            <View style={styles.listHeader}>
+              {/* Notifications */}
+              {notice ? (
+                <View
+                  style={[
+                    styles.noticeBox,
+                    notice.kind === 'danger' && styles.noticeBoxDanger,
+                  ]}
+                >
+                  <View style={styles.noticeHeader}>
+                    {notice.kind === 'success' ? (
+                      <SymbolIcon icon={CheckCircle2} size={16} color={colors.success} />
+                    ) : notice.kind === 'warning' ? (
+                      <SymbolIcon icon={Clock} size={16} color={colors.textSecondary} />
+                    ) : (
+                      <SymbolIcon icon={AlertCircle} size={16} color={colors.danger} />
+                    )}
+                    <Text
+                      style={[
+                        styles.noticeTitle,
+                        notice.kind === 'danger' && { color: colors.danger },
+                      ]}
+                    >
+                      {notice.kind === 'success'
+                        ? 'Done'
+                        : notice.kind === 'warning'
+                          ? 'Notice'
+                          : 'Error'}
+                    </Text>
+                  </View>
+                  <Text style={styles.noticeText}>{notice.text}</Text>
+                </View>
+              ) : null}
+
+              {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
+
+              {/* Hero Overview Card (Section 6.8 & reference screen) */}
+              <View style={styles.heroCard}>
+                <View style={styles.heroHeader}>
+                  <View style={styles.appIconBox}>
+                    <SymbolIcon icon={Blocks} size={28} color={colors.textPrimary} strokeWidth={1.75} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.appName}>
+                      {server?.name ?? 'Google Calendar'}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.appEndpoint}>
+                      {server?.endpoint ? server.endpoint.replace(/^https?:\/\//i, '').split('/')[0] : 'service.api'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.appDescription}>
+                  {server?.description ||
+                    'Connect to vendor-hosted remote MCP server to discover tools and enable autonomous capabilities.'}
+                </Text>
+
+                {/* Includes card */}
+                <View style={{ gap: space.xs }}>
+                  <Text style={styles.includesLabel}>Includes</Text>
+                  <View style={styles.includesRow}>
+                    <Text style={styles.includesCount}>
+                      {`${detail?.tools.length ?? 1} connector`}
+                    </Text>
+                    {server?.endpoint ? (
+                      <Pressable
+                        onPress={() => {
+                          if (server?.endpoint) void Linking.openURL(server.endpoint);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="View source link"
+                      >
+                        <Text style={styles.viewSourceText}>View source ↗</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Action Button: Added or Add connector */}
+                <View style={{ marginTop: space.xs }}>
+                  {connected ? (
+                    <View style={styles.addedPill}>
+                      <SymbolIcon icon={Check} size={18} color={colors.success} strokeWidth={2.5} />
+                      <Text style={styles.addedText}>Added</Text>
+                    </View>
+                  ) : (
+                    <PillButton
+                      label={busy === 'connect' ? 'Connecting…' : 'Add connector'}
+                      onPress={() => void handleConnect()}
+                      disabled={busy === 'connect'}
+                      variant="primary"
+                    />
+                  )}
+                </View>
+              </View>
+
+              {/* Setup instructions */}
+              {server?.instructions ? (
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <SymbolIcon icon={Info} size={16} color={colors.textSecondary} strokeWidth={1.75} />
+                    <Text style={styles.cardTitle}>Setup instructions</Text>
+                  </View>
+                  <Text style={styles.cardText}>{server.instructions}</Text>
+                </View>
+              ) : null}
+
+              {/* Connect / Authenticate Card */}
+              {!connected && server && needsKey ? (
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <SymbolIcon icon={KeyRound} size={18} color={colors.textPrimary} strokeWidth={1.75} />
+                    <Text style={styles.cardTitle}>API key required</Text>
+                  </View>
+                  <TextInput
+                    value={apiKey}
+                    onChangeText={setApiKey}
+                    placeholder="Enter API key or token"
+                    placeholderTextColor={colors.textSecondary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    style={styles.keyInput}
+                  />
+                  <PillButton
+                    label={busy === 'connect' ? 'Connecting…' : connectLabel}
+                    onPress={() => void handleConnect()}
+                    disabled={busy === 'connect' || !apiKey.trim()}
+                    variant="primary"
+                    style={{ marginTop: space.xs }}
+                  />
+                  <Text style={styles.securityText}>
+                    Credentials are encrypted and never stored in plain text.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Assign to Agent Section */}
+              {connected && server && agents.length > 0 ? (
+                <View>
+                  <SectionLabel text="Assign to agent" />
+                  <GroupedCard style={{ padding: space.md, gap: space.md }}>
+                    <View style={styles.agentsPillRow}>
+                      {agents.map((agent) => {
+                        const isSelected = selectedAgentId === agent.id;
+                        return (
+                          <Pressable
+                            key={agent.id}
+                            onPress={() => setSelectedAgentId(agent.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={agent.name}
+                            style={[
+                              styles.agentCapsule,
+                              isSelected && styles.agentCapsuleSelected,
+                              isSelected && shadow.floating,
+                            ]}
+                          >
+                            <AgentAvatar avatar={agent.avatar} name={agent.name} size={18} />
+                            <Text
+                              style={[
+                                styles.agentCapsuleText,
+                                isSelected && styles.agentCapsuleTextSelected,
+                              ]}
+                            >
+                              {agent.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    {attached ? (
+                      <PillButton
+                        label={`Remove from ${selectedAgent?.name ?? 'Agent'}`}
+                        onPress={() => void handleDetach()}
+                        disabled={busy === 'detach'}
+                        variant="secondary"
+                        style={{ backgroundColor: colors.surface }}
+                      />
+                    ) : (
+                      <PillButton
+                        label={`Add to ${selectedAgent?.name ?? 'Agent'}`}
+                        onPress={() => void handleAttach()}
+                        disabled={busy === 'attach' || !selectedAgentId || !connectionId}
+                        variant="primary"
+                      />
+                    )}
+                  </GroupedCard>
+                </View>
+              ) : null}
+            </View>
+          }
+          ListFooterComponent={
+            connected ? (
+              <View
+                style={{
+                  paddingTop: tools.length > 0 ? space.lg : 0,
+                }}
+              >
+                <Pressable
+                  onPress={() => void handleDisconnect()}
+                  disabled={busy === 'disconnect'}
+                  accessibilityRole="button"
+                  accessibilityLabel="Disconnect integration"
+                  style={styles.disconnectButton}
+                >
+                  <Text style={styles.disconnectText}>
+                    {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect integration'}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : undefined
+          }
           contentContainerStyle={{
+            paddingTop: headerInset,
             paddingHorizontal: space.lg,
-            paddingTop: space.sm,
             paddingBottom: insets.bottom + 32,
-            gap: space.lg,
           }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -401,287 +727,7 @@ export default function IntegrationDetailScreen() {
               tintColor={colors.textPrimary}
             />
           }
-        >
-          {/* Notifications */}
-          {notice ? (
-            <View
-              style={[
-                styles.noticeBox,
-                notice.kind === 'danger' && styles.noticeBoxDanger,
-              ]}
-            >
-              <View style={styles.noticeHeader}>
-                {notice.kind === 'success' ? (
-                  <CheckCircle2 size={16} color={colors.success} />
-                ) : notice.kind === 'warning' ? (
-                  <Clock size={16} color={colors.textSecondary} />
-                ) : (
-                  <AlertCircle size={16} color={colors.recording} />
-                )}
-                <Text
-                  style={[
-                    styles.noticeTitle,
-                    notice.kind === 'danger' && { color: colors.recording },
-                  ]}
-                >
-                  {notice.kind === 'success'
-                    ? 'Done'
-                    : notice.kind === 'warning'
-                      ? 'Notice'
-                      : 'Error'}
-                </Text>
-              </View>
-              <Text style={styles.noticeText}>{notice.text}</Text>
-            </View>
-          ) : null}
-
-          {error ? (
-            <View style={[styles.noticeBox, styles.noticeBoxDanger]}>
-              <Text style={[styles.noticeTitle, { color: colors.recording }]}>Action failed</Text>
-              <Text style={styles.noticeText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {/* Hero Overview Card (Section 6.8 & reference screen) */}
-          <View style={styles.heroCard}>
-            <View style={styles.heroHeader}>
-              <View style={styles.appIconBox}>
-                <Blocks size={28} color={colors.textPrimary} strokeWidth={1.75} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.appName}>
-                  {server?.name ?? 'Google Calendar'}
-                </Text>
-                <Text numberOfLines={1} style={styles.appEndpoint}>
-                  {server?.endpoint ? server.endpoint.replace(/^https?:\/\//i, '').split('/')[0] : 'service.api'}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.appDescription}>
-              {server?.description ||
-                'Connect to vendor-hosted remote MCP server to discover tools and enable autonomous capabilities.'}
-            </Text>
-
-            {/* Includes card */}
-            <View style={{ gap: space.xs }}>
-              <Text style={styles.includesLabel}>Includes</Text>
-              <View style={styles.includesRow}>
-                <Text style={styles.includesCount}>
-                  {`${detail?.tools.length ?? 1} connector`}
-                </Text>
-                {server?.endpoint ? (
-                  <Pressable
-                    onPress={() => {
-                      if (server?.endpoint) void Linking.openURL(server.endpoint);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="View source link"
-                  >
-                    <Text style={styles.viewSourceText}>View source ↗</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-
-            {/* Action Button: Added or Add connector */}
-            <View style={{ marginTop: space.xs }}>
-              {connected ? (
-                <View style={styles.addedPill}>
-                  <Check size={18} color={colors.success} strokeWidth={2.5} />
-                  <Text style={styles.addedText}>Added</Text>
-                </View>
-              ) : (
-                <PillButton
-                  label={busy === 'connect' ? 'Connecting…' : 'Add connector'}
-                  onPress={() => void handleConnect()}
-                  disabled={busy === 'connect'}
-                  variant="primary"
-                />
-              )}
-            </View>
-          </View>
-
-          {/* Setup instructions */}
-          {server?.instructions ? (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Info size={16} color={colors.textSecondary} strokeWidth={1.75} />
-                <Text style={styles.cardTitle}>Setup instructions</Text>
-              </View>
-              <Text style={styles.cardText}>{server.instructions}</Text>
-            </View>
-          ) : null}
-
-          {/* Connect / Authenticate Card */}
-          {!connected && server && needsKey ? (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <KeyRound size={18} color={colors.textPrimary} strokeWidth={1.75} />
-                <Text style={styles.cardTitle}>API key required</Text>
-              </View>
-              <TextInput
-                value={apiKey}
-                onChangeText={setApiKey}
-                placeholder="Enter API key or token"
-                placeholderTextColor={colors.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                style={styles.keyInput}
-              />
-              <PillButton
-                label={busy === 'connect' ? 'Connecting…' : connectLabel}
-                onPress={() => void handleConnect()}
-                disabled={busy === 'connect' || !apiKey.trim()}
-                variant="primary"
-                style={{ marginTop: space.xs }}
-              />
-              <Text style={styles.securityText}>
-                Credentials are encrypted and never stored in plain text.
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Assign to Agent Section */}
-          {connected && server && agents.length > 0 ? (
-            <View style={{ gap: space.xs }}>
-              <SectionLabel text="Assign to Agent" />
-              <GroupedCard style={{ padding: space.md, gap: space.md }}>
-                <View style={styles.agentsPillRow}>
-                  {agents.map((agent) => {
-                    const isSelected = selectedAgentId === agent.id;
-                    return (
-                      <Pressable
-                        key={agent.id}
-                        onPress={() => setSelectedAgentId(agent.id)}
-                        accessibilityRole="button"
-                        accessibilityLabel={agent.name}
-                        style={[
-                          styles.agentCapsule,
-                          isSelected && styles.agentCapsuleSelected,
-                          isSelected && shadow.floating,
-                        ]}
-                      >
-                        <AgentAvatar avatar={agent.avatar} name={agent.name} size={18} />
-                        <Text
-                          style={[
-                            styles.agentCapsuleText,
-                            isSelected && styles.agentCapsuleTextSelected,
-                          ]}
-                        >
-                          {agent.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                {attached ? (
-                  <PillButton
-                    label={`Remove from ${selectedAgent?.name ?? 'Agent'}`}
-                    onPress={() => void handleDetach()}
-                    disabled={busy === 'detach'}
-                    variant="secondary"
-                    style={{ backgroundColor: colors.recordingBg }}
-                  />
-                ) : (
-                  <PillButton
-                    label={`Add to ${selectedAgent?.name ?? 'Agent'}`}
-                    onPress={() => void handleAttach()}
-                    disabled={busy === 'attach' || !selectedAgentId || !connectionId}
-                    variant="primary"
-                  />
-                )}
-              </GroupedCard>
-            </View>
-          ) : null}
-
-          {/* Tools List */}
-          {tools.length > 0 ? (
-            <View style={{ gap: space.xs }}>
-              <SectionLabel text={`Tools (${tools.length})`} />
-              <GroupedCard>
-                {tools.map((tool, index) => (
-                  <React.Fragment key={tool.id}>
-                    {index > 0 && <HairlineDivider inset={56} />}
-                    <View style={styles.toolRow}>
-                      <View style={styles.toolHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, flex: 1 }}>
-                          <View style={styles.toolIconBox}>
-                            <Wrench size={14} color={colors.textPrimary} strokeWidth={1.75} />
-                          </View>
-                          <Text numberOfLines={1} style={styles.toolName}>
-                            {'name' in tool && tool.name ? tool.name : tool.externalToolId}
-                          </Text>
-                        </View>
-                        <RiskBadge level={'riskLevel' in tool ? tool.riskLevel : 'medium'} />
-                      </View>
-
-                      <Text style={styles.toolDescription}>
-                        {tool.description || 'No description provided.'}
-                      </Text>
-
-                      {attached ? (
-                        <View style={styles.toolSwitches}>
-                          <View style={styles.switchRow}>
-                            <Text style={styles.switchLabel}>Enabled</Text>
-                            <Switch
-                              isSelected={'enabled' in tool ? tool.enabled : true}
-                              onSelectedChange={(value) =>
-                                void handleToggleTool(tool as AttachmentTool, { enabled: value })
-                              }
-                              accessibilityLabel="Enable this tool"
-                            />
-                          </View>
-                          <View style={styles.switchRow}>
-                            <View>
-                              <Text style={styles.switchLabel}>Require user approval</Text>
-                              {'riskLevel' in tool && tool.riskLevel === 'high' ? (
-                                <Text style={styles.mandatoryText}>
-                                  Mandatory for high-risk tools
-                                </Text>
-                              ) : null}
-                            </View>
-                            <Switch
-                              isSelected={
-                                'approvalRequired' in tool ? tool.approvalRequired : false
-                              }
-                              isDisabled={'riskLevel' in tool && tool.riskLevel === 'high'}
-                              onSelectedChange={(value) =>
-                                void handleToggleTool(tool as AttachmentTool, {
-                                  approvalRequired: value,
-                                })
-                              }
-                              accessibilityLabel="Require your approval before this tool runs"
-                            />
-                          </View>
-                        </View>
-                      ) : null}
-                    </View>
-                  </React.Fragment>
-                ))}
-              </GroupedCard>
-            </View>
-          ) : null}
-
-          {/* Disconnect Button */}
-          {connected ? (
-            <View style={{ paddingTop: space.xs }}>
-              <Pressable
-                onPress={() => void handleDisconnect()}
-                disabled={busy === 'disconnect'}
-                accessibilityRole="button"
-                accessibilityLabel="Disconnect integration"
-                style={styles.disconnectButton}
-              >
-                <Text style={styles.disconnectText}>
-                  {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect integration'}
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </ScrollView>
+        />
       )}
     </View>
   );
@@ -693,8 +739,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },
@@ -710,7 +756,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   noticeBoxDanger: {
-    backgroundColor: colors.recordingBg,
+    backgroundColor: colors.surface,
   },
   noticeHeader: {
     flexDirection: 'row',
@@ -782,6 +828,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
   viewSourceText: {
     fontSize: 14,
@@ -791,7 +838,7 @@ const styles = StyleSheet.create({
   addedPill: {
     height: 48,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -863,6 +910,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.onPrimary,
   },
+  listHeader: {
+    gap: space.lg,
+    // Replaces the content container's old 16pt gap below the header.
+    marginBottom: space.lg,
+  },
+  toolsLabelCell: {
+    // SectionLabel already adds its own 8pt marginBottom, so label→first tool
+    // is the 8pt the spec asks for.
+  },
+  cardSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+  },
+  cardSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  cardSliceBottom: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
+  },
   toolRow: {
     paddingHorizontal: space.lg,
     paddingVertical: 14,
@@ -926,7 +994,7 @@ const styles = StyleSheet.create({
   },
   mandatoryText: {
     fontSize: 11,
-    color: colors.recording,
+    color: colors.danger,
   },
   disconnectButton: {
     height: 44,
@@ -938,6 +1006,6 @@ const styles = StyleSheet.create({
   disconnectText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.recording,
+    color: colors.danger,
   },
 });

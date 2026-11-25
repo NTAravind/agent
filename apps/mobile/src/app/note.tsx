@@ -21,6 +21,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import {
   EnrichedMarkdownTextInput,
   type EnrichedMarkdownTextInputInstance,
@@ -28,9 +29,9 @@ import {
   type StyleState,
 } from 'react-native-enriched-markdown';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
-import { RoundButton } from '@/components/design-system';
+import { InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { EditorToolbar } from '@/components/notes/editor-toolbar';
 import { TagChip } from '@/components/notes/tag-chip';
 import { colors, radius, shadow, space } from '@/theme';
@@ -314,6 +315,8 @@ export default function NoteScreen() {
     [],
   );
 
+  const headerInset = useHeaderInset();
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -339,7 +342,7 @@ export default function NoteScreen() {
             )}
             {saveStatus === 'saved' && (
               <View style={styles.statusPill}>
-                <Check size={13} color={colors.success} strokeWidth={2.5} />
+                <SymbolIcon icon={Check} size={13} color={colors.success} strokeWidth={2.5} />
                 <Text style={styles.statusText}>Saved</Text>
               </View>
             )}
@@ -366,17 +369,15 @@ export default function NoteScreen() {
         </View>
       ) : error ? (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={handleBack} style={styles.goBackBtn}>
-            <Text style={styles.goBackText}>Go back</Text>
-          </Pressable>
+          <InlineError message={error} align="center" style={styles.errorCard} />
+          <PillButton label="Go back" onPress={handleBack} variant="secondary" />
         </View>
       ) : (
         <View style={styles.editorContainer}>
           <ScrollView
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: space.xl },
+              { paddingTop: headerInset, paddingBottom: space.xl },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -404,11 +405,11 @@ export default function NoteScreen() {
               <Pressable
                 onPress={() => setTagModalOpen(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Add Tag"
+                accessibilityLabel="Add tag"
                 style={styles.actionPill}
               >
-                <Tag size={13} color={colors.textSecondary} />
-                <Text style={styles.actionPillText}>+ Add Tag</Text>
+                <SymbolIcon icon={Tag} size={13} color={colors.textSecondary} />
+                <Text style={styles.actionPillText}>+ Add tag</Text>
               </Pressable>
             </View>
 
@@ -463,9 +464,9 @@ export default function NoteScreen() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, shadow.floating]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Insert Link</Text>
+              <Text style={styles.modalTitle}>Insert link</Text>
               <Pressable onPress={() => setLinkModalOpen(false)} hitSlop={8}>
-                <X size={20} color={colors.textSecondary} />
+                <SymbolIcon icon={X} size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
@@ -509,9 +510,9 @@ export default function NoteScreen() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, shadow.floating]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Tag</Text>
+              <Text style={styles.modalTitle}>Add tag</Text>
               <Pressable onPress={() => setTagModalOpen(false)} hitSlop={8}>
-                <X size={20} color={colors.textSecondary} />
+                <SymbolIcon icon={X} size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
             <TextInput
@@ -574,12 +575,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
     color: colors.textSecondary,
   },
   unsavedDot: {
@@ -589,9 +589,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textSecondary,
   },
   titleInput: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '700',
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '600',
     color: colors.textPrimary,
     paddingVertical: space.xs,
   },
@@ -609,12 +609,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceRaised,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   actionPillText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
     color: colors.textSecondary,
   },
   enrichedInput: {
@@ -631,21 +630,8 @@ const styles = StyleSheet.create({
     padding: space.xl,
     gap: space.md,
   },
-  errorText: {
-    fontSize: 16,
-    color: colors.recording,
-    textAlign: 'center',
-  },
-  goBackBtn: {
-    paddingHorizontal: space.lg,
-    paddingVertical: space.sm,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.pill,
-  },
-  goBackText: {
-    fontSize: 15,
-    color: colors.link,
-    fontWeight: '600',
+  errorCard: {
+    maxWidth: 320,
   },
   modalBackdrop: {
     flex: 1,
@@ -658,8 +644,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: space.xl,
     gap: space.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -667,8 +651,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   modalInput: {
@@ -685,12 +670,14 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   modalCancelBtn: {
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm + 2,
   },
   modalCancelText: {
     fontSize: 15,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   modalConfirmBtn: {

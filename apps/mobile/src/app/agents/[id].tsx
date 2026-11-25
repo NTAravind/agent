@@ -1,4 +1,4 @@
-import type { Agent } from '@agent/shared';
+import type { Agent, RoutineWithPreview } from '@agent/shared';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert as RNAlert,
@@ -21,17 +21,21 @@ import {
   MoreHorizontal,
   Plus,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import {
   AgentAvatar,
   AgentMark,
   CREATURE_SHAPES,
+  PICKABLE_CREATURE_SHAPES,
   deriveCreatureConfig,
   type CreatureShape,
 } from '@/components/agent-avatar';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
   RoundButton,
   SectionLabel,
@@ -45,6 +49,8 @@ import {
   fetchAgents,
   updateAgent,
 } from '@/lib/agents';
+import { fetchRoutines } from '@/lib/routines';
+import { hapticSelect } from '@/lib/haptics';
 
 // Exact order from design.md Section 3:
 // black, brown, red, orange, amber, green, teal, blue, purple, pink, gray
@@ -65,6 +71,7 @@ const PALETTE_ORDER = [
 export default function AgentDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const headerInset = useHeaderInset();
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === 'string' ? params.id : '';
 
@@ -74,6 +81,8 @@ export default function AgentDetailScreen() {
   const [selectedShape, setSelectedShape] = useState<CreatureShape>('triangle');
   const [selectedColor, setSelectedColor] = useState<string>(colors.mark.green);
   const [routineSheetOpen, setRoutineSheetOpen] = useState(false);
+  const [routines, setRoutines] = useState<RoutineWithPreview[]>([]);
+  const [routinesLoading, setRoutinesLoading] = useState(true);
   const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
   const [instructionText, setInstructionText] = useState('');
   const [savingInstructions, setSavingInstructions] = useState(false);
@@ -119,14 +128,29 @@ export default function AgentDetailScreen() {
     }
   }, [id]);
 
+  /** The agent's real routines — the screen never shows placeholder data. */
+  const loadRoutines = useCallback(async () => {
+    if (id === 'new') return;
+    try {
+      const items = await fetchRoutines();
+      setRoutines(items.filter((routine) => routine.agentId === id));
+    } catch {
+      setRoutines([]);
+    } finally {
+      setRoutinesLoading(false);
+    }
+  }, [id]);
+
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      void loadRoutines();
+    }, [load, loadRoutines]),
   );
 
   const handleUpdateAvatar = async (shape: CreatureShape, color: string) => {
     if (!agent) return;
+    hapticSelect();
     setSelectedShape(shape);
     setSelectedColor(color);
 
@@ -206,7 +230,7 @@ export default function AgentDetailScreen() {
   const openMoreMenu = () => {
     RNAlert.alert(agent?.name ?? 'Agent Options', undefined, [
       { text: 'Edit Details', onPress: () => router.push({ pathname: '/agents/[id]/edit', params: { id } }) },
-      { text: 'Delete Agent', style: 'destructive', onPress: handleDelete },
+      { text: 'Delete agent', style: 'destructive', onPress: handleDelete },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -222,7 +246,11 @@ export default function AgentDetailScreen() {
   if (!agent) {
     return (
       <View style={[styles.screen, styles.center, { paddingHorizontal: space.lg }]}>
-        <Text style={styles.errorText}>{error ?? 'Agent not found'}</Text>
+        <InlineError
+          message={error ?? 'Agent not found'}
+          align="center"
+          style={styles.errorCard}
+        />
         <PillButton label="Go back" onPress={handleBack} variant="secondary" style={{ marginTop: space.md }} />
       </View>
     );
@@ -231,32 +259,35 @@ export default function AgentDetailScreen() {
   return (
     <View style={styles.screen}>
       {/* 6.1 Settings Floating Header: round back button + Edit pill + round ellipsis */}
-      <View style={[styles.headerBar, { paddingTop: insets.top + space.sm }]}>
-        <RoundButton
-          icon={ChevronLeft}
-          onPress={handleBack}
-          accessibilityLabel="Go back"
-        />
-
-        <View style={styles.headerRightActions}>
-          <PillButton
-            label="Edit"
-            variant="secondary"
-            onPress={() => router.push({ pathname: '/agents/[id]/edit', params: { id } })}
-            accessibilityLabel="Edit agent"
-          />
+      <AppHeader
+        left={
           <RoundButton
-            icon={MoreHorizontal}
-            onPress={openMoreMenu}
-            accessibilityLabel="More options"
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Go back"
           />
-        </View>
-      </View>
+        }
+        right={
+          <View style={styles.headerRightActions}>
+            <PillButton
+              label="Edit"
+              variant="secondary"
+              onPress={() => router.push({ pathname: '/agents/[id]/edit', params: { id } })}
+              accessibilityLabel="Edit agent"
+            />
+            <RoundButton
+              icon={MoreHorizontal}
+              onPress={openMoreMenu}
+              accessibilityLabel="More options"
+            />
+          </View>
+        }
+      />
 
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: space.lg,
-          paddingTop: space.sm,
+          paddingTop: headerInset,
           paddingBottom: insets.bottom + space.xxl,
           gap: space.xl,
         }}
@@ -274,7 +305,7 @@ export default function AgentDetailScreen() {
         {/* Agent Name & Role Card */}
         <View style={styles.nameCard}>
           <Text style={styles.agentNameText}>{agent.name}</Text>
-          <Text style={styles.agentRoleText}>{agent.role || 'Personal Assistant'}</Text>
+          <Text style={styles.agentRoleText}>{agent.role || 'Personal assistant'}</Text>
         </View>
 
         {/* 6.7 Character Customizer */}
@@ -310,7 +341,7 @@ export default function AgentDetailScreen() {
 
             {/* 2. Shapes: Creature shape previews, 36pt each, rendered in selected color */}
             <View style={styles.shapesRow}>
-              {CREATURE_SHAPES.map((shape) => {
+              {PICKABLE_CREATURE_SHAPES.map((shape) => {
                 const isSelected = selectedShape === shape;
                 return (
                   <Pressable
@@ -362,33 +393,48 @@ export default function AgentDetailScreen() {
               style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.6 : 1 }]}
             >
               <View style={styles.navRowLeft}>
-                <FileText size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={FileText} size={22} color={colors.textPrimary} strokeWidth={1.75} />
                 <Text style={styles.rowTitle}>Instructions</Text>
               </View>
-              <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
+              <SymbolIcon icon={ChevronRight} size={17} color={colors.textSecondary} strokeWidth={2} />
             </Pressable>
           </GroupedCard>
         </View>
 
-        {/* 6.9 Routines Section */}
+        {/* 6.9 Routines Section — the agent's real routines, never placeholders */}
         <View>
           <SectionLabel text="Routines" />
           <GroupedCard>
-            <Pressable
-              onPress={() => setRoutineSheetOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Weekly meal prep routine"
-              style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <View style={styles.navRowLeft}>
-                <Clock size={22} color={colors.textPrimary} strokeWidth={1.75} />
-                <View>
-                  <Text style={styles.rowTitle}>Weekly meal prep</Text>
-                  <Text style={styles.routineMeta}>Every Sunday at 9:00 PM</Text>
-                </View>
+            {routinesLoading ? (
+              <View style={styles.navRow}>
+                <Spinner size="sm" />
               </View>
-              <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
-            </Pressable>
+            ) : routines.length === 0 ? (
+              <View style={styles.navRow}>
+                <Text style={styles.routineEmpty}>No routines yet</Text>
+              </View>
+            ) : (
+              routines.map((routine, index) => (
+                <React.Fragment key={routine.id}>
+                  {index > 0 && <HairlineDivider inset={60} />}
+                  <Pressable
+                    onPress={() => setRoutineSheetOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${routine.name}, ${routine.scheduleLabel}`}
+                    style={({ pressed }) => [styles.navRow, { opacity: pressed ? 0.6 : 1 }]}
+                  >
+                    <View style={styles.navRowLeft}>
+                      <SymbolIcon icon={Clock} size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                      <View>
+                        <Text style={styles.rowTitle}>{routine.name}</Text>
+                        <Text style={styles.routineMeta}>{routine.scheduleLabel}</Text>
+                      </View>
+                    </View>
+                    <SymbolIcon icon={ChevronRight} size={17} color={colors.textSecondary} strokeWidth={2} />
+                  </Pressable>
+                </React.Fragment>
+              ))
+            )}
           </GroupedCard>
 
           {/* Text action below the card: "+ Add routine" in link color */}
@@ -463,13 +509,6 @@ const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
   },
   headerRightActions: {
     flexDirection: 'row',
@@ -582,6 +621,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  routineEmpty: {
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  },
   modalScreen: {
     flex: 1,
     backgroundColor: colors.surfaceRaised,
@@ -605,8 +649,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     minHeight: 180,
   },
-  errorText: {
-    fontSize: 17,
-    color: colors.textSecondary,
+  errorCard: {
+    maxWidth: 320,
   },
 });

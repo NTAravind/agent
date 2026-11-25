@@ -1,13 +1,14 @@
-import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarClock, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { RoutineWithPreview } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
-import { GroupedCard, HairlineDivider, RoundButton } from '@/components/design-system';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
+import { HairlineDivider, InlineError, RoundButton } from '@/components/design-system';
 import { RoutineDetailSheet } from '@/components/routine-sheet';
 import { colors, radius, space } from '@/theme';
 import { formatDateTime } from '@/lib/dates';
@@ -58,6 +59,8 @@ export default function RoutinesScreen() {
     }
   }, [router]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -73,12 +76,74 @@ export default function RoutinesScreen() {
         }
       />
 
-      <ScrollView
+      <FlatList
+        data={routines}
+        keyExtractor={(routine) => routine.id}
+        renderItem={({ item: routine, index }) => (
+          <View
+            style={[
+              styles.cardSlice,
+              index === 0 && styles.cardSliceTop,
+              index === routines.length - 1 && styles.cardSliceBottom,
+            ]}
+          >
+            {index > 0 ? <HairlineDivider inset={56} /> : null}
+            <Pressable
+              onPress={() => setOpenId(routine.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${routine.name}`}
+              style={({ pressed }) => [
+                styles.routineRow,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <View style={styles.tileIcon}>
+                <SymbolIcon icon={CalendarClock} size={18} color={colors.textSecondary} strokeWidth={1.75} />
+              </View>
+              <View style={styles.routineContent}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.routineName}>{routine.name}</Text>
+                  <View style={styles.statusPill}>
+                    <Text style={styles.statusText}>{routine.status}</Text>
+                  </View>
+                </View>
+                <Text numberOfLines={1} style={styles.scheduleText}>{routine.scheduleLabel}</Text>
+                {routine.nextRuns[0] ? (
+                  <Text numberOfLines={1} style={styles.nextRunText}>
+                    {`Next: ${formatDateTime(routine.nextRuns[0], routine.tz)}`}
+                  </Text>
+                ) : null}
+              </View>
+              <SymbolIcon icon={ChevronRight} size={16} color={colors.textTertiary} strokeWidth={1.75} />
+            </Pressable>
+          </View>
+        )}
+        ListHeaderComponent={
+          notice ? (
+            <InlineError message={notice} onRetry={() => void load()} style={styles.headerNotice} />
+          ) : undefined
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.center}>
+              <Spinner size="lg" color="default" />
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <SymbolIcon icon={CalendarClock} size={32} color={colors.textSecondary} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyTitle}>No routines yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Ask an agent in its chat — “every Monday at 9 summarize my open tasks” — and confirm the proposal it makes.
+              </Text>
+            </View>
+          )
+        }
         contentContainerStyle={{
+          paddingTop: headerInset,
           paddingHorizontal: space.lg,
-          paddingTop: space.sm,
           paddingBottom: insets.bottom + 32,
-          gap: space.md,
         }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -91,65 +156,7 @@ export default function RoutinesScreen() {
             tintColor={colors.textPrimary}
           />
         }
-      >
-        {notice ? (
-          <View style={styles.noticeBox}>
-            <Text style={styles.noticeText}>{notice}</Text>
-          </View>
-        ) : null}
-
-        {loading ? (
-          <View style={styles.center}>
-            <Spinner size="lg" color="default" />
-          </View>
-        ) : routines.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconBox}>
-              <CalendarClock size={32} color={colors.textSecondary} strokeWidth={1.5} />
-            </View>
-            <Text style={styles.emptyTitle}>No routines yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Ask an agent in its chat — “every Monday at 9 summarize my open tasks” — and confirm the proposal it makes.
-            </Text>
-          </View>
-        ) : (
-          <GroupedCard>
-            {routines.map((routine, index) => (
-              <React.Fragment key={routine.id}>
-                {index > 0 && <HairlineDivider inset={56} />}
-                <Pressable
-                  onPress={() => setOpenId(routine.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${routine.name}`}
-                  style={({ pressed }) => [
-                    styles.routineRow,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
-                >
-                  <View style={styles.tileIcon}>
-                    <CalendarClock size={18} color={colors.textSecondary} strokeWidth={1.75} />
-                  </View>
-                  <View style={styles.routineContent}>
-                    <View style={styles.titleRow}>
-                      <Text style={styles.routineName}>{routine.name}</Text>
-                      <View style={styles.statusPill}>
-                        <Text style={styles.statusText}>{routine.status}</Text>
-                      </View>
-                    </View>
-                    <Text numberOfLines={1} style={styles.scheduleText}>{routine.scheduleLabel}</Text>
-                    {routine.nextRuns[0] ? (
-                      <Text numberOfLines={1} style={styles.nextRunText}>
-                        {`Next: ${formatDateTime(routine.nextRuns[0], routine.tz)}`}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
-                </Pressable>
-              </React.Fragment>
-            ))}
-          </GroupedCard>
-        )}
-      </ScrollView>
+      />
 
       {open ? (
         <RoutineDetailSheet
@@ -168,25 +175,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
-  },
-  noticeBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  noticeText: {
-    fontSize: 13,
-    color: colors.textSecondary,
   },
   center: {
     paddingVertical: 64,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerNotice: {
+    // Replaces the content container's old 12pt gap below the notice.
+    marginBottom: space.md,
+  },
+  cardSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+  },
+  cardSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  cardSliceBottom: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
   },
   emptyContainer: {
     marginTop: 64,
@@ -211,7 +224,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 20,
     color: colors.textSecondary,
     textAlign: 'center',

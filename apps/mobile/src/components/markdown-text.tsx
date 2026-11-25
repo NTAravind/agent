@@ -3,7 +3,7 @@ import { Linking } from 'react-native';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import type { MarkdownStyle } from 'react-native-enriched-markdown';
 
-import { colors } from '@/theme';
+import { colors, radius } from '@/theme';
 
 type Props = {
   /** Raw markdown string */
@@ -64,15 +64,14 @@ export function MarkdownText({
       codeBlock: {
         fontSize: Math.max(Math.round(fontSize * 0.85), 11),
         backgroundColor: colors.surfaceRaised,
-        borderColor: colors.divider,
-        borderWidth: 1,
-        borderRadius: 8,
+        borderRadius: radius.tile,
         padding: 10,
         marginBottom: 8,
       },
       code: {
         backgroundColor: colors.surfaceRaised,
-        borderColor: colors.divider,
+        borderRadius: radius.tile,
+        paddingHorizontal: 4,
       },
       link: { color: colors.link, underline: true },
     };

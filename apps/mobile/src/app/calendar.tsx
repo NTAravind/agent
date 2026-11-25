@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -14,13 +16,15 @@ import { Spinner, Typography } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Plus, Trash2, X } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { CalendarEvent } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
   RoundButton,
   SectionLabel,
@@ -30,6 +34,25 @@ import { DEFAULT_TIMEZONE, dayKey, formatDayLabel, formatTime } from '@/lib/date
 import { createEvent, deleteEvent, fetchEvents, updateEvent } from '@/lib/productivity';
 
 type ViewMode = 'month' | 'week' | 'agenda';
+
+/**
+ * One row of the virtualized calendar. Event cells carry first/last flags so
+ * each renders only its slice of the grouped card — the agenda can hold
+ * hundreds of expanded recurrence rows, which is the whole point.
+ */
+type CalendarCell =
+  | { key: string; type: 'nav' }
+  | { key: string; type: 'month-grid' }
+  | { key: string; type: 'day-label'; text: string }
+  | { key: string; type: 'day-empty'; text: string; variant: 'selected' | 'week' }
+  | {
+      key: string;
+      type: 'event';
+      event: CalendarEvent;
+      first: boolean;
+      last: boolean;
+    }
+  | { key: string; type: 'agenda-empty' };
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -256,7 +279,7 @@ export default function CalendarScreen() {
         </View>
         {event.location ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-            <MapPin size={11} color={colors.textSecondary} />
+            <SymbolIcon icon={MapPin} size={11} color={colors.textSecondary} />
             <Text style={{ fontSize: 12, color: colors.textSecondary }}>{event.location}</Text>
           </View>
         ) : null}
@@ -271,6 +294,86 @@ export default function CalendarScreen() {
       router.replace('/' as never);
     }
   }, [router]);
+
+  const headerInset = useHeaderInset();
+
+  // Mode-dependent flat cell list so event rows virtualize (the agenda spans
+  // ~211 days of expanded recurrences). Spacing that used to come from
+  // nested `gap`s now lives on the cells and the header.
+  const calendarCells = useMemo<CalendarCell[]>(() => {
+    if (loading) return [];
+
+    const dayCells = (
+      labelKey: string,
+      label: string,
+      events: CalendarEvent[],
+      emptyText: string,
+      emptyVariant: 'selected' | 'week',
+    ): CalendarCell[] => {
+      const out: CalendarCell[] = [
+        { key: `label-${labelKey}`, type: 'day-label', text: label },
+      ];
+      if (events.length === 0) {
+        out.push({
+          key: `empty-${labelKey}`,
+          type: 'day-empty',
+          text: emptyText,
+          variant: emptyVariant,
+        });
+      } else {
+        events.forEach((event, index) =>
+          out.push({
+            key: `${event.id}-${event.startsAt}`,
+            type: 'event',
+            event,
+            first: index === 0,
+            last: index === events.length - 1,
+          }),
+        );
+      }
+      return out;
+    };
+
+    if (mode === 'month') {
+      return [
+        { key: 'nav', type: 'nav' },
+        { key: 'month-grid', type: 'month-grid' },
+        ...dayCells(
+          selectedDay,
+          formatDayLabel(`${selectedDay}T12:00:00+05:30`, DEFAULT_TIMEZONE),
+          byDay.get(selectedDay) ?? [],
+          'No events on this day.',
+          'selected',
+        ),
+      ];
+    }
+
+    if (mode === 'week') {
+      const cells: CalendarCell[] = [{ key: 'nav', type: 'nav' }];
+      weekDays.forEach((date) => {
+        const key = dayKey(date, DEFAULT_TIMEZONE);
+        cells.push(
+          ...dayCells(
+            key,
+            `${formatDayLabel(date, DEFAULT_TIMEZONE)} · ${new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(date)}`,
+            byDay.get(key) ?? [],
+            'Free',
+            'week',
+          ),
+        );
+      });
+      return cells;
+    }
+
+    if (agenda.length === 0) return [{ key: 'agenda-empty', type: 'agenda-empty' }];
+    return agenda.map((event, index) => ({
+      key: `${event.id}-${event.startsAt}`,
+      type: 'event' as const,
+      event,
+      first: index === 0,
+      last: index === agenda.length - 1,
+    }));
+  }, [loading, mode, byDay, selectedDay, weekDays, agenda]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -296,8 +399,234 @@ export default function CalendarScreen() {
         }
       />
 
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 14 }}
+      <FlatList
+        data={loading ? [] : calendarCells}
+        keyExtractor={(cell) => cell.key}
+        renderItem={({ item: cell }) => {
+          if (cell.type === 'nav') {
+            return mode === 'month' ? (
+              <View style={styles.navRow}>
+                <Pressable
+                  onPress={() =>
+                    setCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous month"
+                  style={styles.navButton}
+                >
+                  <SymbolIcon icon={ChevronLeft} size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Text style={styles.navTitle}>
+                  {new Intl.DateTimeFormat('en-IN', {
+                    month: 'long',
+                    year: 'numeric',
+                  }).format(cursor)}
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Next month"
+                  style={styles.navButton}
+                >
+                  <SymbolIcon icon={ChevronRight} size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.navRow}>
+                <Pressable
+                  onPress={() =>
+                    setCursor((current) => new Date(current.getTime() - 7 * 86_400_000))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous week"
+                  style={styles.navButton}
+                >
+                  <SymbolIcon icon={ChevronLeft} size={20} color={colors.textSecondary} />
+                </Pressable>
+                <Text style={styles.navTitle}>
+                  {new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(cursor)}
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    setCursor((current) => new Date(current.getTime() + 7 * 86_400_000))
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Next week"
+                  style={styles.navButton}
+                >
+                  <SymbolIcon icon={ChevronRight} size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            );
+          }
+
+          if (cell.type === 'month-grid') {
+            return (
+              <View style={styles.gridCell}>
+                <GroupedCard style={{ padding: space.md, gap: space.sm }}>
+                  <View style={{ flexDirection: 'row' }}>
+                    {WEEKDAYS.map((label, index) => (
+                      <View key={`${label}-${index}`} style={{ flex: 1, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {monthGrid.map((gridCell) => {
+                      const dayEvents = gridCell.inMonth ? byDay.get(gridCell.key) ?? [] : [];
+                      const isSelected = gridCell.key === selectedDay;
+                      const isToday = gridCell.key === todayKey();
+                      return (
+                        <Pressable
+                          key={gridCell.key}
+                          disabled={!gridCell.inMonth}
+                          onPress={() => setSelectedDay(gridCell.key)}
+                          style={{ width: '14.28%', height: 44, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <View
+                            style={[
+                              { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
+                              isSelected && { backgroundColor: colors.primary },
+                              !isSelected && isToday && { borderWidth: 1, borderColor: colors.primary },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                { fontSize: 13, fontWeight: '500' },
+                                !gridCell.inMonth
+                                  ? { color: colors.textTertiary }
+                                  : isSelected
+                                    ? { color: colors.onPrimary, fontWeight: '600' }
+                                    : { color: colors.textPrimary },
+                              ]}
+                            >
+                              {gridCell.inMonth ? gridCell.day : ''}
+                            </Text>
+                          </View>
+                          {dayEvents.length > 0 ? (
+                            <View style={{ flexDirection: 'row', gap: 2, marginTop: 2 }}>
+                              {dayEvents.slice(0, 3).map((event) => (
+                                <View
+                                  key={`${event.id}-${event.startsAt}`}
+                                  style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: isSelected ? colors.onPrimary : colors.primary }}
+                                />
+                              ))}
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </GroupedCard>
+              </View>
+            );
+          }
+
+          if (cell.type === 'day-label') {
+            return (
+              <View style={styles.dayLabelCell}>
+                <SectionLabel text={cell.text} />
+              </View>
+            );
+          }
+
+          if (cell.type === 'day-empty') {
+            return (
+              <GroupedCard>
+                <Text
+                  style={
+                    cell.variant === 'selected'
+                      ? styles.dayEmptySelected
+                      : styles.dayEmptyWeek
+                  }
+                >
+                  {cell.text}
+                </Text>
+              </GroupedCard>
+            );
+          }
+
+          if (cell.type === 'agenda-empty') {
+            return (
+              <View style={styles.agendaEmpty}>
+                <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center', borderRadius: radius.card, backgroundColor: colors.surface }}>
+                  <SymbolIcon icon={CalendarDays} size={28} color={colors.textSecondary} />
+                </View>
+                <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary }}>
+                  Nothing on the calendar
+                </Text>
+                <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', maxWidth: 260 }}>
+                  Tap + to schedule something, or ask an agent to add an event.
+                </Text>
+              </View>
+            );
+          }
+
+          return (
+            <View
+              style={[
+                styles.cardSlice,
+                cell.first && styles.cardSliceTop,
+                cell.last && styles.cardSliceBottom,
+              ]}
+            >
+              {!cell.first ? <HairlineDivider inset={72} /> : null}
+              {renderEvent(cell.event)}
+            </View>
+          );
+        }}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            {/* Mode switch */}
+            <View style={{ flexDirection: 'row', borderRadius: radius.pill, backgroundColor: colors.surface, padding: 4 }}>
+              {(['month', 'week', 'agenda'] as ViewMode[]).map((value) => (
+                <Pressable
+                  key={value}
+                  onPress={() => setMode(value)}
+                  style={[
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      borderRadius: radius.pill,
+                      paddingVertical: 8,
+                    },
+                    mode === value && {
+                      backgroundColor: colors.surfaceRaised,
+                      ...shadow.floating,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: mode === value ? '600' : '400',
+                      color: mode === value ? colors.textPrimary : colors.textSecondary,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {value}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {notice ? <InlineError message={notice} onRetry={() => void load()} /> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.loadingCell}>
+              <Spinner size="lg" color="default" />
+            </View>
+          ) : undefined
+        }
+        contentContainerStyle={{
+          padding: 16,
+          paddingTop: headerInset,
+          paddingBottom: insets.bottom + 32,
+        }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -309,232 +638,7 @@ export default function CalendarScreen() {
             tintColor={colors.textPrimary}
           />
         }
-      >
-        {/* Mode switch */}
-        <View style={{ flexDirection: 'row', borderRadius: radius.pill, backgroundColor: colors.surface, padding: 4 }}>
-          {(['month', 'week', 'agenda'] as ViewMode[]).map((value) => (
-            <Pressable
-              key={value}
-              onPress={() => setMode(value)}
-              style={[
-                {
-                  flex: 1,
-                  alignItems: 'center',
-                  borderRadius: radius.pill,
-                  paddingVertical: 8,
-                },
-                mode === value && {
-                  backgroundColor: colors.surfaceRaised,
-                  ...shadow.floating,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: mode === value ? '600' : '400',
-                  color: mode === value ? colors.textPrimary : colors.textSecondary,
-                  textTransform: 'capitalize',
-                }}
-              >
-                {value}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {notice ? (
-          <View style={{ backgroundColor: colors.surface, borderRadius: radius.card, paddingHorizontal: 14, paddingVertical: 10 }}>
-            <Text style={{ fontSize: 13, color: colors.textSecondary }}>{notice}</Text>
-          </View>
-        ) : null}
-
-        {loading ? (
-          <View style={{ paddingVertical: 64, alignItems: 'center', justifyContent: 'center' }}>
-            <Spinner size="lg" color="default" />
-          </View>
-        ) : mode === 'month' ? (
-          <View style={{ gap: space.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.xs }}>
-              <Pressable
-                onPress={() =>
-                  setCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Previous month"
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ChevronLeft size={20} color={colors.textSecondary} />
-              </Pressable>
-              <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary }}>
-                {new Intl.DateTimeFormat('en-IN', {
-                  month: 'long',
-                  year: 'numeric',
-                }).format(cursor)}
-              </Text>
-              <Pressable
-                onPress={() =>
-                  setCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Next month"
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ChevronRight size={20} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            <GroupedCard style={{ padding: space.md, gap: space.sm }}>
-              <View style={{ flexDirection: 'row' }}>
-                {WEEKDAYS.map((label, index) => (
-                  <View key={`${label}-${index}`} style={{ flex: 1, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>{label}</Text>
-                  </View>
-                ))}
-              </View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                {monthGrid.map((cell) => {
-                  const dayEvents = cell.inMonth ? byDay.get(cell.key) ?? [] : [];
-                  const isSelected = cell.key === selectedDay;
-                  const isToday = cell.key === todayKey();
-                  return (
-                    <Pressable
-                      key={cell.key}
-                      disabled={!cell.inMonth}
-                      onPress={() => setSelectedDay(cell.key)}
-                      style={{ width: '14.28%', height: 44, alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <View
-                        style={[
-                          { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
-                          isSelected && { backgroundColor: colors.primary },
-                          !isSelected && isToday && { borderWidth: 1, borderColor: colors.primary },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            { fontSize: 13, fontWeight: '500' },
-                            !cell.inMonth
-                              ? { color: colors.textTertiary }
-                              : isSelected
-                                ? { color: colors.onPrimary, fontWeight: '600' }
-                                : { color: colors.textPrimary },
-                          ]}
-                        >
-                          {cell.inMonth ? cell.day : ''}
-                        </Text>
-                      </View>
-                      {dayEvents.length > 0 ? (
-                        <View style={{ flexDirection: 'row', gap: 2, marginTop: 2 }}>
-                          {dayEvents.slice(0, 3).map((event) => (
-                            <View
-                              key={`${event.id}-${event.startsAt}`}
-                              style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: isSelected ? colors.onPrimary : colors.primary }}
-                            />
-                          ))}
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </GroupedCard>
-
-            <View style={{ gap: space.xs }}>
-              <SectionLabel text={formatDayLabel(`${selectedDay}T12:00:00+05:30`, DEFAULT_TIMEZONE)} />
-              <GroupedCard>
-                {(byDay.get(selectedDay) ?? []).length === 0 ? (
-                  <Text style={{ paddingHorizontal: space.lg, paddingVertical: space.xl, textAlign: 'center', fontSize: 15, color: colors.textSecondary }}>
-                    No events on this day.
-                  </Text>
-                ) : (
-                  (byDay.get(selectedDay) ?? []).map((event, index) => (
-                    <View key={`${event.id}-${event.startsAt}`}>
-                      {index > 0 && <HairlineDivider inset={72} />}
-                      {renderEvent(event)}
-                    </View>
-                  ))
-                )}
-              </GroupedCard>
-            </View>
-          </View>
-        ) : mode === 'week' ? (
-          <View style={{ gap: space.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.xs }}>
-              <Pressable
-                onPress={() =>
-                  setCursor((current) => new Date(current.getTime() - 7 * 86_400_000))
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Previous week"
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ChevronLeft size={20} color={colors.textSecondary} />
-              </Pressable>
-              <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary }}>
-                {new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(cursor)}
-              </Text>
-              <Pressable
-                onPress={() =>
-                  setCursor((current) => new Date(current.getTime() + 7 * 86_400_000))
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Next week"
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <ChevronRight size={20} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            {weekDays.map((date) => {
-              const key = dayKey(date, DEFAULT_TIMEZONE);
-              const dayEvents = byDay.get(key) ?? [];
-              return (
-                <View key={key} style={{ gap: space.xs }}>
-                  <SectionLabel text={`${formatDayLabel(date, DEFAULT_TIMEZONE)} · ${new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(date)}`} />
-                  <GroupedCard>
-                    {dayEvents.length === 0 ? (
-                      <Text style={{ paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 15, color: colors.textTertiary }}>Free</Text>
-                    ) : (
-                      dayEvents.map((event, index) => (
-                        <View key={`${event.id}-${event.startsAt}`}>
-                          {index > 0 && <HairlineDivider inset={72} />}
-                          {renderEvent(event)}
-                        </View>
-                      ))
-                    )}
-                  </GroupedCard>
-                </View>
-              );
-            })}
-          </View>
-        ) : (
-          <View style={{ gap: space.md }}>
-            {agenda.length === 0 ? (
-              <View style={{ marginTop: 64, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xl, gap: space.md }}>
-                <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center', borderRadius: radius.card, backgroundColor: colors.surface }}>
-                  <CalendarDays size={28} color={colors.textSecondary} />
-                </View>
-                <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary }}>
-                  Nothing on the calendar
-                </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', maxWidth: 260 }}>
-                  Tap + to schedule something, or ask an agent to add an event.
-                </Text>
-              </View>
-            ) : (
-              <GroupedCard>
-                {agenda.map((event, index) => (
-                  <View key={`${event.id}-${event.startsAt}`}>
-                    {index > 0 && <HairlineDivider inset={72} />}
-                    {renderEvent(event)}
-                  </View>
-                ))}
-              </GroupedCard>
-            )}
-          </View>
-        )}
-      </ScrollView>
+      />
 
       {/* Event editor modal */}
       <Modal visible={editorOpen} transparent animationType="slide" onRequestClose={() => setEditorOpen(false)}>
@@ -686,10 +790,10 @@ export default function CalendarScreen() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: radius.pill,
-                      backgroundColor: colors.recordingBg,
+                      backgroundColor: colors.surface,
                     }}
                   >
-                    <Trash2 size={16} color={colors.recording} />
+                    <SymbolIcon icon={Trash2} size={16} color={colors.danger} />
                   </Pressable>
                 ) : null}
                 <View style={{ flex: 1 }}>
@@ -708,3 +812,80 @@ export default function CalendarScreen() {
     </View>
   );
 }
+
+/**
+ * Styles for the virtualized calendar cells. The rest of this screen uses
+ * inline styles; these exist because the cell list repeats the same shapes
+ * many times.
+ */
+const styles = StyleSheet.create({
+  listHeader: {
+    gap: 14,
+    // Replaces the content container's old 14pt gap below the header.
+    marginBottom: 14,
+  },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.xs,
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  gridCell: {
+    marginTop: space.md,
+  },
+  dayLabelCell: {
+    marginTop: space.md,
+    // SectionLabel already adds its own 8pt marginBottom, so label→card is
+    // the 8pt the spec asks for.
+  },
+  dayEmptySelected: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.xl,
+    textAlign: 'center',
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  dayEmptyWeek: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    fontSize: 15,
+    color: colors.textTertiary,
+  },
+  agendaEmpty: {
+    marginTop: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.xl,
+    gap: space.md,
+  },
+  loadingCell: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+  },
+  cardSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  cardSliceBottom: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
+  },
+});

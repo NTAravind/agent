@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Spinner } from 'heroui-native';
-import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Alert as RNAlert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertTriangle, Check, CheckCircle2, ChevronLeft, ChevronRight, Wrench, XCircle } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import { DEFAULT_AGENT_AVATAR, type Approval, type RunEvent } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { useErrorDialog } from '@/components/error-dialog-provider';
 import { AgentAvatar } from '@/components/agent-avatar';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
   RoundButton,
   SectionLabel,
@@ -19,6 +21,7 @@ import {
 import { MarkdownText } from '@/components/markdown-text';
 import { colors, radius, shadow, space } from '@/theme';
 import { cancelRun, decideApproval, fetchRun, pauseRun, resumeRun, type RunDetail } from '@/lib/agents';
+import { useFocusedPoll } from '@/lib/use-focused-poll';
 
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
 /** Statuses that keep the detail view polling (paused included so a resume flips live). */
@@ -27,10 +30,10 @@ const POLLING = new Set([...ACTIVE, 'paused']);
 const STATUS_CONFIG: Record<string, { label: string; text: string; dot: string }> = {
   queued: { label: 'Queued', text: colors.textSecondary, dot: colors.textTertiary },
   running: { label: 'Running', text: colors.textPrimary, dot: colors.primary },
-  awaiting_approval: { label: 'Awaiting Approval', text: colors.recording, dot: colors.recording },
+  awaiting_approval: { label: 'Awaiting approval', text: colors.danger, dot: colors.danger },
   paused: { label: 'Paused', text: colors.textSecondary, dot: colors.textTertiary },
   succeeded: { label: 'Completed', text: colors.success, dot: colors.success },
-  failed: { label: 'Failed', text: colors.recording, dot: colors.recording },
+  failed: { label: 'Failed', text: colors.danger, dot: colors.danger },
   cancelled: { label: 'Cancelled', text: colors.textTertiary, dot: colors.textTertiary },
 };
 
@@ -59,7 +62,6 @@ export default function RunScreen() {
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reportedFailureRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -83,22 +85,16 @@ export default function RunScreen() {
 
   const status = detail?.run.status;
 
-  useEffect(() => {
-    const active = status ? POLLING.has(status) : false;
-    if (active && !pollRef.current) {
-      pollRef.current = setInterval(() => void load(), 2500);
-    }
-    if (!active && pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [status, load]);
+  // Focus-aware 2.5s poll while the run is live: stopped when this screen is
+  // covered, and never overlapping itself (a slow fetch skips the next tick
+  // instead of racing it). `immediate` is off because the focus effect above
+  // already loads on entry.
+  useFocusedPoll(
+    load,
+    2500,
+    status != null && POLLING.has(status),
+    false,
+  );
 
   const run = detail?.run;
   useEffect(() => {
@@ -180,6 +176,8 @@ export default function RunScreen() {
 
   const statusConfig = STATUS_CONFIG[status ?? 'queued'] ?? STATUS_CONFIG.queued;
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <AppHeader
@@ -214,7 +212,7 @@ export default function RunScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, paddingBottom: insets.bottom + 32, gap: space.lg }}
+        contentContainerStyle={{ padding: space.lg, paddingTop: headerInset, paddingBottom: insets.bottom + 32, gap: space.lg }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -226,23 +224,8 @@ export default function RunScreen() {
           />
         }
       >
-        {/* Error banner (failed actions: pause/resume/cancel/approvals) */}
-        {error ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.recordingBg, borderRadius: radius.card, padding: space.md }}>
-            <AlertTriangle size={16} color={colors.recording} />
-            <Text style={{ flex: 1, fontSize: 13, color: colors.recording }} numberOfLines={4}>
-              {error}
-            </Text>
-            <Pressable
-              onPress={() => setError(null)}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss error"
-              style={{ padding: 4 }}
-            >
-              <XCircle size={16} color={colors.recording} />
-            </Pressable>
-          </View>
-        ) : null}
+        {/* Load failure — the run detail could not be fetched. */}
+        {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
 
         {/* Goal Hero Card */}
         {run ? (
@@ -252,20 +235,20 @@ export default function RunScreen() {
                 <AgentAvatar avatar={detail.agent.avatar} name={detail.agent.name} size={40} />
               ) : null}
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {detail?.agent?.name ?? (isGroupRun ? 'Agent Group' : 'Autonomous Run')}
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                  {detail?.agent?.name ?? (isGroupRun ? 'Agent group' : 'Autonomous run')}
                 </Text>
                 <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary, lineHeight: 22, marginTop: 2 }}>
                   {run.goal}
                 </Text>
               </View>
             </View>
-            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: space.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ fontSize: 13, color: colors.textSecondary }}>
                 Started {new Date(run.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
               </Text>
               {run.tokens_used > 0 ? (
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, fontVariant: ['tabular-nums'], }}>
                   {run.tokens_used} tokens
                 </Text>
               ) : null}
@@ -275,8 +258,8 @@ export default function RunScreen() {
 
         {/* Specialists (Supervisor Sub-runs) */}
         {children.length > 0 ? (
-          <View style={{ gap: space.xs }}>
-            <SectionLabel text={isGroupRun ? 'Member Turns' : 'Specialists Researching'} />
+          <View>
+            <SectionLabel text={isGroupRun ? 'Member turns' : 'Specialists researching'} />
             <GroupedCard>
               {children.map((child, index) => {
                 const childStatus = STATUS_CONFIG[child.status] ?? STATUS_CONFIG.queued;
@@ -313,7 +296,7 @@ export default function RunScreen() {
                         <Text style={{ fontSize: 11, fontWeight: '500', color: childStatus.text }}>
                           {childStatus.label}
                         </Text>
-                        <ChevronRight size={12} color={colors.textSecondary} />
+                        <SymbolIcon icon={ChevronRight} size={12} color={colors.textSecondary} />
                       </View>
                     </Pressable>
                   </View>
@@ -327,9 +310,9 @@ export default function RunScreen() {
         {answer ? (
           <GroupedCard style={{ padding: space.lg, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <CheckCircle2 size={18} color={colors.success} />
+              <SymbolIcon icon={CheckCircle2} size={18} color={colors.success} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
-                Final Result
+                Final result
               </Text>
             </View>
             <MarkdownText markdown={answer} fontSize={16} />
@@ -348,9 +331,9 @@ export default function RunScreen() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <AlertTriangle size={18} color={colors.recording} />
+              <SymbolIcon icon={AlertTriangle} size={18} color={colors.danger} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
-                Approval Required
+                Approval required
               </Text>
             </View>
             <Text style={{ fontSize: 15, lineHeight: 20, color: colors.textPrimary }}>
@@ -379,8 +362,8 @@ export default function RunScreen() {
         ))}
 
         {/* Live Timeline Section */}
-        <View style={{ gap: space.xs }}>
-          <SectionLabel text="Execution Timeline" />
+        <View>
+          <SectionLabel text="Execution timeline" />
           <GroupedCard style={{ padding: space.lg, gap: space.md }}>
             {events.length === 0 ? (
               <View style={{ paddingVertical: space.xl, alignItems: 'center', justifyContent: 'center' }}>
@@ -396,7 +379,7 @@ export default function RunScreen() {
             )}
 
             {status && ACTIVE.has(status) ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1 }}>
                   <Spinner size="sm" color="default" />
                   <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }} numberOfLines={2}>
@@ -417,7 +400,7 @@ export default function RunScreen() {
                 </View>
               </View>
             ) : status === 'paused' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: space.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: space.md }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
                     Paused
@@ -467,8 +450,8 @@ function EventRow({ event }: { event: RunEvent }) {
     if (payload.failed) {
       return (
         <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <XCircle size={13} color={colors.recording} />
-          <Text style={{ fontSize: 13, color: colors.recording }}>
+          <SymbolIcon icon={XCircle} size={13} color={colors.danger} />
+          <Text style={{ fontSize: 13, color: colors.danger }}>
             Step failed, adjusting strategy…
           </Text>
         </View>
@@ -476,7 +459,7 @@ function EventRow({ event }: { event: RunEvent }) {
     }
     return (
       <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Check size={13} color={colors.success} />
+        <SymbolIcon icon={Check} size={13} color={colors.success} />
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>
           {String(payload.note ?? payload.summary ?? payload.action ?? 'Step completed')}
         </Text>
@@ -487,7 +470,7 @@ function EventRow({ event }: { event: RunEvent }) {
   if (event.type === 'tool_call') {
     return (
       <View style={{ marginLeft: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.xs, borderRadius: radius.pill, backgroundColor: colors.surfaceRaised, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' }}>
-        <Wrench size={12} color={colors.textSecondary} />
+        <SymbolIcon icon={Wrench} size={12} color={colors.textSecondary} />
         <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '500' }}>
           {`Calling ${String(payload.tool ?? 'tool')}`}
         </Text>

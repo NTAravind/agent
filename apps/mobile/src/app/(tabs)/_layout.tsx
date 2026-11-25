@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Dimensions, Platform, StyleSheet } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 import { useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
 import { Tabs, TabList, TabSlot, TabTrigger } from 'expo-router/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,13 +55,11 @@ export default function TabsLayout() {
           styles.dock,
           {
             backgroundColor: colors.primary,
-            bottom: Math.max(insets.bottom + 12, 16),
+            bottom: Math.max(insets.bottom, 16),
             left: (screenWidth - dockWidth) / 2,
             width: dockWidth,
           },
           !isMainScreen && styles.dockHidden,
-        
-        
         ]}
       >
         <TabTrigger name="chat" href="/chat" asChild>
@@ -87,16 +85,16 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   dock: {
     position: 'absolute',
-    height: 58,
+    height: 64,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     zIndex: 999,
+    // DESIGN.md §5: elevation stays 0 on Android too — no elevation look.
     ...shadow.floating,
-    elevation: Platform.OS === 'android' ? 8 : 0,
   },
   dockHidden: {
     display: 'none',

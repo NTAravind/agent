@@ -45,7 +45,7 @@ function StatBlock({ node }: { node: Extract<Node, { type: 'stat' }> }) {
       </Text>
       <Text style={styles.statValue}>{node.value}</Text>
       {node.delta ? (
-        <Text style={[styles.statDelta, { color: isNegative ? colors.recording : colors.success }]}>
+        <Text style={[styles.statDelta, { color: isNegative ? colors.danger : colors.success }]}>
           {node.delta}
         </Text>
       ) : null}

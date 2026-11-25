@@ -1,6 +1,7 @@
 import type { AgentGroup, StoredMessage, Thread } from '@agent/shared';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -9,7 +10,6 @@ import {
   StyleSheet,
   Text,
   View,
-  type ScrollViewInstance,
 } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,12 +21,15 @@ import {
   Pencil,
   Plus,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { AgentAvatar, ClusterAvatar } from '@/components/agent-avatar';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { Composer } from '@/components/composer';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   RoundButton,
   TextAction,
 } from '@/components/design-system';
@@ -36,12 +39,14 @@ import { colors, radius, shadow, space } from '@/theme';
 import { fetchRun, pauseRun } from '@/lib/agents';
 import { createGroupThread, fetchGroup, startGroupRun } from '@/lib/groups';
 import { fetchThread } from '@/lib/models';
+import { useFocusedPoll } from '@/lib/use-focused-poll';
 
 const ACTIVE_RUN = new Set(['queued', 'running', 'awaiting_approval', 'paused']);
 
 export default function GroupChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const headerInset = useHeaderInset();
   const params = useLocalSearchParams<{ id: string; threadId?: string }>();
   const id = typeof params.id === 'string' ? params.id : '';
   const requestedThreadId = typeof params.threadId === 'string' ? params.threadId : '';
@@ -56,7 +61,7 @@ export default function GroupChatScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollRef = useRef<FlatList<StoredMessage>>(null);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -99,30 +104,25 @@ export default function GroupChatScreen() {
     }, [loadConversation]),
   );
 
-  useEffect(() => {
-    if (!thread?.id) return;
-    let active = true;
-
-    const poll = async () => {
-      try {
-        const detail = await fetchThread(thread.id);
-        if (active && detail) setMessages(detail.messages);
-        if (active && activeRunId) {
-          const run = await fetchRun(activeRunId);
-          if (active) setRunStatus(run.run.status);
-        }
-      } catch {
-        // Ignored
+  // 2s message/run poll — focus-aware (nothing runs while this screen is
+  // covered) and never overlapping (a slow fetch skips the next tick instead
+  // of racing it), so stale responses can't overwrite newer ones.
+  const threadId = thread?.id;
+  const pollThread = useCallback(async () => {
+    if (!threadId) return;
+    try {
+      const detail = await fetchThread(threadId);
+      if (detail) setMessages(detail.messages);
+      if (activeRunId) {
+        const run = await fetchRun(activeRunId);
+        setRunStatus(run.run.status);
       }
-    };
+    } catch {
+      // Ignored
+    }
+  }, [threadId, activeRunId]);
 
-    const timer = setInterval(() => void poll(), 2_000);
-    void poll();
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [activeRunId, thread?.id]);
+  useFocusedPoll(pollThread, 2_000, Boolean(threadId));
 
   useEffect(() => {
     const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
@@ -189,49 +189,61 @@ export default function GroupChatScreen() {
       keyboardVerticalOffset={8}
     >
       {/* 6.1 Floating Header */}
-      <View style={[styles.headerBar, { paddingTop: insets.top + space.sm }]}>
-        <RoundButton
-          icon={ChevronLeft}
-          onPress={handleBack}
-          accessibilityLabel="Go back"
-        />
+      <AppHeader
+        left={
+          <RoundButton
+            icon={ChevronLeft}
+            onPress={handleBack}
+            accessibilityLabel="Go back"
+          />
+        }
+        center={
+          <Pressable
+            onPress={() => setDetailsOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open group details"
+            style={({ pressed }) => [
+              styles.titlePill,
+              shadow.floating,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <ClusterAvatar size={28} members={group?.members ?? []} />
+            <Text numberOfLines={1} style={styles.titlePillText}>
+              {group?.name ?? 'Group'}
+            </Text>
+          </Pressable>
+        }
+        right={
+          <RoundButton
+            icon={MoreHorizontal}
+            onPress={() => setDetailsOpen(true)}
+            accessibilityLabel="Group settings"
+          />
+        }
+      />
 
-        {/* Center title pill */}
-        <Pressable
-          onPress={() => setDetailsOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Open group details"
-          style={({ pressed }) => [
-            styles.titlePill,
-            shadow.floating,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
-        >
-          <ClusterAvatar size={28} members={group?.members ?? []} />
-          <Text numberOfLines={1} style={styles.titlePillText}>
-            {group?.name ?? 'Group'}
-          </Text>
-        </Pressable>
-
-        <RoundButton
-          icon={MoreHorizontal}
-          onPress={() => setDetailsOpen(true)}
-          accessibilityLabel="Group settings"
-        />
-      </View>
-
-      <ScrollView
+      <FlatList
         ref={scrollRef}
-        contentContainerStyle={{ padding: space.lg, paddingBottom: 24, gap: space.sm }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {error ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>{error}</Text>
-          </View>
-        ) : null}
-
-        {messages.length === 0 ? (
+        data={messages}
+        keyExtractor={(message) => message.id}
+        renderItem={({ item: message }) => (
+          <GroupMessageBubble
+            message={message}
+            members={group?.members ?? []}
+            onOpenRun={(runId) => router.push({ pathname: '/run', params: { id: runId } } as never)}
+          />
+        )}
+        ListHeaderComponent={
+          error ? (
+            <InlineError
+              message={error}
+              onRetry={() => void loadConversation()}
+              style={styles.headerError}
+            />
+          ) : undefined
+        }
+        ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <View style={styles.emptyAvatarBox}>
               <ClusterAvatar size={56} members={group?.members ?? []} />
@@ -241,31 +253,30 @@ export default function GroupChatScreen() {
               Mention a member to route the first turn, or let the lead decide who starts.
             </Text>
           </View>
-        ) : (
-          messages.map((message) => (
-            <GroupMessageBubble
-              key={message.id}
-              message={message}
-              members={group?.members ?? []}
-              onOpenRun={(runId) => router.push({ pathname: '/run', params: { id: runId } } as never)}
-            />
-          ))
-        )}
-
-        {activeRunId && runActive ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/run', params: { id: activeRunId } } as never)}
-            accessibilityRole="button"
-            accessibilityLabel="View active group run"
-            style={styles.runBadge}
-          >
-            <Spinner size="sm" color="default" />
-            <Text style={styles.runBadgeText}>
-              {runStatus?.replace('_', ' ')} · View run
-            </Text>
-          </Pressable>
-        ) : null}
-      </ScrollView>
+        }
+        ListFooterComponent={
+          activeRunId && runActive ? (
+            <Pressable
+              onPress={() => router.push({ pathname: '/run', params: { id: activeRunId } } as never)}
+              accessibilityRole="button"
+              accessibilityLabel="View active group run"
+              style={styles.runBadge}
+            >
+              <Spinner size="sm" color="default" />
+              <Text style={styles.runBadgeText}>
+                {runStatus?.replace('_', ' ')} · View run
+              </Text>
+            </Pressable>
+          ) : undefined
+        }
+        contentContainerStyle={{
+          paddingHorizontal: space.lg,
+          paddingTop: headerInset,
+          paddingBottom: 24,
+          gap: space.sm,
+        }}
+        keyboardShouldPersistTaps="handled"
+      />
 
       {/* Composer */}
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.md }}>
@@ -303,7 +314,7 @@ export default function GroupChatScreen() {
               inSheet
               accessibilityLabel="Close"
             />
-            <Text style={styles.modalTitle}>Group Details</Text>
+            <Text style={styles.modalTitle}>Group details</Text>
             <RoundButton
               icon={Pencil}
               onPress={() => {
@@ -360,7 +371,7 @@ export default function GroupChatScreen() {
                         />
                         <Text style={styles.memberName}>{member.agent.name}</Text>
                       </View>
-                      <ChevronRight size={17} color={colors.textSecondary} strokeWidth={2} />
+                      <SymbolIcon icon={ChevronRight} size={17} color={colors.textSecondary} strokeWidth={2} />
                     </Pressable>
                   </React.Fragment>
                 ))}
@@ -394,20 +405,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
-  },
   titlePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     height: 44,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.surface,
     paddingHorizontal: space.md,
   },
   titlePillText: {
@@ -417,17 +421,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     maxWidth: 160,
   },
-  errorBanner: {
-    backgroundColor: colors.recordingBg,
-    borderRadius: radius.card,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
+  headerError: {
+    // Keeps the old 8pt gap under the banner (the list gap adds another 8).
     marginBottom: space.sm,
-  },
-  errorBannerText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.recording,
   },
   emptyContainer: {
     alignItems: 'center',

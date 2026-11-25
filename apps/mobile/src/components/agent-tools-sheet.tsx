@@ -1,31 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Spinner, Switch } from 'heroui-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Blocks,
-  ExternalLink,
-  ShieldAlert,
-  Wrench,
-  X,
-} from 'lucide-react-native';
+import { Blocks, ExternalLink, ShieldAlert, Wrench } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import {
-  GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
-  RoundButton,
   SectionLabel,
   TextAction,
 } from '@/components/design-system';
+import { Sheet, SheetHeader } from '@/components/sheet';
 import { IntegrationIcon } from '@/components/integration-icon';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { colors, radius, space } from '@/theme';
@@ -39,6 +26,37 @@ import {
   type CatalogEntry,
 } from '@/lib/mcp';
 
+/**
+ * One row of the virtualized tools sheet. Each attachment's card is split
+ * into a header slice plus one slice per tool; `last` marks the slice that
+ * closes a card so it carries the bottom radius.
+ */
+type ToolsSheetCell =
+  | { key: string; type: 'empty' }
+  | { key: string; type: 'label'; text: string; top: boolean }
+  | {
+      key: string;
+      type: 'attachment';
+      attachment: AgentAttachment;
+      firstCard: boolean;
+      last: boolean;
+    }
+  | {
+      key: string;
+      type: 'tool';
+      tool: AgentAttachment['tools'][number];
+      enabled: boolean;
+      last: boolean;
+    }
+  | {
+      key: string;
+      type: 'available';
+      server: CatalogEntry;
+      first: boolean;
+      last: boolean;
+    }
+  | { key: string; type: 'marketplace' };
+
 type Props = {
   agentId: string;
   agentName?: string;
@@ -51,8 +69,8 @@ function RiskBadge({ level }: { level: string }) {
   const isHigh = level === 'high';
   return (
     <View style={styles.riskBadge}>
-      {isHigh && <ShieldAlert size={12} color={colors.recording} />}
-      <Text style={[styles.riskText, isHigh && { color: colors.recording }]}>
+      {isHigh && <SymbolIcon icon={ShieldAlert} size={12} color={colors.danger} />}
+      <Text style={[styles.riskText, isHigh && { color: colors.danger }]}>
         {`${level} risk`}
       </Text>
     </View>
@@ -67,7 +85,6 @@ export function AgentToolsSheet({
   onToolCountChanged,
 }: Props) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +153,66 @@ export function AgentToolsSheet({
   const totalToolsCount = useMemo(() => {
     return attachments.reduce((sum, att) => sum + att.tools.length, 0);
   }, [attachments]);
+
+  // Flatten the sheet into virtualizable cells: an optional empty state, the
+  // attached integrations (each split into a header slice plus one slice per
+  // tool), the still-available integrations, and the marketplace link.
+  const sheetCells = useMemo<ToolsSheetCell[]>(() => {
+    const cells: ToolsSheetCell[] = [];
+
+    if (attachments.length === 0 && availableServers.length === 0) {
+      cells.push({ key: 'empty', type: 'empty' });
+    }
+
+    if (attachments.length > 0) {
+      cells.push({
+        key: 'label-attachments',
+        type: 'label',
+        text: 'Connected integrations',
+        top: false,
+      });
+      attachments.forEach((attachment, index) => {
+        const tools = attachment.enabled ? attachment.tools : [];
+        cells.push({
+          key: `attachment-${attachment.attachmentId}`,
+          type: 'attachment',
+          attachment,
+          firstCard: index === 0,
+          last: tools.length === 0,
+        });
+        tools.forEach((tool, toolIndex) => {
+          cells.push({
+            key: `tool-${attachment.attachmentId}-${tool.id}`,
+            type: 'tool',
+            tool,
+            enabled: attachment.enabled,
+            last: toolIndex === tools.length - 1,
+          });
+        });
+      });
+    }
+
+    if (availableServers.length > 0) {
+      cells.push({
+        key: 'label-available',
+        type: 'label',
+        text: 'Available in your account',
+        top: true,
+      });
+      availableServers.forEach((server, index) => {
+        cells.push({
+          key: `available-${server.id}`,
+          type: 'available',
+          server,
+          first: index === 0,
+          last: index === availableServers.length - 1,
+        });
+      });
+    }
+
+    cells.push({ key: 'marketplace', type: 'marketplace' });
+    return cells;
+  }, [attachments, availableServers]);
 
   // Toggle individual tool enabled state
   const handleToggleTool = async (
@@ -237,81 +314,45 @@ export function AgentToolsSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={styles.overlay}>
-        <Pressable
-          accessibilityLabel="Close sheet"
-          onPress={onClose}
-          style={StyleSheet.absoluteFill}
-        />
+    <Sheet visible={visible} onClose={onClose}>
+      <SheetHeader onClose={onClose} closeLabel="Close tools sheet">
+        <View>
+          <Text style={styles.sheetTitle}>Integrations & tools</Text>
+          <Text style={styles.sheetSubtitle}>
+            {loading
+              ? 'Loading tools…'
+              : `${enabledToolsCount} of ${totalToolsCount} tools enabled${
+                  agentName ? ` for ${agentName}` : ''
+                }`}
+          </Text>
+        </View>
+      </SheetHeader>
 
-        <View
-          style={[
-            styles.sheetContainer,
-            { paddingBottom: Math.max(insets.bottom + space.md, space.xl) },
-          ]}
-        >
-          {/* Top handle pill */}
-          <View style={styles.handleContainer}>
-            <View style={styles.handle} />
-          </View>
+      {error ? <InlineError message={error} onRetry={() => void loadData()} /> : null}
 
-          {/* Header */}
-          <View style={styles.sheetHeader}>
-            <View style={{ flex: 1, paddingRight: space.md }}>
-              <Text style={styles.sheetTitle}>Integrations & Tools</Text>
-              <Text style={styles.sheetSubtitle}>
-                {loading
-                  ? 'Loading tools…'
-                  : `${enabledToolsCount} of ${totalToolsCount} tools enabled${
-                      agentName ? ` for ${agentName}` : ''
-                    }`}
-              </Text>
-            </View>
-            <RoundButton
-              icon={X}
-              onPress={onClose}
-              inSheet
-              accessibilityLabel="Close tools sheet"
-              style={styles.closeButton}
-            />
-          </View>
-
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {loading ? (
-            <View style={styles.loadingBox}>
-              <Spinner size="lg" color="default" />
-              <Text style={styles.loadingText}>Fetching available tools…</Text>
-            </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {attachments.length === 0 && availableServers.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <Spinner size="lg" color="default" />
+          <Text style={styles.loadingText}>Fetching available tools…</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={sheetCells}
+          keyExtractor={(cell) => cell.key}
+          renderItem={({ item: cell }) => {
+            if (cell.type === 'empty') {
+              return (
                 <View style={styles.emptyBox}>
                   <View style={styles.emptyIconBox}>
-                    <Blocks size={32} color={colors.textSecondary} strokeWidth={1.5} />
+                    <SymbolIcon icon={Blocks} size={32} color={colors.textSecondary} strokeWidth={1.5} />
                   </View>
-                  <Text style={styles.emptyTitle}>No Integrations Connected</Text>
+                  <Text style={styles.emptyTitle}>No integrations connected</Text>
                   <Text style={styles.emptySubtitle}>
                     Connect integrations like GitHub, Google, or Slack in the Integrations
                     Marketplace to grant this agent specialized tools.
                   </Text>
                   <PillButton
-                    label="Browse Marketplace"
+                    label="Browse marketplace"
                     variant="primary"
                     onPress={() => {
                       onClose();
@@ -320,184 +361,165 @@ export function AgentToolsSheet({
                     style={{ marginTop: space.sm }}
                   />
                 </View>
-              ) : null}
+              );
+            }
 
-              {/* Attached integrations list */}
-              {attachments.length > 0 ? (
-                <View style={{ gap: space.md }}>
-                  <SectionLabel text="Connected Integrations" />
-                  {attachments.map((attachment) => {
-                    const server = attachment.server;
-                    const isEnabled = attachment.enabled;
-                    const tools = attachment.tools;
-                    const enabledCount = tools.filter((t) => t.enabled).length;
-
-                    return (
-                      <GroupedCard key={attachment.attachmentId} style={styles.integrationCard}>
-                        {/* Integration Header Row */}
-                        <View style={styles.integrationHeaderRow}>
-                          <View style={styles.integrationIconWrapper}>
-                            {server?.iconUrl ? (
-                              <IntegrationIcon uri={server.iconUrl} size={32} />
-                            ) : (
-                              <Wrench size={22} color={colors.textPrimary} strokeWidth={1.75} />
-                            )}
-                          </View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text numberOfLines={1} style={styles.integrationName}>
-                              {server?.name ?? 'Custom MCP Server'}
-                            </Text>
-                            <Text numberOfLines={1} style={styles.integrationMeta}>
-                              {isEnabled
-                                ? `${enabledCount} of ${tools.length} tools on`
-                                : 'Disabled for this agent'}
-                            </Text>
-                          </View>
-                          <Switch
-                            isSelected={isEnabled}
-                            onSelectedChange={(next) => void handleToggleAttachment(attachment, next)}
-                            isDisabled={togglingAttachmentId === attachment.attachmentId}
-                            accessibilityLabel={`Toggle ${server?.name ?? 'integration'}`}
-                          />
-                        </View>
-
-                        {/* Tools Under This Integration */}
-                        {tools.length > 0 && isEnabled && (
-                          <View style={styles.toolsContainer}>
-                            {tools.map((tool, idx) => {
-                              const isToolActive = tool.enabled && isEnabled;
-                              return (
-                                <React.Fragment key={tool.id}>
-                                  <HairlineDivider />
-                                  <View style={styles.toolRow}>
-                                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                                      <View style={styles.toolTitleRow}>
-                                        <Text numberOfLines={1} style={styles.toolName}>
-                                          {tool.name}
-                                        </Text>
-                                        <RiskBadge level={tool.riskLevel} />
-                                      </View>
-                                      {tool.description ? (
-                                        <Text
-                                          numberOfLines={2}
-                                          style={styles.toolDescription}
-                                        >
-                                          {tool.description}
-                                        </Text>
-                                      ) : null}
-                                    </View>
-                                    <Switch
-                                      isSelected={isToolActive}
-                                      onSelectedChange={(next) =>
-                                        void handleToggleTool(tool, next)
-                                      }
-                                      isDisabled={
-                                        !isEnabled || togglingToolId === tool.id
-                                      }
-                                      accessibilityLabel={`Toggle tool ${tool.name}`}
-                                    />
-                                  </View>
-                                </React.Fragment>
-                              );
-                            })}
-                          </View>
-                        )}
-                      </GroupedCard>
-                    );
-                  })}
+            if (cell.type === 'label') {
+              return (
+                <View style={cell.top ? styles.sectionLabelTop : styles.sectionLabel}>
+                  <SectionLabel text={cell.text} />
                 </View>
-              ) : null}
+              );
+            }
 
-              {/* Available connected integrations not yet attached */}
-              {availableServers.length > 0 ? (
-                <View style={{ gap: space.md, marginTop: space.sm }}>
-                  <SectionLabel text="Available in Your Account" />
-                  <GroupedCard style={{ padding: space.sm }}>
-                    {availableServers.map((server, idx) => (
-                      <React.Fragment key={server.id}>
-                        {idx > 0 && <HairlineDivider />}
-                        <View style={styles.availableRow}>
-                          <View style={styles.integrationIconWrapper}>
-                            {server.iconUrl ? (
-                              <IntegrationIcon uri={server.iconUrl} size={30} />
-                            ) : (
-                              <Blocks size={20} color={colors.textSecondary} />
-                            )}
-                          </View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text numberOfLines={1} style={styles.availableName}>
-                              {server.name}
-                            </Text>
-                            <Text numberOfLines={1} style={styles.availableCategory}>
-                              {server.category || server.provider || 'Connected integration'}
-                            </Text>
-                          </View>
-                          <PillButton
-                            label={
-                              attachingConnectionId === server.connectionId
-                                ? 'Adding…'
-                                : 'Add'
-                            }
-                            variant="secondary"
-                            disabled={attachingConnectionId === server.connectionId}
-                            onPress={() => void handleAttachServer(server)}
-                          />
-                        </View>
-                      </React.Fragment>
-                    ))}
-                  </GroupedCard>
+            if (cell.type === 'attachment') {
+              const { attachment } = cell;
+              const server = attachment.server;
+              const isEnabled = attachment.enabled;
+              const enabledCount = attachment.tools.filter((t) => t.enabled).length;
+
+              return (
+                <View
+                  style={[
+                    styles.attachmentSlice,
+                    cell.firstCard ? undefined : styles.cardGap,
+                    styles.attachmentSliceTop,
+                    cell.last && styles.attachmentSliceBottom,
+                  ]}
+                >
+                  {/* Integration Header Row */}
+                  <View style={styles.integrationHeaderRow}>
+                    <View style={styles.integrationIconWrapper}>
+                      {server?.iconUrl ? (
+                        <IntegrationIcon uri={server.iconUrl} size={32} />
+                      ) : (
+                        <SymbolIcon icon={Wrench} size={22} color={colors.textPrimary} strokeWidth={1.75} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={styles.integrationName}>
+                        {server?.name ?? 'Custom MCP server'}
+                      </Text>
+                      <Text numberOfLines={1} style={styles.integrationMeta}>
+                        {isEnabled
+                          ? `${enabledCount} of ${attachment.tools.length} tools on`
+                          : 'Disabled for this agent'}
+                      </Text>
+                    </View>
+                    <Switch
+                      isSelected={isEnabled}
+                      onSelectedChange={(next) => void handleToggleAttachment(attachment, next)}
+                      isDisabled={togglingAttachmentId === attachment.attachmentId}
+                      accessibilityLabel={`Toggle ${server?.name ?? 'integration'}`}
+                    />
+                  </View>
                 </View>
-              ) : null}
+              );
+            }
 
-              {/* Marketplace shortcut link */}
-              <View style={styles.marketplaceLinkBox}>
-                <TextAction
-                  icon={ExternalLink}
-                  label="Browse integrations marketplace"
-                  onPress={() => {
-                    onClose();
-                    router.push('/mcp');
-                  }}
-                />
+            if (cell.type === 'tool') {
+              const isToolActive = cell.tool.enabled && cell.enabled;
+              return (
+                <View style={[styles.toolSlice, cell.last && styles.toolSliceLast]}>
+                  <HairlineDivider />
+                  <View style={styles.toolRow}>
+                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                      <View style={styles.toolTitleRow}>
+                        <Text numberOfLines={1} style={styles.toolName}>
+                          {cell.tool.name}
+                        </Text>
+                        <RiskBadge level={cell.tool.riskLevel} />
+                      </View>
+                      {cell.tool.description ? (
+                        <Text
+                          numberOfLines={2}
+                          style={styles.toolDescription}
+                        >
+                          {cell.tool.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Switch
+                      isSelected={isToolActive}
+                      onSelectedChange={(next) =>
+                        void handleToggleTool(cell.tool, next)
+                      }
+                      isDisabled={
+                        !cell.enabled || togglingToolId === cell.tool.id
+                      }
+                      accessibilityLabel={`Toggle tool ${cell.tool.name}`}
+                    />
+                  </View>
+                </View>
+              );
+            }
+
+            if (cell.type === 'available') {
+              return (
+                <View
+                  style={[
+                    styles.availableSlice,
+                    cell.first && styles.availableSliceFirst,
+                    cell.last && styles.availableSliceLast,
+                  ]}
+                >
+                  {!cell.first ? <HairlineDivider /> : null}
+                  <View style={styles.availableRow}>
+                    <View style={styles.integrationIconWrapper}>
+                      {cell.server.iconUrl ? (
+                        <IntegrationIcon uri={cell.server.iconUrl} size={30} />
+                      ) : (
+                        <SymbolIcon icon={Blocks} size={20} color={colors.textSecondary} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={styles.availableName}>
+                        {cell.server.name}
+                      </Text>
+                      <Text numberOfLines={1} style={styles.availableCategory}>
+                        {cell.server.category || cell.server.provider || 'Connected integration'}
+                      </Text>
+                    </View>
+                    <PillButton
+                      label={
+                        attachingConnectionId === cell.server.connectionId
+                          ? 'Adding…'
+                          : 'Add'
+                      }
+                      variant="secondary"
+                      disabled={attachingConnectionId === cell.server.connectionId}
+                      onPress={() => void handleAttachServer(cell.server)}
+                    />
+                  </View>
+                </View>
+              );
+            }
+
+            return (
+              <View style={styles.marketplaceCell}>
+                <View style={styles.marketplaceLinkBox}>
+                  <TextAction
+                    icon={ExternalLink}
+                    label="Browse integrations marketplace"
+                    onPress={() => {
+                      onClose();
+                      router.push('/mcp');
+                    }}
+                  />
+                </View>
               </View>
-            </ScrollView>
-          )}
-        </View>
-      </View>
-    </Modal>
+            );
+          }}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: colors.overlay,
-  },
-  sheetContainer: {
-    maxHeight: '88%',
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    backgroundColor: colors.surfaceRaised,
-    paddingHorizontal: space.lg,
-    paddingTop: space.sm,
-  },
-  handleContainer: {
-    alignItems: 'center',
-    paddingVertical: space.xs,
-  },
-  handle: {
-    width: 36,
-    height: 5,
-    borderRadius: radius.pill,
-    backgroundColor: colors.divider,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: space.md,
-  },
   sheetTitle: {
     fontSize: 20,
     lineHeight: 26,
@@ -509,23 +531,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.textSecondary,
     marginTop: 2,
-  },
-  closeButton: {
-    backgroundColor: colors.surface,
-    shadowColor: 'transparent',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  errorBox: {
-    backgroundColor: colors.recordingBg,
-    borderRadius: radius.card,
-    padding: space.md,
-    marginBottom: space.md,
-  },
-  errorText: {
-    color: colors.recording,
-    fontSize: 13,
-    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   loadingBox: {
     paddingVertical: 48,
@@ -539,7 +545,51 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: space.xl,
-    gap: space.lg,
+  },
+  sectionLabel: {
+    // SectionLabel already adds its own 8pt marginBottom, so label→card is
+    // the 8pt the spec asks for.
+  },
+  sectionLabelTop: {
+    // The old 16pt gap between sections plus the section's own 8pt margin.
+    marginTop: 24,
+  },
+  attachmentSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+    paddingTop: space.md,
+    // The card's 8pt gap before its tools.
+    paddingBottom: space.sm,
+  },
+  attachmentSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  attachmentSliceBottom: {
+    paddingBottom: space.md,
+  },
+  cardGap: {
+    marginTop: space.xs,
+  },
+  toolSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.md,
+  },
+  toolSliceLast: {
+    paddingBottom: space.md,
+  },
+  availableSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.sm,
+  },
+  availableSliceFirst: {
+    paddingTop: space.sm,
+  },
+  availableSliceLast: {
+    paddingBottom: space.sm,
+  },
+  marketplaceCell: {
+    marginTop: space.lg,
   },
   emptyBox: {
     alignItems: 'center',
@@ -557,12 +607,13 @@ const styles = StyleSheet.create({
     marginBottom: space.xs,
   },
   emptyTitle: {
-    fontSize: 17,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 20,
     color: colors.textSecondary,
     textAlign: 'center',
@@ -595,6 +646,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 1,
+    fontVariant: ['tabular-nums'],
   },
   toolsContainer: {
     marginTop: space.xs,

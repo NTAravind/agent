@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "125313542010",
+    "project_id": "pacbot-62182",
+    "storage_bucket": "pacbot-62182.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:125313542010:android:bc328d316c90d3bfc058c3",
+        "android_client_info": {
+          "package_name": "com.agent.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsDjy883871dtCV45CwalrBLAazxTereg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

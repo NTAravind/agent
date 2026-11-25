@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
+  FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search as SearchIcon, SlidersHorizontal, X } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Agent, AgentGroup } from '@agent/shared';
 
 import { AgentAvatar, ClusterAvatar } from '@/components/agent-avatar';
@@ -175,12 +176,12 @@ export function AgentSearch({
               accessibilityLabel="Close search"
               style={({ pressed }) => [styles.roundIconBtn, { opacity: pressed ? 0.6 : 1 }]}
             >
-              <X size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={X} size={20} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
 
             {/* Pill Search Field (surface fill, 44 tall, magnifying glass) */}
             <View style={styles.searchPill}>
-              <SearchIcon size={18} color={colors.textSecondary} strokeWidth={1.75} />
+              <SymbolIcon icon={SearchIcon} size={18} color={colors.textSecondary} strokeWidth={1.75} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
@@ -194,9 +195,10 @@ export function AgentSearch({
                   onPress={() => setQuery('')}
                   accessibilityRole="button"
                   accessibilityLabel="Clear search text"
+                  hitSlop={10}
                   style={styles.clearBtn}
                 >
-                  <X size={12} color={colors.textSecondary} strokeWidth={2} />
+                  <SymbolIcon icon={X} size={12} color={colors.textSecondary} strokeWidth={2} />
                 </Pressable>
               )}
             </View>
@@ -207,80 +209,79 @@ export function AgentSearch({
               accessibilityLabel="Filter results"
               style={({ pressed }) => [styles.roundIconBtn, { opacity: pressed ? 0.6 : 1 }]}
             >
-              <SlidersHorizontal size={18} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={SlidersHorizontal} size={18} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
           </View>
 
           {/* Results List */}
-          <ScrollView
+          <FlatList
+            data={results}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => {
+              const isGroup = item.kind === 'group';
+              const isAgent = item.kind === 'agent';
+              const isMessage = item.kind === 'message';
+
+              const typeLabel = isGroup ? 'Group' : isAgent ? 'Agent' : 'Message';
+
+              const handlePress = () => {
+                onClose();
+                if (isGroup) {
+                  onSelectGroup?.(item.group.id);
+                } else if (isAgent) {
+                  onSelect(item.agent.id);
+                } else if (isMessage && item.targetId) {
+                  onSelect(item.targetId);
+                }
+              };
+
+              return (
+                <Pressable
+                  onPress={handlePress}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.title}, ${typeLabel}`}
+                  style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
+                >
+                  {/* 60pt avatar/mark */}
+                  <View style={styles.avatarContainer}>
+                    {isGroup ? (
+                      <ClusterAvatar size={60} members={item.group.members ?? []} />
+                    ) : (
+                      <AgentAvatar
+                        avatar={isAgent ? item.agent.avatar : item.agent?.avatar}
+                        name={item.title}
+                        size={60}
+                      />
+                    )}
+                  </View>
+
+                  {/* Title 20/500, subtitle/preview 17/400 with bold match */}
+                  <View style={styles.rowContent}>
+                    <Text numberOfLines={1} style={styles.resultTitle}>
+                      {item.title}
+                    </Text>
+                    <HighlightedText text={item.subtitle} query={query} />
+                  </View>
+
+                  {/* Right-aligned type label 15pt textSecondary */}
+                  <Text style={styles.typeLabel}>{typeLabel}</Text>
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  {q ? 'No results found' : 'Type to search agents and messages'}
+                </Text>
+              </View>
+            }
             contentContainerStyle={{
               paddingHorizontal: space.lg,
               paddingTop: space.sm,
               paddingBottom: insets.bottom + 24,
             }}
             keyboardShouldPersistTaps="handled"
-          >
-            {results.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  {q ? 'No results found' : 'Type to search agents and messages'}
-                </Text>
-              </View>
-            ) : (
-              results.map((item) => {
-                const isGroup = item.kind === 'group';
-                const isAgent = item.kind === 'agent';
-                const isMessage = item.kind === 'message';
-
-                const typeLabel = isGroup ? 'Group' : isAgent ? 'Agent' : 'Message';
-
-                const handlePress = () => {
-                  onClose();
-                  if (isGroup) {
-                    onSelectGroup?.(item.group.id);
-                  } else if (isAgent) {
-                    onSelect(item.agent.id);
-                  } else if (isMessage && item.targetId) {
-                    onSelect(item.targetId);
-                  }
-                };
-
-                return (
-                  <Pressable
-                    key={item.id}
-                    onPress={handlePress}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.title}, ${typeLabel}`}
-                    style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
-                  >
-                    {/* 60pt avatar/mark */}
-                    <View style={styles.avatarContainer}>
-                      {isGroup ? (
-                        <ClusterAvatar size={60} members={item.group.members ?? []} />
-                      ) : (
-                        <AgentAvatar
-                          avatar={isAgent ? item.agent.avatar : item.agent?.avatar}
-                          name={item.title}
-                          size={60}
-                        />
-                      )}
-                    </View>
-
-                    {/* Title 20/500, subtitle/preview 17/400 with bold match */}
-                    <View style={styles.rowContent}>
-                      <Text numberOfLines={1} style={styles.resultTitle}>
-                        {item.title}
-                      </Text>
-                      <HighlightedText text={item.subtitle} query={query} />
-                    </View>
-
-                    {/* Right-aligned type label 15pt textSecondary */}
-                    <Text style={styles.typeLabel}>{typeLabel}</Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </ScrollView>
+          />
         </View>
       </View>
     </Modal>
@@ -334,9 +335,9 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   clearBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.divider,
     alignItems: 'center',
     justifyContent: 'center',

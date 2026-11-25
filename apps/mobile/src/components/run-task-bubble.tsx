@@ -6,6 +6,7 @@ import { PillButton } from '@/components/design-system';
 import { SCREEN_ICONS } from '@/constants/icons';
 import type { RunDetail, RunListItem } from '@/lib/agents';
 import { colors, radius, shadow, space, typography } from '@/theme';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 type Props = {
   /** The run to surface inside the chat timeline. */
@@ -34,7 +35,7 @@ const STATUS_DOT: Record<string, string> = {
   awaiting_approval: colors.textSecondary,
   paused: colors.textSecondary,
   succeeded: colors.success,
-  failed: colors.recording,
+  failed: colors.danger,
   cancelled: colors.textTertiary,
 };
 
@@ -129,7 +130,7 @@ export function RunTaskBubble({ run, detail, onViewTask }: Props) {
               <View style={styles.stepContainer} accessibilityLiveRegion="polite">
                 {run.status === 'running' ? <Spinner size="sm" color="default" /> : null}
                 {step.kind === 'tool' ? (
-                  <SCREEN_ICONS.wrench size={12} color={colors.textSecondary} strokeWidth={1.75} />
+                  <SymbolIcon icon={SCREEN_ICONS.wrench} size={12} color={colors.textSecondary} strokeWidth={1.75} />
                 ) : null}
                 <Text style={styles.stepText} numberOfLines={1}>
                   {step.label}

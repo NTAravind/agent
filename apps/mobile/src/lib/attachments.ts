@@ -77,6 +77,31 @@ export async function pickAndUploadImages(): Promise<PendingAttachment[]> {
   return attachments;
 }
 
+/** Opens the device camera, captures one photo, and uploads it. */
+export async function takeAndUploadPhoto(): Promise<PendingAttachment[]> {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error("Camera access is required to take a photo.");
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ["images"],
+    quality: 0.9,
+  });
+
+  if (result.canceled) return [];
+
+  const attachments: PendingAttachment[] = [];
+  for (const asset of result.assets) {
+    const mediaType = asset.mimeType ?? "image/jpeg";
+    const name = asset.fileName ?? `photo-${Date.now()}.jpg`;
+    const sizeBytes = asset.fileSize ?? 0;
+    const uploaded = await uploadFile(asset.uri, name, mediaType, sizeBytes);
+    attachments.push({ ...uploaded, uri: asset.uri });
+  }
+  return attachments;
+}
+
 /** Opens the document picker and uploads the chosen PDF / text file. */
 export async function pickAndUploadDocument(): Promise<PendingAttachment[]> {
   const result = await DocumentPicker.getDocumentAsync({

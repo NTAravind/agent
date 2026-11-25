@@ -12,22 +12,23 @@ import {
 } from 'react-native';
 import {
   ArrowUp,
-  Brain,
   Camera,
   Folder,
   Globe,
   Image as ImageIcon,
+  Lightbulb,
   ListChecks,
   Mic,
   Pause,
   Plus,
-  Square,
   X,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { AgentAvatar } from '@/components/agent-avatar';
 import { colors, radius, shadow, space, typography } from '@/theme';
 import type { PendingAttachment } from '@/lib/attachments';
+import { hapticTap } from '@/lib/haptics';
 
 type Props = {
   value: string;
@@ -57,11 +58,12 @@ type Props = {
 /**
  * 6.5 Composer conforming strictly to design.md:
  * - Row at the bottom with safe-area padding:
- *   - round + button (44x44, surfaceRaised, floating shadow)
- *   - pill text field (surfaceRaised, floating shadow, height 52, placeholder "Ask {AgentName}" in textSecondary)
- *   - Right inside the field: small mic button, 36x36 circle, surface fill, textSecondary mic icon.
- *   - Recording state: the mic is replaced by a pill with recordingBg, a small recording red square (stop), and timer 0:10 in recording color;
- *     next to it a round send button, 40x40, primary fill with a white arrow-up icon.
+ *   - round + button (44x44, grey `surface`, floating shadow)
+ *   - pill text field (grey `surface`, floating shadow, height 52, placeholder "Ask {AgentName}" in textSecondary)
+ *   - Right inside the field: small mic button, 36x36 circle, white `surfaceRaised` fill, textSecondary mic icon.
+ *     The mic is currently disabled: there is no transcription path yet, so it must not
+ *     pretend to record (DESIGN.md 6.5's recording state returns once audio capture lands).
+ *   - Round send button, 40x40, primary fill with a white arrow-up icon.
  *   - Task active state: the action button becomes an enabled round pause button (40x40, primary fill, white pause icon) that pauses the active task.
  *   - Popover + menu above button: surfaceRaised, radius 32, floating shadow, rows with 28pt outline icon + label 20/400 ("Attach Image", "Take Photo", "Choose File"). No dividers, 16 vertical padding per row.
  */
@@ -91,8 +93,6 @@ export function Composer({
 }: Props) {
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordSeconds, setRecordSeconds] = useState(10);
 
   const isCarryingOutTask = Boolean(isTaskActive ?? isStreaming);
   const hasText = value.trim().length > 0;
@@ -127,16 +127,6 @@ export function Composer({
     onChangeText(`${base}@${name} `);
   };
 
-  const handleToggleRecord = () => {
-    if (isRecording) {
-      setIsRecording(false);
-      onChangeText(value ? `${value} Can you replace broccoli with something?` : 'Can you replace broccoli with something?');
-    } else {
-      setIsRecording(true);
-      setRecordSeconds(10);
-    }
-  };
-
   return (
     <View style={styles.container}>
       {/* 6.5 + Menu Popover */}
@@ -153,31 +143,31 @@ export function Composer({
                 <Pressable
                   onPress={() => void withBusy(onAttachImage)}
                   accessibilityRole="button"
-                  accessibilityLabel="Attach Image"
+                  accessibilityLabel="Attach image"
                   style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
                 >
-                  <ImageIcon size={28} color={colors.textPrimary} strokeWidth={1.5} />
-                  <Text style={styles.popoverText}>Attach Image</Text>
+                  <SymbolIcon icon={ImageIcon} size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Attach image</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={() => void withBusy(onTakePhoto ?? onAttachImage)}
                   accessibilityRole="button"
-                  accessibilityLabel="Take Photo"
+                  accessibilityLabel="Take photo"
                   style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
                 >
-                  <Camera size={28} color={colors.textPrimary} strokeWidth={1.5} />
-                  <Text style={styles.popoverText}>Take Photo</Text>
+                  <SymbolIcon icon={Camera} size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Take photo</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={() => void withBusy(onAttachDocument)}
                   accessibilityRole="button"
-                  accessibilityLabel="Choose File"
+                  accessibilityLabel="Choose file"
                   style={({ pressed }) => [styles.popoverRow, { opacity: pressed ? 0.6 : 1 }]}
                 >
-                  <Folder size={28} color={colors.textPrimary} strokeWidth={1.5} />
-                  <Text style={styles.popoverText}>Choose File</Text>
+                  <SymbolIcon icon={Folder} size={28} color={colors.textPrimary} strokeWidth={1.5} />
+                  <Text style={styles.popoverText}>Choose file</Text>
                 </Pressable>
               </View>
             </View>
@@ -199,7 +189,7 @@ export function Composer({
               <Text numberOfLines={1} style={styles.attachmentName}>
                 {attachment.name}
               </Text>
-              <X size={14} color={colors.textSecondary} strokeWidth={2} />
+              <SymbolIcon icon={X} size={14} color={colors.textSecondary} strokeWidth={2} />
             </Pressable>
           ))}
         </View>
@@ -243,13 +233,13 @@ export function Composer({
             {
               key: 'think',
               label: 'Think',
-              Icon: Brain,
+              Icon: Lightbulb,
               active: thinkActive,
               onPress: onToggleThink,
             },
             {
               key: 'task-mode',
-              label: 'Task Mode',
+              label: 'Task mode',
               Icon: ListChecks,
               active: taskModeActive,
               onPress: onToggleTaskMode,
@@ -268,10 +258,11 @@ export function Composer({
                 { opacity: pressed ? 0.6 : disabled || !onPress ? 0.5 : 1 },
               ]}
             >
-              <Icon
-                size={14}
+              <SymbolIcon
+                icon={Icon}
+                size={15}
                 color={active ? colors.onPrimary : colors.textSecondary}
-                strokeWidth={1.9}
+                strokeWidth={1.75}
               />
               <Text
                 numberOfLines={1}
@@ -302,7 +293,7 @@ export function Composer({
               { opacity: pressed ? 0.6 : 1 },
             ]}
           >
-            <Plus size={22} color={colors.textPrimary} strokeWidth={1.75} />
+            <SymbolIcon icon={Plus} size={22} color={colors.textPrimary} strokeWidth={1.75} />
           </Pressable>
         )}
 
@@ -322,59 +313,50 @@ export function Composer({
             }}
           />
 
-          {/* Right inside the field: Mic button or recording timer */}
-          {isRecording ? (
-            <Pressable
-              onPress={handleToggleRecord}
-              accessibilityRole="button"
-              accessibilityLabel="Stop recording"
-              style={({ pressed }) => [styles.recordingBadge, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Square size={10} color={colors.recording} fill={colors.recording} />
-              <Text style={styles.recordingTimer}>
-                0:{recordSeconds < 10 ? `0${recordSeconds}` : recordSeconds}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleToggleRecord}
-              accessibilityRole="button"
-              accessibilityLabel="Voice recording"
-              style={({ pressed }) => [styles.micButton, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Mic size={18} color={colors.textSecondary} strokeWidth={1.75} />
-            </Pressable>
-          )}
+          {/* Right inside the field: mic button — disabled until a real
+              transcription path exists (no simulated recording). */}
+          <Pressable
+            disabled
+            accessibilityRole="button"
+            accessibilityLabel="Voice input"
+            accessibilityHint="Voice input isn't available yet"
+            accessibilityState={{ disabled: true }}
+            hitSlop={6}
+            style={styles.micButton}
+          >
+            <SymbolIcon icon={Mic} size={18} color={colors.textTertiary} strokeWidth={1.75} />
+          </Pressable>
         </View>
 
         {/* Next to it round button (40x40, primary fill with white icon):
             - Pause button when an agent is carrying out the task
-            - Send button (ArrowUp) when user typed text or is recording */}
-        {(isCarryingOutTask || hasText || isRecording) && (
+            - Send button (ArrowUp) when user typed text */}
+        {(isCarryingOutTask || hasText) && (
           <Pressable
             onPress={() => {
               if (isCarryingOutTask) {
                 void onPause?.();
-              } else if (isRecording) {
-                handleToggleRecord();
               } else if (canSend) {
+                hapticTap();
                 onSend();
               }
             }}
-            disabled={!isCarryingOutTask && !canSend && !isRecording}
+            disabled={!isCarryingOutTask && !canSend}
             accessibilityRole="button"
             accessibilityLabel={isCarryingOutTask ? 'Pause task' : 'Send message'}
             accessibilityHint={isCarryingOutTask ? "Pauses the agent's current task" : 'Sends your message'}
+            accessibilityState={{ disabled: !isCarryingOutTask && !canSend }}
+            hitSlop={2}
             style={({ pressed }) => [
               styles.sendButton,
               shadow.floating,
-              { opacity: pressed ? 0.6 : isCarryingOutTask || canSend || isRecording ? 1 : 0.5 },
+              { opacity: pressed ? 0.6 : isCarryingOutTask || canSend ? 1 : 0.5 },
             ]}
           >
             {isCarryingOutTask ? (
-              <Pause size={18} color={colors.onPrimary} strokeWidth={2.5} />
+              <SymbolIcon icon={Pause} size={18} color={colors.onPrimary} strokeWidth={2.5} />
             ) : (
-              <ArrowUp size={20} color={colors.onPrimary} strokeWidth={2.5} />
+              <SymbolIcon icon={ArrowUp} size={20} color={colors.onPrimary} strokeWidth={2.5} />
             )}
           </Pressable>
         )}
@@ -389,7 +371,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
     paddingBottom: 80,
     paddingHorizontal: space.lg,
@@ -432,6 +414,7 @@ const styles = StyleSheet.create({
   },
   attachmentName: {
     fontSize: 15,
+    lineHeight: 20,
     color: colors.textPrimary,
     maxWidth: 160,
   },
@@ -459,14 +442,14 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   quickToggle: {
-    minHeight: 34,
+    minHeight: 44,
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 6,
     borderRadius: radius.pill,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   quickToggleActive: {
     backgroundColor: colors.primary,
@@ -475,8 +458,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   quickToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
   },
   composerBar: {
     flexDirection: 'row',
@@ -487,7 +471,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -495,7 +479,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 52,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 18,
@@ -513,23 +497,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  recordingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.recordingBg,
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  recordingTimer: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.recording,
   },
   sendButton: {
     width: 40,

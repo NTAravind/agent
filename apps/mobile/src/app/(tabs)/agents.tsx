@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Alert as RNAlert,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -18,8 +18,9 @@ import { Plus, Search } from 'lucide-react-native';
 import { AgentListRow } from '@/components/agent-list-row';
 import { AgentSearch } from '@/components/agent-search';
 import { AgentAvatar } from '@/components/agent-avatar';
+import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
-import { RoundButton, PillButton } from '@/components/design-system';
+import { InlineError, RoundButton, PillButton } from '@/components/design-system';
 import { colors, radius, shadow, space, typography } from '@/theme';
 import {
   fetchAgents,
@@ -138,101 +139,65 @@ export default function AgentsScreen() {
   );
 
   const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
+  const headerInset = useHeaderInset();
+
+  // Groups first, then individual agents — one flat array so the list can be
+  // virtualized (the audit flagged the unbounded ScrollView + map).
+  const rows = useMemo(
+    () => [
+      ...groups.map((group) => ({
+        kind: 'group' as const,
+        key: `group-${group.id}`,
+        group,
+      })),
+      ...agents.map((agent) => ({
+        kind: 'agent' as const,
+        key: agent.id,
+        agent,
+      })),
+    ],
+    [groups, agents],
+  );
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* 6.10 Floating header: round initials avatar (44x44) on left, round search + round plus on right with floating shadow */}
-      <View
-        style={[
-          styles.headerBar,
-          { paddingTop: insets.top + space.sm },
-        ]}
-      >
-        {/* Left: User initials avatar (44x44, surfaceRaised, floating shadow) */}
-        <Pressable
-          onPress={() => router.push('/more')}
-          accessibilityRole="button"
-          accessibilityLabel="Open settings"
-          style={({ pressed }) => [
-            styles.initialsAvatar,
-            shadow.floating,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
-        >
-          <Text style={styles.initialsText}>{userInitial}</Text>
-        </Pressable>
-
-        {/* Right: Round search and plus buttons */}
-        <View style={styles.headerRight}>
-          <RoundButton
-            icon={Search}
-            onPress={() => setSearchOpen(true)}
-            accessibilityLabel="Search agents"
-          />
-          <RoundButton
-            icon={Plus}
-            onPress={() => router.push('/agents/new/edit')}
-            accessibilityLabel="Create agent"
-          />
-        </View>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: space.sm,
-          paddingBottom: insets.bottom + 100, // accommodate pill dock
-        }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load();
-            }}
-            tintColor={colors.textPrimary}
+      <AppHeader
+        left={
+          <HeaderAvatar
+            initial={userInitial}
+            onPress={() => router.push('/more')}
           />
         }
-        onScrollBeginDrag={() => setExpandedRowId(null)}
-      >
-        {loading ? (
-          <View style={{ marginTop: space.sm }}>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <View key={i} style={styles.loadingRow}>
-                <Skeleton variant="shimmer" style={styles.skeletonAvatar} />
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Skeleton variant="shimmer" style={{ height: 16, width: 140, borderRadius: 8 }} />
-                  <Skeleton variant="shimmer" style={{ height: 14, width: 220, borderRadius: 8 }} />
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : agents.length === 0 && groups.length === 0 ? (
-          /* Empty state */
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyAvatarBox}>
-              <AgentAvatar size={48} name="Agent" />
-            </View>
-            <Text style={styles.emptyTitle}>No agents yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Create custom agents with their own model, personality, and tools.
-            </Text>
-            <PillButton
-              label="Create your first agent"
+        center={<Text style={styles.headerTitle}>Agents</Text>}
+        right={
+          <View style={styles.headerRight}>
+            <RoundButton
+              size={36}
+              icon={Search}
+              onPress={() => setSearchOpen(true)}
+              accessibilityLabel="Search agents"
+            />
+            <RoundButton
+              size={36}
+              icon={Plus}
               onPress={() => router.push('/agents/new/edit')}
-              variant="primary"
-              style={{ marginTop: space.lg }}
+              accessibilityLabel="Create agent"
             />
           </View>
-        ) : (
-          <View>
-            {/* 1. Groups */}
-            {groups.map((group) => (
+        }
+      />
+
+      <FlatList
+        data={loading ? [] : rows}
+        keyExtractor={(row) => row.key}
+        renderItem={({ item: row }) => {
+          if (row.kind === 'group') {
+            const { group } = row;
+            return (
               <AgentListRow
-                key={`group-${group.id}`}
                 agent={{
                   id: group.id,
                   name: group.name,
@@ -255,44 +220,88 @@ export default function AgentsScreen() {
                 onActionsToggle={() => {}}
                 lastMessage={group.description ?? 'Group chat'}
               />
-            ))}
+            );
+          }
 
-            {/* 2. Individual Agents */}
-            {agents.map((agent) => {
-              const activeRun = activeRunByAgent.get(agent.id) ?? null;
-              const isExpanded = expandedRowId === agent.id;
-
-              return (
-                <AgentListRow
-                  key={agent.id}
-                  agent={agent}
-                  activeRun={activeRun}
-                  isPaused={activeRun?.status === 'paused'}
-                  notificationsEnabled={!mutedAgents.has(agent.id)}
-                  onPress={() => handleRowPress(agent)}
-                  onActionPress={handleRowAction}
-                  isActionsOpen={isExpanded}
-                  onActionsToggle={(open) =>
-                    setExpandedRowId(open ? agent.id : null)
-                  }
-                />
-              );
-            })}
-          </View>
-        )}
-
-        {error && !loading && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-            <PillButton
-              label="Retry"
-              onPress={() => void load()}
-              variant="secondary"
-              style={{ marginTop: space.sm }}
+          const { agent } = row;
+          const activeRun = activeRunByAgent.get(agent.id) ?? null;
+          const isExpanded = expandedRowId === agent.id;
+          return (
+            <AgentListRow
+              agent={agent}
+              activeRun={activeRun}
+              isPaused={activeRun?.status === 'paused'}
+              notificationsEnabled={!mutedAgents.has(agent.id)}
+              onPress={() => handleRowPress(agent)}
+              onActionPress={handleRowAction}
+              isActionsOpen={isExpanded}
+              onActionsToggle={(open) =>
+                setExpandedRowId(open ? agent.id : null)
+              }
             />
-          </View>
-        )}
-      </ScrollView>
+          );
+        }}
+        ListHeaderComponent={
+          loading ? (
+            <View style={{ marginTop: space.sm }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={i} style={styles.loadingRow}>
+                  {/* DESIGN.md §9: static neutral bones — no shimmer, no pulse. */}
+                  <Skeleton variant="none" style={styles.skeletonAvatar} />
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Skeleton variant="none" style={{ height: 18, width: 150, borderRadius: radius.tile }} />
+                    <Skeleton variant="none" style={{ height: 16, width: 220, borderRadius: radius.tile }} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : undefined
+        }
+        ListEmptyComponent={
+          !loading && rows.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyAvatarBox}>
+                <AgentAvatar size={48} name="Agent" />
+              </View>
+              <Text style={styles.emptyTitle}>No agents yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Create custom agents with their own model, personality, and tools.
+              </Text>
+              <PillButton
+                label="Create your first agent"
+                onPress={() => router.push('/agents/new/edit')}
+                variant="primary"
+                style={{ marginTop: space.lg }}
+              />
+            </View>
+          ) : undefined
+        }
+        ListFooterComponent={
+          error && !loading ? (
+            <InlineError
+              message={error}
+              onRetry={() => void load()}
+              style={{ marginHorizontal: space.lg, marginTop: space.md }}
+            />
+          ) : undefined
+        }
+        contentContainerStyle={{
+          paddingTop: headerInset,
+          paddingBottom: insets.bottom + 104, // accommodate pill dock
+        }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load();
+            }}
+            tintColor={colors.textPrimary}
+          />
+        }
+        onScrollBeginDrag={() => setExpandedRowId(null)}
+      />
 
       {/* Search bottom sheet */}
       <AgentSearch
@@ -319,22 +328,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
-  },
-  initialsAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initialsText: {
+  headerTitle: {
     fontSize: 17,
     lineHeight: 22,
     fontWeight: '600',
@@ -349,12 +343,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: space.lg,
-    paddingVertical: 14,
+    paddingVertical: 10,
     gap: space.md,
   },
   skeletonAvatar: {
-    width: 44,
-    height: 44,
+    width: 64,
+    height: 64,
     borderRadius: radius.pill,
   },
   emptyContainer: {
@@ -367,8 +361,8 @@ const styles = StyleSheet.create({
     marginBottom: space.lg,
   },
   emptyTitle: {
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: space.xs,
@@ -380,16 +374,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     maxWidth: 280,
-  },
-  errorBox: {
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.recording,
-    textAlign: 'center',
   },
 });

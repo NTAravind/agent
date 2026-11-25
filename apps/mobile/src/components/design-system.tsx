@@ -10,18 +10,30 @@ import {
   type TextStyle,
 } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import { colors, radius, shadow, space, typography } from '@/theme';
 
 /**
+ * Button variants — the only two fills a button may use:
+ * - `primary`: black (`primary`) with white content — the one action per screen.
+ * - `secondary`: grey (`surface`) with dark content — everything else.
+ * Buttons are never transparent: an unfilled control reads as broken.
+ */
+export type ButtonVariant = 'primary' | 'secondary';
+
+/**
  * 6.2 Round icon button:
- * 44x44 surfaceRaised with floating shadow.
- * Inside sheets, round buttons use surface fill and no shadow.
+ * 44x44 in `secondary` (grey) or `primary` (black) fill with floating shadow.
+ * Inside sheets, round buttons use the grey fill and no shadow.
  */
 export function RoundButton({
   icon: Icon,
   onPress,
   inSheet = false,
   size = 44,
+  iconSize,
+  variant = 'secondary',
+  disabled = false,
   accessibilityLabel,
   style,
 }: {
@@ -29,29 +41,46 @@ export function RoundButton({
   onPress?: () => void;
   inSheet?: boolean;
   size?: number;
+  iconSize?: number;
+  variant?: ButtonVariant;
+  disabled?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
+  const isPrimary = variant === 'primary' && !inSheet;
+  const resolvedIconSize = iconSize ?? (size === 36 ? 20 : Math.round(size * 0.5));
+  const hitSlopAmount = size < 44 ? Math.round((44 - size) / 2) : undefined;
+
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      hitSlop={hitSlopAmount}
       style={({ pressed }) => [
         {
           width: size,
           height: size,
           borderRadius: radius.pill,
-          backgroundColor: inSheet ? colors.surface : colors.surfaceRaised,
+          backgroundColor: isPrimary ? colors.primary : colors.surface,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: pressed ? 0.6 : 1,
+          opacity: disabled ? 0.45 : pressed ? 0.6 : 1,
         },
         inSheet ? null : shadow.floating,
         style,
       ]}
     >
-      <Icon size={22} color={colors.textPrimary} strokeWidth={1.75} />
+      {Icon ? (
+        <SymbolIcon
+          icon={Icon}
+          size={resolvedIconSize}
+          color={isPrimary ? colors.onPrimary : colors.textPrimary}
+          strokeWidth={1.75}
+        />
+      ) : null}
     </Pressable>
   );
 }
@@ -63,30 +92,39 @@ export function PillButton({
   label,
   onPress,
   variant = 'primary',
+  onCard = false,
   disabled = false,
   accessibilityLabel,
   style,
 }: {
   label: string;
   onPress?: () => void;
-  variant?: 'primary' | 'secondary';
+  variant?: ButtonVariant;
+  /**
+   * The button sits on a grey (`surface`) card. DESIGN.md §6.2: "When a
+   * button floats on a grey card, the fill is white (`surfaceRaised`) so it
+   * still separates from the card." On the screen background it stays grey.
+   */
+  onCard?: boolean;
   disabled?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const isPrimary = variant === 'primary';
+  const fill = isPrimary ? colors.primary : onCard ? colors.surfaceRaised : colors.surface;
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         {
           height: 44,
           paddingHorizontal: 24,
           borderRadius: radius.pill,
-          backgroundColor: isPrimary ? colors.primary : colors.surface,
+          backgroundColor: fill,
           alignItems: 'center',
           justifyContent: 'center',
           opacity: pressed ? 0.6 : disabled ? 0.5 : 1,
@@ -96,9 +134,7 @@ export function PillButton({
     >
       <Text
         style={{
-          fontSize: 17,
-          lineHeight: 22,
-          fontWeight: '600',
+          ...typography.button,
           color: isPrimary ? colors.onPrimary : colors.textPrimary,
         }}
       >
@@ -130,6 +166,7 @@ export function TextAction({
       accessibilityLabel={label}
       style={({ pressed }) => [
         {
+          minHeight: 44,
           flexDirection: 'row',
           alignItems: 'center',
           gap: 6,
@@ -138,7 +175,9 @@ export function TextAction({
         style,
       ]}
     >
-      {Icon && <Icon size={18} color={colors.link} strokeWidth={1.75} />}
+      {Icon ? (
+        <SymbolIcon icon={Icon} size={18} color={colors.link} strokeWidth={1.75} />
+      ) : null}
       <Text
         style={{
           fontSize: 17,
@@ -192,7 +231,7 @@ export function TagPill({
 }
 
 /**
- * 6.6 Section label: 15pt textSecondary, sits 8 above card, inset 16 from card edge
+ * 6.6 Section label: 12pt semibold, darkened secondary grey, slight letter-spacing, sits 16 above
  */
 export function SectionLabel({
   text,
@@ -207,10 +246,12 @@ export function SectionLabel({
     <Text
       style={[
         {
-          fontSize: 15,
-          lineHeight: 20,
-          fontWeight: '400',
+          fontSize: 12,
+          lineHeight: 16,
+          fontWeight: '600',
+          letterSpacing: 0.5,
           color: colors.textSecondary,
+          marginTop: 16,
           marginBottom: space.sm,
           marginHorizontal: space.lg,
         },
@@ -277,6 +318,9 @@ export function GroupedRow({
       <Pressable
         onPress={onPress}
         disabled={!onPress}
+        accessibilityRole={onPress ? 'button' : undefined}
+        accessibilityLabel={title}
+        accessibilityHint={subtitle}
         style={({ pressed }) => [
           {
             minHeight: height,
@@ -291,7 +335,7 @@ export function GroupedRow({
           <View style={{ marginRight: 14 }}>{mark}</View>
         ) : Icon ? (
           <View style={{ marginRight: 14 }}>
-            <Icon size={24} color={colors.textSecondary} strokeWidth={1.75} />
+            <SymbolIcon icon={Icon} size={24} color={colors.textSecondary} strokeWidth={1.75} />
           </View>
         ) : null}
 
@@ -360,5 +404,66 @@ export function HairlineDivider({
         style,
       ]}
     />
+  );
+}
+
+/**
+ * Inline error state — the one way a failed load is shown.
+ *
+ * A quiet `surface` card (radius 24, padding 12) carrying the failure
+ * message in `danger`. When the screen can recover on its own, a "Retry"
+ * pill sits under the message; the pill is white (`surfaceRaised`) because it
+ * floats on the grey card (DESIGN.md §6.2).
+ *
+ * `align="center"` is for the full-screen variants (a missing agent, a note
+ * that no longer exists) where the message is the whole screen.
+ */
+export function InlineError({
+  message,
+  onRetry,
+  retryLabel = 'Retry',
+  align = 'start',
+  style,
+}: {
+  message: string;
+  onRetry?: () => void;
+  retryLabel?: string;
+  align?: 'start' | 'center';
+  style?: StyleProp<ViewStyle>;
+}) {
+  const centered = align === 'center';
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: colors.surface,
+          borderRadius: radius.card,
+          padding: space.md,
+          alignItems: centered ? 'center' : 'flex-start',
+        },
+        style,
+      ]}
+    >
+      <Text
+        style={{
+          fontSize: 15,
+          lineHeight: 20,
+          fontWeight: '400',
+          color: colors.danger,
+          textAlign: centered ? 'center' : 'left',
+        }}
+      >
+        {message}
+      </Text>
+      {onRetry ? (
+        <PillButton
+          label={retryLabel}
+          onPress={onRetry}
+          variant="secondary"
+          onCard
+          style={{ marginTop: space.sm }}
+        />
+      ) : null}
+    </View>
   );
 }

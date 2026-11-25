@@ -14,13 +14,15 @@ import { Spinner, Switch } from 'heroui-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Trash2 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Skill } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
   RoundButton,
   SectionLabel,
@@ -152,6 +154,8 @@ export default function SkillEditorScreen() {
     }
   }, [router]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -167,7 +171,7 @@ export default function SkillEditorScreen() {
         }
         center={
           <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '600', color: colors.textPrimary }}>
-            {isNew ? 'New Skill' : 'Edit Skill'}
+            {isNew ? 'New skill' : 'Edit skill'}
           </Text>
         }
         right={
@@ -187,17 +191,14 @@ export default function SkillEditorScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={{
-            padding: space.lg,
+            paddingTop: headerInset,
+            paddingHorizontal: space.lg,
             paddingBottom: insets.bottom + space.xxl,
             gap: space.xl,
           }}
           keyboardShouldPersistTaps="handled"
         >
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+          {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
 
           {/* Vault path Card */}
           <GroupedCard style={{ padding: space.lg, gap: space.xs }}>
@@ -212,7 +213,7 @@ export default function SkillEditorScreen() {
           </GroupedCard>
 
           <View style={{ gap: space.lg }}>
-            <View style={{ gap: space.xs }}>
+            <View>
               <SectionLabel text="Name" />
               <TextInput
                 value={name}
@@ -223,7 +224,7 @@ export default function SkillEditorScreen() {
               />
             </View>
 
-            <View style={{ gap: space.xs }}>
+            <View>
               <SectionLabel text={`Slug ${isNew ? '' : '(fixed)'}`} />
               <TextInput
                 value={slug}
@@ -237,7 +238,7 @@ export default function SkillEditorScreen() {
               />
             </View>
 
-            <View style={{ gap: space.xs }}>
+            <View>
               <SectionLabel text="Description (shown in the agent's prompt)" />
               <TextInput
                 value={description}
@@ -249,7 +250,7 @@ export default function SkillEditorScreen() {
               />
             </View>
 
-            <View style={{ gap: space.xs }}>
+            <View>
               <SectionLabel text="Tool allowlist (optional, narrows only)" />
               <TextInput
                 value={toolsText}
@@ -266,7 +267,7 @@ export default function SkillEditorScreen() {
               </Text>
             </View>
 
-            <View style={{ gap: space.xs }}>
+            <View>
               <SectionLabel text="Instructions (markdown)" />
               <TextInput
                 value={body}
@@ -304,8 +305,8 @@ export default function SkillEditorScreen() {
                 accessibilityLabel="Delete skill"
                 style={styles.deleteButton}
               >
-                <Trash2 size={16} color={colors.recording} />
-                <Text style={styles.deleteButtonText}>Delete Skill</Text>
+                <SymbolIcon icon={Trash2} size={16} color={colors.danger} />
+                <Text style={styles.deleteButtonText}>Delete skill</Text>
               </Pressable>
             </View>
           ) : null}
@@ -321,22 +322,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  errorBox: {
-    backgroundColor: colors.recordingBg,
-    borderRadius: radius.card,
-    padding: space.lg,
-  },
-  errorText: {
-    color: colors.recording,
-    fontSize: 15,
-    textAlign: 'center',
-  },
   metaLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   metaValue: {
     fontSize: 15,
@@ -373,6 +362,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 18,
     paddingHorizontal: space.xs,
+    // The section wrapper no longer carries a gap, so the help text keeps its
+    // own 4pt separation from the field above it.
+    marginTop: space.xs,
   },
   toggleTitle: {
     fontSize: 17,
@@ -390,13 +382,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.sm,
-    backgroundColor: colors.recordingBg,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     paddingVertical: space.md,
   },
   deleteButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.recording,
+    color: colors.danger,
   },
 });

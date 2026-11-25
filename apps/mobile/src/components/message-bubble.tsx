@@ -9,15 +9,17 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Copy,
   CornerDownLeft,
   FileText,
+  Share2,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { AgentAvatar } from '@/components/agent-avatar';
 import { MarkdownText } from '@/components/markdown-text';
 import { RoutineProposalCard, type RoutineProposal } from '@/components/routine-proposal-card';
-import { colors, radius, space, typography } from '@/theme';
+import { colors, radius, typography } from '@/theme';
+import { hapticSelect } from '@/lib/haptics';
 
 type Props = {
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -90,6 +92,7 @@ export function MessageBubble({
   };
 
   const handleOptionPress = (option: string) => {
+    hapticSelect();
     setSelectedOption(option);
     onSelectOption?.(option);
   };
@@ -99,7 +102,7 @@ export function MessageBubble({
     const isRoutine = parts.some((part) => part.type === 'routine-trigger');
     if (isRoutine) {
       return (
-        <View style={{ alignItems: 'flex-start', marginVertical: space.xs }}>
+        <View style={{ alignItems: 'flex-start' }}>
           {parts.map((part, index) => {
             if (part.type === 'routine-trigger') {
               return (
@@ -115,7 +118,7 @@ export function MessageBubble({
                     paddingVertical: 6,
                   }}
                 >
-                  <CalendarClock size={14} color={colors.textSecondary} strokeWidth={1.75} />
+                  <SymbolIcon icon={CalendarClock} size={14} color={colors.textSecondary} strokeWidth={1.75} />
                   <Text style={{ fontSize: 13, color: colors.textSecondary }}>
                     {`Routine · ${String(part.routine_name ?? 'scheduled run')}`}
                   </Text>
@@ -129,10 +132,10 @@ export function MessageBubble({
     }
 
     return (
-      <View style={{ alignItems: 'flex-end', marginVertical: 5 }}>
+      <View style={{ alignItems: 'flex-end' }}>
         {replyQuote ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginRight: 8, opacity: 0.8 }}>
-            <CornerDownLeft size={13} color={colors.textSecondary} strokeWidth={1.75} />
+            <SymbolIcon icon={CornerDownLeft} size={13} color={colors.textSecondary} strokeWidth={1.75} />
             <Text numberOfLines={1} style={{ fontSize: 15, color: colors.textSecondary, maxWidth: 260 }}>
               {replyQuote}
             </Text>
@@ -173,10 +176,10 @@ export function MessageBubble({
 
   // Agent Message
   return (
-    <View style={{ alignItems: 'flex-start', marginVertical: 5 }}>
+    <View style={{ alignItems: 'flex-start' }}>
       {replyQuote ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginLeft: 8, opacity: 0.8 }}>
-          <CornerDownLeft size={13} color={colors.textSecondary} strokeWidth={1.75} />
+          <SymbolIcon icon={CornerDownLeft} size={13} color={colors.textSecondary} strokeWidth={1.75} />
           <Text numberOfLines={1} style={{ fontSize: 15, color: colors.textSecondary, maxWidth: 280 }}>
             {replyQuote}
           </Text>
@@ -196,17 +199,14 @@ export function MessageBubble({
         {parts.map((part, index) => {
           if (part.type === 'text') {
             const textContent = String(part.text ?? '');
+            const explicitOptions = Array.isArray((part as any).options) ? (part as any).options : null;
 
-            const isQuestion =
-              textContent.includes('Want me to tweak this') ||
-              textContent.includes('Which option') ||
-              textContent.includes('How would you like to proceed');
-
-            if (isQuestion) {
+            if (explicitOptions && explicitOptions.length > 0) {
               return (
                 <OptionListCard
                   key={index}
                   question={textContent}
+                  options={explicitOptions}
                   selectedOption={selectedOption}
                   onSelect={handleOptionPress}
                 />
@@ -300,6 +300,8 @@ export function MessageBubble({
             {fullAssistantText ? (
               <Pressable
                 onPress={() => void handleShareOrCopy()}
+                accessibilityRole="button"
+                accessibilityLabel="Share message"
                 style={({ pressed }) => ({
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -312,12 +314,12 @@ export function MessageBubble({
                 })}
               >
                 {copied ? (
-                  <Check size={12} color={colors.success} strokeWidth={2} />
+                  <SymbolIcon icon={Check} size={12} color={colors.success} strokeWidth={2} />
                 ) : (
-                  <Copy size={12} color={colors.textSecondary} strokeWidth={1.75} />
+                  <SymbolIcon icon={Share2} size={12} color={colors.textSecondary} strokeWidth={1.75} />
                 )}
                 <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  {copied ? 'Copied' : 'Copy'}
+                  {copied ? 'Shared' : 'Share'}
                 </Text>
               </Pressable>
             ) : null}
@@ -419,21 +421,19 @@ export function ArtifactCard({
  */
 export function OptionListCard({
   question,
-  options = [
-    { key: 'A', label: 'This works' },
-    { key: 'B', label: 'Vegetarian' },
-    { key: 'C', label: 'No seafood' },
-    { key: 'D', label: 'Cooking for two' },
-    { key: 'E', label: 'Shorter Sunday cook' },
-  ],
+  options,
   selectedOption,
   onSelect,
 }: {
   question: string;
-  options?: Array<{ key: string; label: string }>;
+  options: Array<{ key: string; label: string }>;
   selectedOption: string | null;
   onSelect: (option: string) => void;
 }) {
+  if (!options || options.length === 0) {
+    return null;
+  }
+
   return (
     <View style={{ gap: 10 }}>
       <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '400', color: colors.textPrimary }}>
@@ -460,7 +460,7 @@ export function OptionListCard({
             <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '400', color: colors.textPrimary }}>
               {selectedOption}
             </Text>
-            <Check size={22} color={colors.success} strokeWidth={2.2} />
+            <SymbolIcon icon={Check} size={22} color={colors.success} strokeWidth={2.2} />
           </View>
         ) : (
           options.map((opt, i) => (
@@ -534,9 +534,9 @@ function ReasoningView({ text }: { text: string }) {
       >
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>Thought trace</Text>
         {expanded ? (
-          <ChevronUp size={14} color={colors.textSecondary} strokeWidth={1.75} />
+          <SymbolIcon icon={ChevronUp} size={14} color={colors.textSecondary} strokeWidth={1.75} />
         ) : (
-          <ChevronDown size={14} color={colors.textSecondary} strokeWidth={1.75} />
+          <SymbolIcon icon={ChevronDown} size={14} color={colors.textSecondary} strokeWidth={1.75} />
         )}
       </Pressable>
       {expanded ? (
@@ -589,14 +589,12 @@ function ToolApprovalCard({
         width: '100%',
         borderRadius: radius.inner,
         backgroundColor: colors.surfaceRaised,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: colors.divider,
         padding: 14,
         gap: 10,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <AlertTriangle size={17} color={colors.recording} strokeWidth={1.9} />
+        <SymbolIcon icon={AlertTriangle} size={17} color={colors.danger} strokeWidth={2} />
         <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
           Approval required
         </Text>
@@ -617,7 +615,7 @@ function ToolApprovalCard({
       </View>
 
       {reason ? (
-        <Text style={{ fontSize: 14, lineHeight: 20, color: colors.textSecondary }}>
+        <Text style={{ fontSize: 15, lineHeight: 20, color: colors.textSecondary }}>
           {reason}
         </Text>
       ) : null}
@@ -655,7 +653,7 @@ function ToolApprovalCard({
             accessibilityRole="button"
             accessibilityLabel={`Approve ${name}`}
             style={({ pressed }) => ({
-              minHeight: 38,
+              minHeight: 44,
               flex: 1,
               alignItems: 'center',
               justifyContent: 'center',
@@ -665,7 +663,7 @@ function ToolApprovalCard({
               opacity: pressed ? 0.6 : onRespond ? 1 : 0.5,
             })}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.onPrimary }}>
+            <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: colors.onPrimary }}>
               Approve
             </Text>
           </Pressable>
@@ -675,7 +673,7 @@ function ToolApprovalCard({
             accessibilityRole="button"
             accessibilityLabel={`Deny ${name}`}
             style={({ pressed }) => ({
-              minHeight: 38,
+              minHeight: 44,
               flex: 1,
               alignItems: 'center',
               justifyContent: 'center',
@@ -685,7 +683,7 @@ function ToolApprovalCard({
               opacity: pressed ? 0.6 : onRespond ? 1 : 0.5,
             })}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+            <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: colors.textPrimary }}>
               Deny
             </Text>
           </Pressable>
@@ -723,7 +721,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
             width: 8,
             height: 8,
             borderRadius: radius.pill,
-            backgroundColor: failed ? colors.recording : colors.success,
+            backgroundColor: failed ? colors.danger : colors.success,
           }}
         />
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>{name}</Text>

@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { RoundButton } from '@/components/design-system';
 import { GroupEditor } from '@/components/group-editor';
 import { colors } from '@/theme';
@@ -20,6 +20,8 @@ export default function NewGroupScreen() {
     }
   }, [router]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -30,8 +32,9 @@ export default function NewGroupScreen() {
             accessibilityLabel="Cancel"
           />
         }
-        center={<Text style={styles.headerTitle}>New Group</Text>}
+        center={<Text style={styles.headerTitle}>New group</Text>}
       />
+      <View style={{ height: headerInset }} />
       <GroupEditor
         onSaved={(group) => router.replace({ pathname: '/groups/[id]', params: { id: group.id } } as never)}
       />

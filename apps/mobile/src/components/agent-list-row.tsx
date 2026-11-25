@@ -106,7 +106,12 @@ export function AgentListRow({
     subtitle = agent.instructions.slice(0, 60);
   }
 
-  const roleTag = tag ?? (agent.role && agent.role.length <= 24 ? agent.role : null);
+  // Show badge only when it adds information (e.g. Group chat); hide if it duplicates subtitle/role
+  const informativeTag = isGroup
+    ? 'Group chat'
+    : tag && tag !== agent.role && tag !== subtitle
+    ? tag
+    : null;
   const timeDisplay = formatTimestamp(timestamp ?? activeRun?.created_at ?? agent.createdAt);
 
   const swipeGesture = Gesture.Pan()
@@ -143,15 +148,15 @@ export function AgentListRow({
           accessibilityHint="Tap to open chat. Long press or swipe left for actions."
           style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
         >
-          {/* 44pt avatar (or cluster for groups) */}
+          {/* 64pt avatar (or cluster for groups) — DESIGN.md 6.10 */}
           <View style={styles.avatarWrapper}>
             {isGroup ? (
-              <ClusterAvatar size={44} members={groupMembers} />
+              <ClusterAvatar size={64} members={groupMembers} />
             ) : (
               <AgentAvatar
                 avatar={agent.avatar}
                 name={agent.name}
-                size={44}
+                size={64}
                 showStatusDot={Boolean(activeRun && activeRun.status === 'running')}
               />
             )}
@@ -160,32 +165,34 @@ export function AgentListRow({
           {/* Middle info */}
           <View style={styles.content}>
             <View style={styles.titleRow}>
-              <Text numberOfLines={1} style={styles.name}>
-                {agent.name}
-              </Text>
-              {roleTag ? (
-                <View style={styles.tagPill}>
-                  <Text numberOfLines={1} style={styles.tagText}>
-                    {roleTag}
-                  </Text>
-                </View>
+              <View style={styles.nameBadgeContainer}>
+                <Text numberOfLines={1} style={styles.name}>
+                  {agent.name}
+                </Text>
+                {informativeTag ? (
+                  <View style={styles.tagPill}>
+                    <Text numberOfLines={1} style={styles.tagText}>
+                      {informativeTag}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Right timestamp aligned to same baseline as agent name */}
+              {timeDisplay ? (
+                <Text style={styles.timeText}>{timeDisplay}</Text>
               ) : null}
             </View>
 
-            {/* Single-line preview in 14/18 textSecondary */}
+            {/* Single-line preview */}
             <Text numberOfLines={1} style={styles.preview}>
               {subtitle}
             </Text>
           </View>
-
-          {/* Right timestamp in 13pt textSecondary */}
-          {timeDisplay ? (
-            <View style={styles.timeWrapper}>
-              <Text style={styles.timeText}>{timeDisplay}</Text>
-            </View>
-          ) : null}
         </Pressable>
       </GestureDetector>
+
+      <View style={styles.divider} />
     </View>
   );
 }
@@ -212,20 +219,29 @@ const styles = StyleSheet.create({
   },
   avatarWrapper: {
     marginRight: space.md,
-    width: 44,
-    height: 44,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     flex: 1,
     minWidth: 0,
-    paddingRight: space.sm,
+    justifyContent: 'center',
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     gap: space.xs,
+  },
+  nameBadgeContainer: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingRight: space.xs,
   },
   name: {
     fontSize: 17,
@@ -240,6 +256,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.pill,
     flexShrink: 0,
+    maxWidth: 120,
   },
   tagText: {
     fontSize: 12,
@@ -249,20 +266,22 @@ const styles = StyleSheet.create({
   },
   preview: {
     marginTop: 2,
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '400',
     color: colors.textSecondary,
-  },
-  timeWrapper: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    paddingLeft: space.xs,
   },
   timeText: {
     fontSize: 13,
-    lineHeight: 16,
+    lineHeight: 18,
     fontWeight: '400',
     color: colors.textSecondary,
+    fontVariant: ['tabular-nums'],
+    flexShrink: 0,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+    marginLeft: 92,
   },
 });

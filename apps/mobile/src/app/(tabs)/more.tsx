@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,8 +25,9 @@ import {
   Sun,
   Users,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
-import { AppHeader } from '@/components/app-header';
+import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
 import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import { apiFetchDebug, ApiRequestError } from '@/lib/api';
@@ -70,6 +72,8 @@ export default function MoreScreen() {
     }
   }, []);
 
+  const headerInset = useHeaderInset();
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -80,6 +84,17 @@ export default function MoreScreen() {
 
   const email = session?.user.email ?? session?.user.id ?? '';
   const initial = email.slice(0, 2).toUpperCase() || 'FL';
+
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      'Sign out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
+      ],
+    );
+  }, [signOut]);
 
   const NAV_GROUPS = [
     {
@@ -139,7 +154,7 @@ export default function MoreScreen() {
           route: '/skills',
         },
         {
-          title: 'Agent Memory',
+          title: 'Agent memory',
           subtitle: 'Durable facts, preferences and decisions',
           icon: Database,
           route: '/memories',
@@ -148,30 +163,32 @@ export default function MoreScreen() {
     },
   ];
 
+
   return (
     <View style={styles.screen}>
       <AppHeader
-        left={
-          <View style={styles.headerAvatar}>
-            <Text style={styles.headerAvatarText}>{initial}</Text>
-          </View>
-        }
-        center={
-          <Text style={styles.headerTitle}>More</Text>
-        }
+        left={<HeaderAvatar initial={initial} />}
+        center={<Text style={styles.headerTitle}>More</Text>}
         right={
-          <RoundButton
-            icon={LogOut}
-            onPress={() => void signOut()}
+          <Pressable
+            onPress={handleLogout}
+            accessibilityRole="button"
             accessibilityLabel="Sign out"
-          />
+            hitSlop={4}
+            style={({ pressed }) => [
+              styles.logoutButton,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <SymbolIcon icon={LogOut} size={20} color={colors.textSecondary} strokeWidth={1.75} />
+          </Pressable>
         }
       />
 
       <ScrollView
         contentContainerStyle={{
+          paddingTop: headerInset,
           paddingHorizontal: space.lg,
-          paddingTop: space.sm,
           paddingBottom: insets.bottom + 100,
           gap: space.lg,
         }}
@@ -183,7 +200,7 @@ export default function MoreScreen() {
             <Text style={styles.profileAvatarText}>{initial}</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileTitle}>Connected Account</Text>
+            <Text style={styles.profileTitle}>Connected account</Text>
             <Text numberOfLines={1} style={styles.profileEmail}>
               {email}
             </Text>
@@ -192,11 +209,10 @@ export default function MoreScreen() {
 
         {/* Navigation Groups */}
         {NAV_GROUPS.map((group) => (
-          <View key={group.title} style={{ gap: space.xs }}>
+          <View key={group.title}>
             <SectionLabel text={group.title} />
             <GroupedCard>
               {group.items.map((item, index) => {
-                const IconComponent = item.icon;
                 return (
                   <React.Fragment key={item.title}>
                     {index > 0 && <HairlineDivider inset={60} />}
@@ -210,7 +226,7 @@ export default function MoreScreen() {
                       ]}
                     >
                       <View style={styles.tileIcon}>
-                        <IconComponent size={18} color={colors.textPrimary} strokeWidth={1.75} />
+                        <SymbolIcon icon={item.icon} size={18} color={colors.textPrimary} strokeWidth={1.75} />
                       </View>
                       <View style={styles.navContent}>
                         <Text style={styles.navTitle}>{item.title}</Text>
@@ -218,7 +234,7 @@ export default function MoreScreen() {
                           {item.subtitle}
                         </Text>
                       </View>
-                      <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
+                      <SymbolIcon icon={ChevronRight} size={16} color={colors.textTertiary} strokeWidth={1.75} />
                     </Pressable>
                   </React.Fragment>
                 );
@@ -228,23 +244,28 @@ export default function MoreScreen() {
         ))}
 
         {/* Diagnostics */}
-        <View style={{ gap: space.xs }}>
-          <SectionLabel text="System Diagnostics" />
+        <View>
+          <SectionLabel text="System diagnostics" />
           <GroupedCard style={{ padding: space.md, gap: space.sm }}>
             <View style={styles.diagHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-                <Activity size={16} color={colors.textSecondary} strokeWidth={1.75} />
-                <Text style={styles.diagTitle}>Backend API Status</Text>
+                <SymbolIcon icon={Activity} size={16} color={colors.textSecondary} strokeWidth={1.75} />
+                <Text style={styles.diagTitle}>Backend API status</Text>
               </View>
               <Pressable
                 onPress={() => void checkHealth()}
                 disabled={checking}
-                style={styles.diagCheckButton}
+                accessibilityRole="button"
+                accessibilityLabel="Run API health check"
+                style={({ pressed }) => [
+                  styles.diagCheckButton,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
               >
                 {checking ? (
                   <Spinner size="sm" color="default" />
                 ) : (
-                  <Text style={styles.diagCheckText}>Run Check</Text>
+                  <Text style={styles.diagCheckText}>Run check</Text>
                 )}
               </Pressable>
             </View>
@@ -260,7 +281,7 @@ export default function MoreScreen() {
               </View>
             ) : (
               <Text style={styles.diagPlaceholder}>
-                Tap &quot;Run Check&quot; to test API gateway connectivity.
+                Tap &quot;Run check&quot; to test API gateway connectivity.
               </Text>
             )}
           </GroupedCard>
@@ -287,20 +308,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  headerAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+  logoutButton: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow.floating,
-  },
-  headerAvatarText: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
-    color: colors.textPrimary,
   },
   profileCard: {
     flexDirection: 'row',
@@ -314,16 +326,15 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.profileAvatar,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow.floating,
   },
   profileAvatarText: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   profileInfo: {
     flex: 1,
@@ -331,14 +342,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   profileTitle: {
-    fontSize: 16,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   profileEmail: {
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 20,
     color: colors.textSecondary,
   },
   navRow: {
@@ -362,14 +373,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   navTitle: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '500',
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '400',
     color: colors.textPrimary,
   },
   navSubtitle: {
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 17,
+    lineHeight: 22,
     color: colors.textSecondary,
   },
   diagHeader: {
@@ -383,13 +394,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   diagCheckButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
   },
   diagCheckText: {
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '500',
     color: colors.textPrimary,
   },
@@ -415,13 +429,13 @@ const styles = StyleSheet.create({
   },
   diagError: {
     borderRadius: radius.inner,
-    backgroundColor: colors.recordingBg,
+    backgroundColor: colors.surface,
     paddingHorizontal: space.sm,
     paddingVertical: 6,
   },
   diagErrorText: {
     fontSize: 13,
-    color: colors.recording,
+    color: colors.danger,
   },
   diagPlaceholder: {
     fontSize: 13,

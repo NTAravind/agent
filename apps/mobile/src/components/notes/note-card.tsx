@@ -16,6 +16,7 @@ import {
   Pin,
   Square,
 } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Note } from '@agent/shared';
 
 import { colors, radius, shadow, space } from '@/theme';
@@ -34,6 +35,44 @@ type Props = {
   onDuplicate: () => void;
   onTogglePin?: (pinned: boolean) => void;
 };
+
+function cleanMarkdownPreview(raw: string): string {
+  return raw
+    // remove markdown table separator lines like |---|---|
+    .replace(/^\|?\s*[-:]+[-| :]*$/gm, '')
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      // Format table rows: | Category | Details | -> Category · Details
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        const cells = trimmed
+          .slice(1, -1)
+          .split('|')
+          .map((c) => c.trim())
+          .filter(Boolean);
+        return cells.join(' · ');
+      }
+      return trimmed;
+    })
+    .join('\n')
+    // remove markdown headers
+    .replace(/^#{1,6}\s+/gm, '')
+    // remove blockquotes
+    .replace(/^>\s+/gm, '')
+    // remove code fences
+    .replace(/```[a-z]*\n?/gi, '')
+    // remove bold and italic formatting
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    // remove list bullet markers
+    .replace(/^[-*+]\s+/gm, '')
+    // remove links [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // remove inline code `code`
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function formatRelativeDate(dateStr?: string | null): string {
   if (!dateStr) return 'Recently';
@@ -60,6 +99,9 @@ export function NoteCard({
   onTogglePin,
 }: Props) {
   const isPinned = Boolean(note.frontmatter?.pinned);
+  const isChecklist =
+    (note.title ?? '').toLowerCase().includes('checklist') ||
+    note.path.toLowerCase().includes('checklist');
 
   // Derive preview checklist items or plain text preview
   const { checklistItems, textPreview, tags } = useMemo(() => {
@@ -105,9 +147,11 @@ export function NoteCard({
       }
     }
 
+    const cleanedSnippet = cleanMarkdownPreview(textLines.slice(0, 4).join('\n'));
+
     return {
       checklistItems: checks.slice(0, 3), // show up to 3 checklist items
-      textPreview: textLines.slice(0, 2).join(' ').trim(),
+      textPreview: cleanedSnippet,
       tags: extractedTags.slice(0, 3),
     };
   }, [content, note.frontmatter, note.path]);
@@ -167,14 +211,13 @@ export function NoteCard({
       accessibilityLabel={`Open note ${title}`}
       style={({ pressed }) => [
         styles.card,
-        shadow.floating,
         pressed && styles.cardPressed,
       ]}
     >
       {/* Header: Title + Pin Indicator + More Menu */}
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          {isPinned && <Pin size={15} color={colors.textPrimary} style={styles.pinIcon} />}
+          {isPinned && <SymbolIcon icon={Pin} size={15} color={colors.textPrimary} style={styles.pinIcon} />}
           <Text numberOfLines={1} style={styles.title}>
             {title}
           </Text>
@@ -187,7 +230,7 @@ export function NoteCard({
           hitSlop={8}
           style={styles.moreButton}
         >
-          <MoreHorizontal size={20} color={colors.textSecondary} />
+          <SymbolIcon icon={MoreHorizontal} size={20} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -198,9 +241,9 @@ export function NoteCard({
             {checklistItems.map((item, idx) => (
               <View key={idx} style={styles.checklistItem}>
                 {item.checked ? (
-                  <CheckSquare size={16} color={colors.textPrimary} strokeWidth={2} />
+                  <SymbolIcon icon={CheckSquare} size={16} color={colors.textPrimary} strokeWidth={2} />
                 ) : (
-                  <Square size={16} color={colors.textSecondary} strokeWidth={1.5} />
+                  <SymbolIcon icon={Square} size={16} color={colors.textSecondary} strokeWidth={2} />
                 )}
                 <Text
                   numberOfLines={1}
@@ -230,7 +273,7 @@ export function NoteCard({
         </View>
 
         <View style={styles.dateContainer}>
-          <Calendar size={13} color={colors.textSecondary} />
+          <SymbolIcon icon={Calendar} size={13} color={colors.textSecondary} />
           <Text style={styles.dateText}>
             {formatRelativeDate(note.updated_at)}
           </Text>
@@ -246,12 +289,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: space.lg,
     gap: space.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
   },
   cardPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
+    // DESIGN.md §6.2: opacity 0.6 only — no scale bounce.
+    opacity: 0.6,
   },
   header: {
     flexDirection: 'row',
@@ -271,7 +312,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textPrimary,
     flex: 1,
   },
@@ -296,7 +337,8 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   checklistText: {
-    fontSize: 14,
+    fontSize: 15,
+    lineHeight: 20,
     color: colors.textPrimary,
     flex: 1,
   },
@@ -305,7 +347,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   textPreview: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 20,
     color: colors.textSecondary,
   },
@@ -328,8 +370,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   dateText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
     color: colors.textSecondary,
   },
 });

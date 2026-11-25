@@ -46,6 +46,19 @@ export const CREATURE_SHAPES: CreatureShape[] = [
   'ghost',
 ];
 
+/**
+ * Marks offered in the avatar pickers. The lists above still render every
+ * mark — existing agents keep theirs and Pacbot keeps its ghost — but the
+ * generic bot/zap icons and Pacbot's ghost shape are not offered as choices.
+ */
+export const PICKABLE_AVATAR_ICONS = Object.keys(AVATAR_ICONS).filter(
+  (key) => key !== 'bot' && key !== 'zap',
+);
+
+export const PICKABLE_CREATURE_SHAPES = CREATURE_SHAPES.filter(
+  (shape) => shape !== 'ghost',
+);
+
 export const PALETTE_COLORS: string[] = [
   colors.mark.black,
   colors.mark.brown,
@@ -187,19 +200,19 @@ export function AgentMark({
               fill={color}
             />
             {/* White eyeballs */}
-            <Ellipse cx="53.3" cy="42.3" rx="9.7" ry="10.7" fill="#FFFFFF" />
-            <Ellipse cx="73.3" cy="42.3" rx="8.2" ry="10.1" fill="#FFFFFF" />
+            <Ellipse cx="53.3" cy="42.3" rx="9.7" ry="10.7" fill={colors.onPrimary} />
+            <Ellipse cx="73.3" cy="42.3" rx="8.2" ry="10.1" fill={colors.onPrimary} />
             {/* Dark pupils looking to the right */}
-            <Ellipse cx="59.4" cy="42.0" rx="3.5" ry="4.2" fill="#111111" />
-            <Ellipse cx="78.2" cy="42.0" rx="3.1" ry="4.1" fill="#111111" />
+            <Ellipse cx="59.4" cy="42.0" rx="3.5" ry="4.2" fill={colors.primary} />
+            <Ellipse cx="78.2" cy="42.0" rx="3.1" ry="4.1" fill={colors.primary} />
           </>
         )}
 
         {/* Highlights: two short, rounded, white strokes tilted ~20 deg at upper right (for standard shapes) */}
         {normShape !== 'ghost' && (
           <G transform={`translate(${eyeX}, ${eyeY}) rotate(-20)`}>
-            <Rect x="-8" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
-            <Rect x="4" y="-7" width="5.5" height="15" rx="2.75" fill="#FFFFFF" />
+            <Rect x="-8" y="-7" width="5.5" height="15" rx="2.75" fill={colors.onPrimary} />
+            <Rect x="4" y="-7" width="5.5" height="15" rx="2.75" fill={colors.onPrimary} />
           </G>
         )}
       </Svg>
@@ -289,7 +302,8 @@ function StatusDot({ size }: { size: number }) {
         height: dotSize,
         borderRadius: radius.pill,
         backgroundColor: colors.success,
-        borderWidth: 2.5,
+        // DESIGN.md 6.10: 3pt white ring at 64pt, scaling down for smaller slots.
+        borderWidth: Math.max(2, Math.round(size * 0.047)),
         borderColor: colors.surfaceRaised,
       }}
     />

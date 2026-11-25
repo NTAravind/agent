@@ -1,13 +1,14 @@
-import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookMarked, ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 import type { Skill } from '@agent/shared';
 
-import { AppHeader } from '@/components/app-header';
-import { GroupedCard, HairlineDivider, RoundButton } from '@/components/design-system';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
+import { HairlineDivider, InlineError, RoundButton } from '@/components/design-system';
 import { colors, radius, space } from '@/theme';
 import { fetchSkills } from '@/lib/skills';
 
@@ -50,6 +51,8 @@ export default function SkillsScreen() {
     }
   }, [router]);
 
+  const headerInset = useHeaderInset();
+
   return (
     <View style={styles.screen}>
       <AppHeader
@@ -79,12 +82,86 @@ export default function SkillsScreen() {
           <Spinner size="lg" color="default" />
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={skills}
+          keyExtractor={(skill) => skill.id}
+          renderItem={({ item: skill, index }) => (
+            <View
+              style={[
+                styles.cardSlice,
+                index === 0 && styles.cardSliceTop,
+                index === skills.length - 1 && styles.cardSliceBottom,
+              ]}
+            >
+              {index > 0 ? <HairlineDivider inset={56} /> : null}
+              <Pressable
+                onPress={() => router.push({ pathname: '/skills/[id]', params: { id: skill.id } })}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${skill.name}`}
+                style={({ pressed }) => [
+                  styles.skillRow,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <View style={styles.tileIcon}>
+                  <SymbolIcon icon={BookMarked} size={18} color={colors.textSecondary} strokeWidth={1.75} />
+                </View>
+                <View style={styles.skillContent}>
+                  <View style={styles.titleRow}>
+                    <Text numberOfLines={1} style={styles.skillName}>
+                      {skill.name}
+                    </Text>
+                    {!skill.enabled ? (
+                      <View style={styles.disabledBadge}>
+                        <Text style={styles.disabledText}>Off</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text numberOfLines={2} style={styles.skillDescription}>
+                    {skill.description}
+                  </Text>
+                  <View style={styles.metaRow}>
+                    <Text numberOfLines={1} style={styles.slugText}>
+                      {skill.slug}
+                      {skill.tools.length > 0 ? ` · ${skill.tools.length} tool limit` : ''}
+                    </Text>
+                    <View style={styles.agentBadge}>
+                      <Text style={styles.agentBadgeText}>
+                        {skill.assignedAgentIds.length} agent
+                        {skill.assignedAgentIds.length === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <SymbolIcon icon={ChevronRight} size={16} color={colors.textTertiary} strokeWidth={1.75} />
+              </Pressable>
+            </View>
+          )}
+          ListHeaderComponent={
+            error ? (
+              <InlineError message={error} onRetry={() => void load()} style={styles.headerError} />
+            ) : undefined
+          }
+          ListEmptyComponent={
+            skills.length === 0 && !error ? (
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconBox}>
+                  <SymbolIcon icon={BookMarked} size={32} color={colors.textSecondary} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyTitle}>
+                  No skills yet
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  Skills are reusable instruction bundles (SKILL.md in your vault). Agents only see
+                  their name and description until they load one.
+                </Text>
+              </View>
+            ) : undefined
+          }
           contentContainerStyle={{
+            paddingTop: headerInset,
             paddingHorizontal: space.lg,
-            paddingTop: space.sm,
             paddingBottom: insets.bottom + 32,
-            gap: space.md,
           }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -97,77 +174,7 @@ export default function SkillsScreen() {
               tintColor={colors.textPrimary}
             />
           }
-        >
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {skills.length === 0 && !error ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconBox}>
-                <BookMarked size={32} color={colors.textSecondary} strokeWidth={1.5} />
-              </View>
-              <Text style={styles.emptyTitle}>
-                No skills yet
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                Skills are reusable instruction bundles (SKILL.md in your vault). Agents only see
-                their name and description until they load one.
-              </Text>
-            </View>
-          ) : (
-            <GroupedCard>
-              {skills.map((skill, index) => (
-                <React.Fragment key={skill.id}>
-                  {index > 0 && <HairlineDivider inset={56} />}
-                  <Pressable
-                    onPress={() => router.push({ pathname: '/skills/[id]', params: { id: skill.id } })}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${skill.name}`}
-                    style={({ pressed }) => [
-                      styles.skillRow,
-                      { opacity: pressed ? 0.6 : 1 },
-                    ]}
-                  >
-                    <View style={styles.tileIcon}>
-                      <BookMarked size={18} color={colors.textSecondary} strokeWidth={1.75} />
-                    </View>
-                    <View style={styles.skillContent}>
-                      <View style={styles.titleRow}>
-                        <Text numberOfLines={1} style={styles.skillName}>
-                          {skill.name}
-                        </Text>
-                        {!skill.enabled ? (
-                          <View style={styles.disabledBadge}>
-                            <Text style={styles.disabledText}>Off</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text numberOfLines={2} style={styles.skillDescription}>
-                        {skill.description}
-                      </Text>
-                      <View style={styles.metaRow}>
-                        <Text numberOfLines={1} style={styles.slugText}>
-                          {skill.slug}
-                          {skill.tools.length > 0 ? ` · ${skill.tools.length} tool limit` : ''}
-                        </Text>
-                        <View style={styles.agentBadge}>
-                          <Text style={styles.agentBadgeText}>
-                            {skill.assignedAgentIds.length} agent
-                            {skill.assignedAgentIds.length === 1 ? '' : 's'}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                    <ChevronRight size={16} color={colors.textTertiary} strokeWidth={1.75} />
-                  </Pressable>
-                </React.Fragment>
-              ))}
-            </GroupedCard>
-          )}
-        </ScrollView>
+        />
       )}
     </View>
   );
@@ -179,8 +186,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },
@@ -189,15 +196,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  errorBox: {
-    backgroundColor: colors.recordingBg,
-    borderRadius: radius.card,
-    padding: space.md,
+  headerError: {
+    // Replaces the content container's old 12pt gap below the error box.
+    marginBottom: space.md,
   },
-  errorText: {
-    fontSize: 13,
-    color: colors.recording,
-    textAlign: 'center',
+  cardSlice: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space.lg,
+  },
+  cardSliceTop: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  cardSliceBottom: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
   },
   emptyContainer: {
     marginTop: 64,
@@ -222,7 +235,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 20,
     color: colors.textSecondary,
     textAlign: 'center',
@@ -288,6 +301,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: colors.textTertiary,
     flex: 1,
+    fontVariant: ['tabular-nums'],
   },
   agentBadge: {
     borderRadius: radius.pill,
@@ -299,5 +313,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: colors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
 });

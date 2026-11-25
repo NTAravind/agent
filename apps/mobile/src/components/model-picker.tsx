@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { PROVIDER_LABELS } from '@agent/shared';
 import { colors, radius, shadow, space } from '@/theme';
@@ -95,11 +96,11 @@ export function ModelPicker({
           { opacity: pressed ? 0.6 : 1 },
         ]}
       >
-        <SlidersHorizontal size={14} color={colors.textPrimary} strokeWidth={1.75} />
+        <SymbolIcon icon={SlidersHorizontal} size={14} color={colors.textPrimary} strokeWidth={1.75} />
         <Text numberOfLines={1} style={styles.triggerText}>
           {value?.label ?? 'Select model'}
         </Text>
-        <ChevronDown size={14} color={colors.textSecondary} strokeWidth={1.75} />
+        <SymbolIcon icon={ChevronDown} size={14} color={colors.textSecondary} strokeWidth={1.75} />
       </Pressable>
 
       <Modal
@@ -128,7 +129,7 @@ export function ModelPicker({
 
             <View style={styles.sheetHeader}>
               <View>
-                <Text style={styles.sheetTitle}>Choose Model</Text>
+                <Text style={styles.sheetTitle}>Choose model</Text>
                 <Text style={styles.sheetSubtitle}>Select model and capabilities</Text>
               </View>
               <Pressable
@@ -187,7 +188,7 @@ export function ModelPicker({
                       )}
                     </View>
                     {isSelected ? (
-                      <Check size={18} color={colors.success} strokeWidth={2.5} />
+                      <SymbolIcon icon={Check} size={18} color={colors.success} strokeWidth={2.5} />
                     ) : null}
                   </Pressable>
                 );
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },

@@ -14,12 +14,14 @@ import {
 import { Spinner } from 'heroui-native';
 import { useFocusEffect } from 'expo-router';
 import { Check, Minus, Plus, Trash2, Users } from 'lucide-react-native';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 import { AgentAvatar } from '@/components/agent-avatar';
 import { reportAppError } from '@/components/error-dialog-provider';
 import {
   GroupedCard,
   HairlineDivider,
+  InlineError,
   PillButton,
   SectionLabel,
 } from '@/components/design-system';
@@ -208,11 +210,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
         contentContainerStyle={{ padding: space.lg, paddingBottom: 48, gap: space.xl }}
         keyboardShouldPersistTaps="handled"
       >
-        {error ? (
-          <View style={{ backgroundColor: colors.recordingBg, borderRadius: radius.card, padding: space.md }}>
-            <Text style={{ fontSize: 13, color: colors.recording }}>{error}</Text>
-          </View>
-        ) : null}
+        {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
 
         <GroupedCard style={{ alignItems: 'center', gap: space.sm, padding: space.xl }}>
           <View style={{ flexDirection: 'row', marginRight: 4 }}>
@@ -234,13 +232,13 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           <Text style={{ fontSize: 18, fontWeight: '600', color: colors.textPrimary, marginTop: space.xs }}>
             {name.trim() || 'New agent group'}
           </Text>
-          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, fontVariant: ['tabular-nums'], }}>
             {selectedCount} member{selectedCount === 1 ? '' : 's'} · {mode}
           </Text>
         </GroupedCard>
 
         <View style={{ gap: space.lg }}>
-          <View style={{ gap: space.xs }}>
+          <View>
             <SectionLabel text="Name" />
             <TextInput
               value={name}
@@ -251,7 +249,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
             />
           </View>
 
-          <View style={{ gap: space.xs }}>
+          <View>
             <SectionLabel text="Description" />
             <TextInput
               value={description}
@@ -264,8 +262,8 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           </View>
         </View>
 
-        <View style={{ gap: space.xs }}>
-          <SectionLabel text="Collaboration Mode" />
+        <View>
+          <SectionLabel text="Collaboration mode" />
           <View style={styles.tabTrack}>
             {(['handoff', 'roundtable'] as const).map((value) => {
               const selected = mode === value;
@@ -300,8 +298,8 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           </Text>
         </View>
 
-        <View style={{ gap: space.xs }}>
-          <SectionLabel text="Lead Agent" />
+        <View>
+          <SectionLabel text="Lead agent" />
           <GroupedCard>
             {agents.map((agent, index) => {
               const selected = leadAgentId === agent.id;
@@ -326,7 +324,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
                         {agent.role ?? 'Group member'}
                       </Text>
                     </View>
-                    {selected ? <Check size={18} color={colors.textPrimary} strokeWidth={2.5} /> : null}
+                    {selected ? <SymbolIcon icon={Check} size={18} color={colors.textPrimary} strokeWidth={2.5} /> : null}
                   </Pressable>
                 </React.Fragment>
               );
@@ -334,11 +332,11 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           </GroupedCard>
         </View>
 
-        <View style={{ gap: space.xs }}>
+        <View>
           <SectionLabel text="Members" />
           {agents.length === 0 ? (
             <GroupedCard style={{ alignItems: 'center', gap: space.sm, padding: space.xl }}>
-              <Users size={20} color={colors.textSecondary} />
+              <SymbolIcon icon={Users} size={20} color={colors.textSecondary} />
               <Text style={{ fontSize: 13, color: colors.textSecondary }}>Create an agent before building a group.</Text>
             </GroupedCard>
           ) : (
@@ -381,7 +379,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
                           },
                         ]}
                       >
-                        {selected ? <Check size={13} color={colors.onPrimary} strokeWidth={2.5} /> : null}
+                        {selected ? <SymbolIcon icon={Check} size={13} color={colors.onPrimary} strokeWidth={2.5} /> : null}
                       </View>
                     </Pressable>
                   </React.Fragment>
@@ -391,7 +389,7 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
           )}
         </View>
 
-        <View style={{ gap: space.xs }}>
+        <View>
           <SectionLabel text="Guardrails" />
           <GroupedCard style={{ padding: space.md, gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -403,18 +401,20 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
                 onPress={() => setMaxHops((value) => Math.max(1, value - 1))}
                 accessibilityRole="button"
                 accessibilityLabel="Decrease maximum hops"
-                style={styles.stepperButton}
+                hitSlop={6}
+                style={({ pressed }) => [styles.stepperButton, { opacity: pressed ? 0.6 : 1 }]}
               >
-                <Minus size={14} color={colors.textPrimary} />
+                <SymbolIcon icon={Minus} size={14} color={colors.textPrimary} />
               </Pressable>
-              <Text style={{ width: 40, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{maxHops}</Text>
+              <Text style={{ width: 40, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary, fontVariant: ['tabular-nums'], }}>{maxHops}</Text>
               <Pressable
                 onPress={() => setMaxHops((value) => Math.min(20, value + 1))}
                 accessibilityRole="button"
                 accessibilityLabel="Increase maximum hops"
-                style={styles.stepperButton}
+                hitSlop={6}
+                style={({ pressed }) => [styles.stepperButton, { opacity: pressed ? 0.6 : 1 }]}
               >
-                <Plus size={14} color={colors.textPrimary} />
+                <SymbolIcon icon={Plus} size={14} color={colors.textPrimary} />
               </Pressable>
             </View>
 
@@ -429,27 +429,29 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
                 onPress={() => setTokenBudget((value) => Math.max(1_000, value - 5_000))}
                 accessibilityRole="button"
                 accessibilityLabel="Decrease token budget"
-                style={styles.stepperButton}
+                hitSlop={6}
+                style={({ pressed }) => [styles.stepperButton, { opacity: pressed ? 0.6 : 1 }]}
               >
-                <Minus size={14} color={colors.textPrimary} />
+                <SymbolIcon icon={Minus} size={14} color={colors.textPrimary} />
               </Pressable>
-              <Text style={{ width: 60, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+              <Text style={{ width: 60, textAlign: 'center', fontSize: 15, fontWeight: '600', color: colors.textPrimary, fontVariant: ['tabular-nums'], }}>
                 {Math.round(tokenBudget / 1_000)}k
               </Text>
               <Pressable
                 onPress={() => setTokenBudget((value) => Math.min(500_000, value + 5_000))}
                 accessibilityRole="button"
                 accessibilityLabel="Increase token budget"
-                style={styles.stepperButton}
+                hitSlop={6}
+                style={({ pressed }) => [styles.stepperButton, { opacity: pressed ? 0.6 : 1 }]}
               >
-                <Plus size={14} color={colors.textPrimary} />
+                <SymbolIcon icon={Plus} size={14} color={colors.textPrimary} />
               </Pressable>
             </View>
           </GroupedCard>
         </View>
 
         <PillButton
-          label={editing ? (saving ? 'Saving…' : 'Save Group') : (saving ? 'Creating…' : 'Create Group')}
+          label={editing ? (saving ? 'Saving…' : 'Save group') : (saving ? 'Creating…' : 'Create group')}
           onPress={() => void handleSave()}
           disabled={saving || agents.length < 2}
           variant="primary"
@@ -462,8 +464,8 @@ export function GroupEditor({ groupId, onSaved, onDeleted }: Props) {
             accessibilityLabel="Delete group"
             style={styles.deleteButton}
           >
-            <Trash2 size={16} color={colors.recording} />
-            <Text style={styles.deleteButtonText}>Delete Group</Text>
+            <SymbolIcon icon={Trash2} size={16} color={colors.danger} />
+            <Text style={styles.deleteButtonText}>Delete group</Text>
           </Pressable>
         ) : null}
 
@@ -517,6 +519,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: colors.textSecondary,
     paddingHorizontal: space.xs,
+    // The section wrapper no longer carries a gap, so the help text keeps its
+    // own 4pt separation from the control above it.
+    marginTop: space.xs,
   },
   stepperButton: {
     width: 32,
@@ -531,13 +536,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.sm,
-    backgroundColor: colors.recordingBg,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     paddingVertical: space.md,
   },
   deleteButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.recording,
+    color: colors.danger,
   },
 });

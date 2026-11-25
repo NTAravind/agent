@@ -3,6 +3,7 @@ import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
 
 import { AGENT_LIST_ACTION_ICONS } from '@/constants/icons';
 import { colors, radius, space } from '@/theme';
+import { SymbolIcon } from '@/components/symbol-icon';
 
 type ActionType = 'pause' | 'skip' | 'notify';
 
@@ -70,7 +71,8 @@ export function AgentRowActions({
         { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 },
       ]}
     >
-      <Icon
+      <SymbolIcon
+        icon={Icon}
         size={18}
         color={disabled ? colors.textTertiary : colors.textPrimary}
         strokeWidth={1.75}
