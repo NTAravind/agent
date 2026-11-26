@@ -1,7 +1,6 @@
 import '../../global.css';
 
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 import { Stack, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Notifications from 'expo-notifications';
@@ -83,15 +82,13 @@ function Shell() {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
         <SafeAreaProvider>
           <ErrorDialogProvider>
             <SessionProvider>
-              <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+              <StatusBar style="auto" />
               <Shell />
             </SessionProvider>
           </ErrorDialogProvider>

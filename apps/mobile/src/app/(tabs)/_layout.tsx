@@ -55,7 +55,7 @@ export default function TabsLayout() {
           styles.dock,
           {
             backgroundColor: colors.primary,
-            bottom: Math.max(insets.bottom, 16),
+            bottom: Math.max(insets.bottom + 12, 16),
             left: (screenWidth - dockWidth) / 2,
             width: dockWidth,
           },
@@ -85,13 +85,13 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   dock: {
     position: 'absolute',
-    height: 64,
+    height: 58,
     borderRadius: radius.pill,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surfaceRaised,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     zIndex: 999,
     // DESIGN.md §5: elevation stays 0 on Android too — no elevation look.
     ...shadow.floating,

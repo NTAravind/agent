@@ -15,12 +15,11 @@ import { CalendarDays, Check, Clock, ListTodo, MapPin, Plus } from 'lucide-react
 import { SymbolIcon } from '@/components/symbol-icon';
 import type { CalendarEvent, Task, TaskList } from '@agent/shared';
 
-import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { HairlineDivider, InlineError, RoundButton, SectionLabel } from '@/components/design-system';
 import { TaskRow } from '@/components/task-row';
 import { colors, radius, shadow, space } from '@/theme';
-import { useSession } from '@/lib/session';
 import {
   endOfDayIso,
   formatHeaderDate,
@@ -67,8 +66,6 @@ type DashboardCell =
 export default function TodayScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useSession();
-  const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
 
   const [lists, setLists] = useState<TaskList[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -277,12 +274,6 @@ export default function TodayScreen() {
   return (
     <View style={styles.screen}>
       <AppHeader
-        left={
-          <HeaderAvatar
-            initial={userInitial}
-            onPress={() => router.push('/more')}
-          />
-        }
         center={
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Today</Text>
@@ -291,7 +282,6 @@ export default function TodayScreen() {
         }
         right={
           <RoundButton
-            size={36}
             icon={ListTodo}
             onPress={() => router.push('/tasks')}
             accessibilityLabel="Open all tasks"
@@ -312,15 +302,8 @@ export default function TodayScreen() {
           }
 
           if (cell.type === 'empty') {
-            const EmptyIcon = cell.calendar ? CalendarDays : ListTodo;
             return (
               <View style={styles.emptyCard}>
-                <SymbolIcon
-                  icon={EmptyIcon}
-                  size={18}
-                  color={colors.textSecondary}
-                  strokeWidth={1.5}
-                />
                 <Text style={styles.emptyText}>{cell.text}</Text>
                 {cell.calendar ? (
                   <Pressable
@@ -433,19 +416,13 @@ export default function TodayScreen() {
                 hitSlop={6}
                 style={({ pressed }) => [
                   styles.quickAddButton,
-                  draft.trim() ? styles.quickAddButtonActive : styles.quickAddButtonDisabled,
-                  { opacity: pressed ? 0.6 : 1 },
+                  { opacity: pressed ? 0.6 : draft.trim() ? 1 : 0.4 },
                 ]}
               >
                 {saving ? (
                   <Spinner size="sm" color="default" />
                 ) : (
-                  <SymbolIcon
-                    icon={Check}
-                    size={16}
-                    color={draft.trim() ? colors.onPrimary : colors.textSecondary}
-                    strokeWidth={2.2}
-                  />
+                  <SymbolIcon icon={Check} size={16} color={colors.onPrimary} strokeWidth={2.5} />
                 )}
               </Pressable>
             </View>
@@ -490,8 +467,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },
@@ -520,14 +497,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  quickAddButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  quickAddButtonDisabled: {
-    backgroundColor: 'rgba(0,0,0,0.06)',
   },
   center: {
     paddingVertical: 64,
@@ -567,8 +539,8 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   emptyText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     color: colors.textSecondary,
   },
   openCalendarPill: {

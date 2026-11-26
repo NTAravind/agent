@@ -15,7 +15,7 @@ export const colors = {
 
   // Text
   textPrimary: '#0A0A0A',
-  textSecondary: '#6B6B70',    // section labels, previews, timestamps, placeholders (darkened for WCAG AA)
+  textSecondary: '#6E6E73',    // section labels, previews, timestamps, placeholders (WCAG AA)
   textTertiary: '#B5B5BA',     // file extensions, disabled
 
   // Lines
@@ -57,10 +57,8 @@ export const space = {
 
 export const radius = {
   pill: 999,       // inputs, tags, buttons, header pill, round buttons
-  card: 16,        // section cards, grouped settings cards
-  cardLarge: 24,   // large surfaces
-  bubble: 18,      // chat message bubbles
-  inner: 16,       // option list inside a bubble
+  card: 24,        // grouped settings cards, bubbles, attachment card
+  inner: 20,       // option list inside a bubble
   sheet: 32,       // bottom sheets and popovers (top corners)
   tile: 10,        // small icon tiles (file icon, A-E badges)
 } as const;
@@ -75,109 +73,58 @@ export const shadow = {
   },
 } as const;
 
-export const maxFontSizeMultiplier = 1.15;
-export const TAB_BAR_HEIGHT = 64;
-export const HEADER_BAR_HEIGHT = 52;
-
 export const typography = {
-  // Global Type Scale (Section 1)
-  title: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '600' as const,
-    color: colors.textPrimary,
-  },
-  headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600' as const,
-    color: colors.textPrimary,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '400' as const,
-    color: colors.textPrimary,
-  },
-  bodyMedium: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '500' as const,
-    color: colors.textPrimary,
-  },
-  bodySemibold: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '600' as const,
-    color: colors.textPrimary,
-  },
-  secondary: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '400' as const,
-    color: colors.textSecondary,
-  },
-  secondaryMedium: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '500' as const,
-    color: colors.textSecondary,
-  },
-  caption: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '400' as const,
-    color: colors.textSecondary,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600' as const,
-    letterSpacing: 0.5,
-    marginTop: 16,
-    color: colors.textSecondary,
-  },
-
-  // Semantic & backwards-compatible aliases
   screenTitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '600' as const,
     color: colors.textPrimary,
   },
   sheetTitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '600' as const,
     color: colors.textPrimary,
   },
   rowTitle: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '600' as const,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500' as const,
+    color: colors.textPrimary,
+  },
+  body: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400' as const,
     color: colors.textPrimary,
   },
   bodySecondary: {
-    fontSize: 15,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: '400' as const,
     color: colors.textSecondary,
   },
+  sectionLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400' as const,
+    color: colors.textSecondary,
+  },
   meta: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '400' as const,
     color: colors.textSecondary,
   },
   button: {
-    fontSize: 15,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: '600' as const,
     color: colors.divider,
   },
   tagPill: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '400' as const,
     color: colors.textSecondary,
   },

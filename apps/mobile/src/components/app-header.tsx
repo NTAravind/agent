@@ -1,37 +1,13 @@
 import React, { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { colors, radius, shadow, space } from '@/theme';
+import { colors, space } from '@/theme';
 
-export const HEADER_BAR_HEIGHT = 52;
+export const HEADER_BAR_HEIGHT = 44;
 /** 6.1: the top fade is ~120pt of the screen background dissolving to nothing. */
 export const HEADER_FADE_HEIGHT = 120;
-
-export function HeaderAvatar({
-  initial,
-  onPress,
-}: {
-  initial: string;
-  onPress?: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Open settings"
-      hitSlop={4}
-      style={({ pressed }) => [
-        styles.avatarButton,
-        shadow.floating,
-        { opacity: pressed ? 0.6 : 1 },
-      ]}
-    >
-      <Text style={styles.avatarText}>{initial}</Text>
-    </Pressable>
-  );
-}
 
 type Props = {
   /** Left-hand control (usually RoundButton with ChevronLeft or X). */
@@ -127,20 +103,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     flexShrink: 0,
-    gap: space.sm,
-  },
-  avatarButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.profileAvatar,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '600',
-    color: colors.textSecondary,
   },
 });

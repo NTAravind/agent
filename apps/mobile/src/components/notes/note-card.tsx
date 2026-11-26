@@ -36,44 +36,6 @@ type Props = {
   onTogglePin?: (pinned: boolean) => void;
 };
 
-function cleanMarkdownPreview(raw: string): string {
-  return raw
-    // remove markdown table separator lines like |---|---|
-    .replace(/^\|?\s*[-:]+[-| :]*$/gm, '')
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim();
-      // Format table rows: | Category | Details | -> Category · Details
-      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-        const cells = trimmed
-          .slice(1, -1)
-          .split('|')
-          .map((c) => c.trim())
-          .filter(Boolean);
-        return cells.join(' · ');
-      }
-      return trimmed;
-    })
-    .join('\n')
-    // remove markdown headers
-    .replace(/^#{1,6}\s+/gm, '')
-    // remove blockquotes
-    .replace(/^>\s+/gm, '')
-    // remove code fences
-    .replace(/```[a-z]*\n?/gi, '')
-    // remove bold and italic formatting
-    .replace(/(\*\*|__)(.*?)\1/g, '$2')
-    .replace(/(\*|_)(.*?)\1/g, '$2')
-    // remove list bullet markers
-    .replace(/^[-*+]\s+/gm, '')
-    // remove links [text](url) -> text
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // remove inline code `code`
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function formatRelativeDate(dateStr?: string | null): string {
   if (!dateStr) return 'Recently';
   const date = new Date(dateStr);
@@ -99,9 +61,6 @@ export function NoteCard({
   onTogglePin,
 }: Props) {
   const isPinned = Boolean(note.frontmatter?.pinned);
-  const isChecklist =
-    (note.title ?? '').toLowerCase().includes('checklist') ||
-    note.path.toLowerCase().includes('checklist');
 
   // Derive preview checklist items or plain text preview
   const { checklistItems, textPreview, tags } = useMemo(() => {
@@ -147,11 +106,9 @@ export function NoteCard({
       }
     }
 
-    const cleanedSnippet = cleanMarkdownPreview(textLines.slice(0, 4).join('\n'));
-
     return {
       checklistItems: checks.slice(0, 3), // show up to 3 checklist items
-      textPreview: cleanedSnippet,
+      textPreview: textLines.slice(0, 2).join(' ').trim(),
       tags: extractedTags.slice(0, 3),
     };
   }, [content, note.frontmatter, note.path]);

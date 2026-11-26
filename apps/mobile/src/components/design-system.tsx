@@ -31,7 +31,6 @@ export function RoundButton({
   onPress,
   inSheet = false,
   size = 44,
-  iconSize,
   variant = 'secondary',
   disabled = false,
   accessibilityLabel,
@@ -41,16 +40,12 @@ export function RoundButton({
   onPress?: () => void;
   inSheet?: boolean;
   size?: number;
-  iconSize?: number;
   variant?: ButtonVariant;
   disabled?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const isPrimary = variant === 'primary' && !inSheet;
-  const resolvedIconSize = iconSize ?? (size === 36 ? 20 : Math.round(size * 0.5));
-  const hitSlopAmount = size < 44 ? Math.round((44 - size) / 2) : undefined;
-
   return (
     <Pressable
       onPress={onPress}
@@ -58,7 +53,6 @@ export function RoundButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
-      hitSlop={hitSlopAmount}
       style={({ pressed }) => [
         {
           width: size,
@@ -76,7 +70,7 @@ export function RoundButton({
       {Icon ? (
         <SymbolIcon
           icon={Icon}
-          size={resolvedIconSize}
+          size={Math.round(size * 0.5)}
           color={isPrimary ? colors.onPrimary : colors.textPrimary}
           strokeWidth={1.75}
         />
@@ -231,7 +225,7 @@ export function TagPill({
 }
 
 /**
- * 6.6 Section label: 12pt semibold, darkened secondary grey, slight letter-spacing, sits 16 above
+ * 6.6 Section label: 15pt textSecondary, sits 8 above card, inset 16 from card edge
  */
 export function SectionLabel({
   text,
@@ -246,13 +240,13 @@ export function SectionLabel({
     <Text
       style={[
         {
-          fontSize: 12,
-          lineHeight: 16,
-          fontWeight: '600',
-          letterSpacing: 0.5,
+          fontSize: 15,
+          lineHeight: 20,
+          fontWeight: '400',
           color: colors.textSecondary,
-          marginTop: 16,
           marginBottom: space.sm,
+          // DESIGN.md 6.6: section labels sit inset 16 from the card edge;
+          // screens already pad their content by 16, so this adds the inner inset.
           marginHorizontal: space.lg,
         },
         style,

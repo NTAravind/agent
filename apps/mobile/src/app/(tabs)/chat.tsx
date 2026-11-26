@@ -18,14 +18,11 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Brain,
   CalendarClock,
   ChevronLeft,
-  Code,
   FileText,
   Globe,
   Menu,
-  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
@@ -88,22 +85,24 @@ const SUGGESTIONS = [
   {
     label: 'DeepSearch',
     prompt: 'Search the web for the latest updates on ',
-    icon: Globe,
+    icon: 'deepSearch' as const,
+    deepSearch: true,
   },
   {
     label: 'Think & reason',
     prompt: 'Provide a deep, step-by-step reasoning analysis of ',
-    icon: Brain,
+    icon: 'think' as const,
+    think: true,
   },
   {
     label: 'Draft & write',
     prompt: 'Help me draft a concise, professional message about ',
-    icon: Pencil,
+    icon: 'sparkles' as const,
   },
   {
     label: 'Debug code',
     prompt: 'Help me analyze and fix this issue: ',
-    icon: Code,
+    icon: 'wrench' as const,
   },
 ];
 
@@ -775,11 +774,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 onPress={handleBack}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
-                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 36,
-                    height: 36,
+                    width: 44,
+                    height: 44,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
                     alignItems: 'center',
@@ -789,7 +787,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <SymbolIcon icon={ChevronLeft} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={ChevronLeft} size={22} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -806,10 +804,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 8,
-                    height: 36,
+                    height: 44,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
-                    paddingHorizontal: 10,
+                    paddingHorizontal: 14,
                     maxWidth: 210,
                     opacity: pressed ? 0.6 : 1,
                   },
@@ -827,9 +825,9 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   numberOfLines={1}
                   style={{
                     flexShrink: 1,
-                    fontSize: 17,
-                    lineHeight: 22,
-                    fontWeight: '600',
+                    fontSize: 20,
+                    lineHeight: 26,
+                    fontWeight: '500',
                     color: colors.textPrimary,
                   }}
                 >
@@ -842,11 +840,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               onPress={() => router.push('/threads')}
               accessibilityRole="button"
               accessibilityLabel="Open threads"
-              hitSlop={4}
               style={({ pressed }) => [
                 {
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: radius.pill,
                   backgroundColor: colors.surface,
                   alignItems: 'center',
@@ -856,7 +853,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 shadow.floating,
               ]}
             >
-              <SymbolIcon icon={Menu} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={Menu} size={22} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
           )
         }
@@ -868,11 +865,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 onPress={() => setRoutineSheetOpen(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Routines for this agent"
-                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 36,
-                    height: 36,
+                    width: 44,
+                    height: 44,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
                     alignItems: 'center',
@@ -882,7 +878,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <SymbolIcon icon={CalendarClock} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={CalendarClock} size={22} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -894,11 +890,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Search in this conversation"
-                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 36,
-                    height: 36,
+                    width: 44,
+                    height: 44,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
                     alignItems: 'center',
@@ -908,7 +903,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <SymbolIcon icon={Search} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={Search} size={22} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
 
               <Pressable
@@ -919,11 +914,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="View agent details"
-                hitSlop={4}
                 style={({ pressed }) => [
                   {
-                    width: 36,
-                    height: 36,
+                    width: 44,
+                    height: 44,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
                     alignItems: 'center',
@@ -933,7 +927,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                   shadow.floating,
                 ]}
               >
-                <SymbolIcon icon={SlidersHorizontal} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+                <SymbolIcon icon={SlidersHorizontal} size={22} color={colors.textPrimary} strokeWidth={1.75} />
               </Pressable>
             </View>
           ) : (
@@ -949,11 +943,10 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
               }}
               accessibilityRole="button"
               accessibilityLabel="New chat"
-              hitSlop={4}
               style={({ pressed }) => [
                 {
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: radius.pill,
                   backgroundColor: colors.surface,
                   alignItems: 'center',
@@ -963,7 +956,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
                 shadow.floating,
               ]}
             >
-              <SymbolIcon icon={Plus} size={20} color={colors.textPrimary} strokeWidth={1.75} />
+              <SymbolIcon icon={Plus} size={22} color={colors.textPrimary} strokeWidth={1.75} />
             </Pressable>
           )
         }
@@ -1024,8 +1017,8 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             style={{
               marginTop: 20,
               textAlign: 'center',
-              fontSize: 20,
-              lineHeight: 26,
+              fontSize: 24,
+              lineHeight: 30,
               fontWeight: '600',
               color: colors.textPrimary,
             }}
@@ -1036,7 +1029,7 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             style={{
               marginTop: 8,
               textAlign: 'center',
-              fontSize: 15,
+              fontSize: 17,
               lineHeight: 22,
               color: colors.textSecondary,
             }}
@@ -1044,34 +1037,36 @@ function ChatSession({ params }: { params: ChatRouteParams }) {
             Multi-provider intelligence & autonomous workflows
           </Text>
 
-          {/* Calm Capability Pills as prompt starters */}
-          <View style={{ marginTop: 24, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 360 }}>
+          {/* Calm Capability Pills */}
+          <View style={{ marginTop: 28, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 380 }}>
             {SUGGESTIONS.map((item) => (
               <Pressable
                 key={item.label}
                 onPress={() => {
                   setInput(item.prompt);
+                  if (item.deepSearch) setDeepSearchActive(true);
+                  if (item.think) toggleThink();
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
                 style={({ pressed }) => [
                   {
-                    height: 38,
                     flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
+                    gap: 8,
                     borderRadius: radius.pill,
                     backgroundColor: colors.surface,
-                    paddingHorizontal: 14,
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
                     opacity: pressed ? 0.6 : 1,
                   },
                 ]}
               >
-                <SymbolIcon icon={item.icon} size={15} color={colors.textSecondary} strokeWidth={1.75} />
-                <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textPrimary }}>
-                  {item.label}
-                </Text>
+                {item.icon === 'deepSearch' && <SymbolIcon icon={Globe} size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'think' && <SymbolIcon icon={CalendarClock} size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'sparkles' && <SymbolIcon icon={SlidersHorizontal} size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                {item.icon === 'wrench' && <SymbolIcon icon={FileText} size={16} color={colors.textSecondary} strokeWidth={1.75} />}
+                <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textPrimary }}>{item.label}</Text>
               </Pressable>
             ))}
           </View>

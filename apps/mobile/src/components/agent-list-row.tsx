@@ -106,12 +106,7 @@ export function AgentListRow({
     subtitle = agent.instructions.slice(0, 60);
   }
 
-  // Show badge only when it adds information (e.g. Group chat); hide if it duplicates subtitle/role
-  const informativeTag = isGroup
-    ? 'Group chat'
-    : tag && tag !== agent.role && tag !== subtitle
-    ? tag
-    : null;
+  const roleTag = tag ?? (agent.role && agent.role.length <= 24 ? agent.role : null);
   const timeDisplay = formatTimestamp(timestamp ?? activeRun?.created_at ?? agent.createdAt);
 
   const swipeGesture = Gesture.Pan()
@@ -165,34 +160,32 @@ export function AgentListRow({
           {/* Middle info */}
           <View style={styles.content}>
             <View style={styles.titleRow}>
-              <View style={styles.nameBadgeContainer}>
-                <Text numberOfLines={1} style={styles.name}>
-                  {agent.name}
-                </Text>
-                {informativeTag ? (
-                  <View style={styles.tagPill}>
-                    <Text numberOfLines={1} style={styles.tagText}>
-                      {informativeTag}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* Right timestamp aligned to same baseline as agent name */}
-              {timeDisplay ? (
-                <Text style={styles.timeText}>{timeDisplay}</Text>
+              <Text numberOfLines={1} style={styles.name}>
+                {agent.name}
+              </Text>
+              {roleTag ? (
+                <View style={styles.tagPill}>
+                  <Text numberOfLines={1} style={styles.tagText}>
+                    {roleTag}
+                  </Text>
+                </View>
               ) : null}
             </View>
 
-            {/* Single-line preview */}
+            {/* Single-line preview in 17/22 textSecondary */}
             <Text numberOfLines={1} style={styles.preview}>
               {subtitle}
             </Text>
           </View>
+
+          {/* Right timestamp in 15pt textSecondary */}
+          {timeDisplay ? (
+            <View style={styles.timeWrapper}>
+              <Text style={styles.timeText}>{timeDisplay}</Text>
+            </View>
+          ) : null}
         </Pressable>
       </GestureDetector>
-
-      <View style={styles.divider} />
     </View>
   );
 }
@@ -227,61 +220,51 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    justifyContent: 'center',
+    paddingRight: space.sm,
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: space.xs,
   },
-  nameBadgeContainer: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingRight: space.xs,
-  },
   name: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
     color: colors.textPrimary,
     flexShrink: 1,
   },
   tagPill: {
     backgroundColor: colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: radius.pill,
     flexShrink: 0,
-    maxWidth: 120,
+    maxWidth: 140,
   },
   tagText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  preview: {
-    marginTop: 2,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '400',
     color: colors.textSecondary,
   },
+  preview: {
+    marginTop: 2,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  timeWrapper: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: space.xs,
+  },
   timeText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '400',
     color: colors.textSecondary,
     fontVariant: ['tabular-nums'],
-    flexShrink: 0,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.divider,
-    marginLeft: 92,
   },
 });

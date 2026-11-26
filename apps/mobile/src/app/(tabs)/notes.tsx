@@ -16,7 +16,7 @@ import { FileText, Plus, RefreshCw, Search, X } from 'lucide-react-native';
 import { SymbolIcon } from '@/components/symbol-icon';
 import type { Note, NoteChunk } from '@agent/shared';
 
-import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { InlineError, PillButton, RoundButton } from '@/components/design-system';
 import { Sheet, SheetHeader } from '@/components/sheet';
@@ -389,16 +389,23 @@ export default function NotesScreen() {
       {/* Floating AppHeader */}
       <AppHeader
         left={
-          <HeaderAvatar
-            initial={userInitial}
+          <Pressable
             onPress={() => router.push('/more')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+            style={({ pressed }) => [
+              styles.initialsAvatar,
+              shadow.floating,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={styles.initialsText}>{userInitial}</Text>
+          </Pressable>
         }
         center={<Text style={styles.headerTitle}>Notes</Text>}
         right={
           <View style={styles.headerActions}>
             <RoundButton
-              size={36}
               icon={RefreshCw}
               onPress={() => {
                 if (!syncing) void handleSync();
@@ -407,7 +414,6 @@ export default function NotesScreen() {
               style={{ opacity: syncing ? 0.5 : 1 }}
             />
             <RoundButton
-              size={36}
               icon={Plus}
               onPress={() => setNewOpen(true)}
               accessibilityLabel="New note"
@@ -667,8 +673,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },

@@ -18,7 +18,6 @@ import { Plus, Search } from 'lucide-react-native';
 import { AgentListRow } from '@/components/agent-list-row';
 import { AgentSearch } from '@/components/agent-search';
 import { AgentAvatar } from '@/components/agent-avatar';
-import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
 import { reportAppError } from '@/components/error-dialog-provider';
 import { InlineError, RoundButton, PillButton } from '@/components/design-system';
 import { colors, radius, shadow, space, typography } from '@/theme';
@@ -139,7 +138,6 @@ export default function AgentsScreen() {
   );
 
   const userInitial = session?.user.email ? session.user.email.slice(0, 2).toUpperCase() : 'FL';
-  const headerInset = useHeaderInset();
 
   // Groups first, then individual agents — one flat array so the list can be
   // virtualized (the audit flagged the unbounded ScrollView + map).
@@ -164,31 +162,41 @@ export default function AgentsScreen() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <AppHeader
-        left={
-          <HeaderAvatar
-            initial={userInitial}
-            onPress={() => router.push('/more')}
+      {/* 6.10 Floating header: round initials avatar (44x44) on left, round search + round plus on right with floating shadow */}
+      <View
+        style={[
+          styles.headerBar,
+          { paddingTop: insets.top + space.sm },
+        ]}
+      >
+        {/* Left: User initials avatar (44x44, surfaceRaised, floating shadow) */}
+        <Pressable
+          onPress={() => router.push('/more')}
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          style={({ pressed }) => [
+            styles.initialsAvatar,
+            shadow.floating,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Text style={styles.initialsText}>{userInitial}</Text>
+        </Pressable>
+
+        {/* Right: Round search and plus buttons */}
+        <View style={styles.headerRight}>
+          <RoundButton
+            icon={Search}
+            onPress={() => setSearchOpen(true)}
+            accessibilityLabel="Search agents"
           />
-        }
-        center={<Text style={styles.headerTitle}>Agents</Text>}
-        right={
-          <View style={styles.headerRight}>
-            <RoundButton
-              size={36}
-              icon={Search}
-              onPress={() => setSearchOpen(true)}
-              accessibilityLabel="Search agents"
-            />
-            <RoundButton
-              size={36}
-              icon={Plus}
-              onPress={() => router.push('/agents/new/edit')}
-              accessibilityLabel="Create agent"
-            />
-          </View>
-        }
-      />
+          <RoundButton
+            icon={Plus}
+            onPress={() => router.push('/agents/new/edit')}
+            accessibilityLabel="Create agent"
+          />
+        </View>
+      </View>
 
       <FlatList
         data={loading ? [] : rows}
@@ -286,8 +294,8 @@ export default function AgentsScreen() {
           ) : undefined
         }
         contentContainerStyle={{
-          paddingTop: headerInset,
-          paddingBottom: insets.bottom + 104, // accommodate pill dock
+          paddingTop: space.sm,
+          paddingBottom: insets.bottom + 100, // accommodate pill dock
         }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -328,11 +336,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
-    color: colors.textPrimary,
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+  },
+  initialsAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.profileAvatar,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initialsText: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   headerRight: {
     flexDirection: 'row',

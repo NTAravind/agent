@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import { SymbolIcon } from '@/components/symbol-icon';
 
-import { AppHeader, HeaderAvatar, useHeaderInset } from '@/components/app-header';
+import { AppHeader, useHeaderInset } from '@/components/app-header';
 import { GroupedCard, HairlineDivider, RoundButton, SectionLabel } from '@/components/design-system';
 import { colors, radius, shadow, space } from '@/theme';
 import { apiFetchDebug, ApiRequestError } from '@/lib/api';
@@ -84,17 +83,6 @@ export default function MoreScreen() {
 
   const email = session?.user.email ?? session?.user.id ?? '';
   const initial = email.slice(0, 2).toUpperCase() || 'FL';
-
-  const handleLogout = useCallback(() => {
-    Alert.alert(
-      'Sign out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
-      ],
-    );
-  }, [signOut]);
 
   const NAV_GROUPS = [
     {
@@ -167,21 +155,20 @@ export default function MoreScreen() {
   return (
     <View style={styles.screen}>
       <AppHeader
-        left={<HeaderAvatar initial={initial} />}
-        center={<Text style={styles.headerTitle}>More</Text>}
+        left={
+          <View style={styles.headerAvatar}>
+            <Text style={styles.headerAvatarText}>{initial}</Text>
+          </View>
+        }
+        center={
+          <Text style={styles.headerTitle}>More</Text>
+        }
         right={
-          <Pressable
-            onPress={handleLogout}
-            accessibilityRole="button"
+          <RoundButton
+            icon={LogOut}
+            onPress={() => void signOut()}
             accessibilityLabel="Sign out"
-            hitSlop={4}
-            style={({ pressed }) => [
-              styles.logoutButton,
-              { opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <SymbolIcon icon={LogOut} size={20} color={colors.textSecondary} strokeWidth={1.75} />
-          </Pressable>
+          />
         }
       />
 
@@ -303,16 +290,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   headerTitle: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  logoutButton: {
-    width: 36,
-    height: 36,
+  headerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.profileAvatar,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadow.floating,
+  },
+  headerAvatarText: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   profileCard: {
     flexDirection: 'row',

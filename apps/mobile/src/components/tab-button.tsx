@@ -24,11 +24,10 @@ export const TabButton = React.forwardRef<any, TabButtonProps>(
         accessibilityRole="tab"
         accessibilityState={{ selected: Boolean(isFocused) }}
         accessibilityLabel={label}
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
         style={({ pressed }) => [
           styles.button,
           isFocused ? styles.buttonFocused : styles.buttonUnfocused,
-          { opacity: pressed ? 0.8 : isFocused ? 1 : 0.6 },
+          { opacity: pressed ? 0.6 : 1 },
         ]}
       >
         <View style={styles.iconContainer}>
@@ -52,15 +51,14 @@ export const TabButton = React.forwardRef<any, TabButtonProps>(
 const styles = StyleSheet.create({
   button: {
     flex: 1,
-    height: 40,
-    maxWidth: 44,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 2,
+    marginHorizontal: 1,
   },
   buttonFocused: {
-    backgroundColor: '#3A3A3C',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   buttonUnfocused: {
     backgroundColor: 'transparent',
