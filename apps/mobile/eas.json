@@ -9,7 +9,9 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://jygslsiqxjacwnwmfsgn.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5Z3Nsc2lxeGphY3dud21mc2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQwNjQxMjksImV4cCI6MjEwOTY0MDEyOX0.KdzMN30WcYXZrgkrwLOUFhmp81xmLNh9ZqXxbRZIUOk"
       }
     },
     "development-apk": {
@@ -18,20 +20,26 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://placeholder.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "placeholder-anon-key"
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://placeholder.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "placeholder-anon-key"
       }
     },
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://agent-tau-taupe.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://placeholder.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "placeholder-anon-key"
       }
     }
   },

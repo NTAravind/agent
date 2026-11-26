@@ -10,7 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider, useSession } from '@/lib/session';
-import { registerForPushNotifications } from '@/lib/push';
+import { registerForPushNotifications, initNotifications } from '@/lib/push';
 import { ErrorDialogProvider } from '@/components/error-dialog-provider';
 
 // Lets expo-web-browser close the auth popup / custom tab once the OAuth
@@ -23,6 +23,7 @@ WebBrowser.maybeCompleteAuthSession();
  */
 function usePushNotifications(isSignedIn: boolean) {
   useEffect(() => {
+    initNotifications();
     if (!isSignedIn) return;
     void registerForPushNotifications();
   }, [isSignedIn]);

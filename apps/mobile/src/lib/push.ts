@@ -13,15 +13,6 @@ import { registerPushToken } from '@/lib/productivity';
  * the app must work exactly the same when notifications are unavailable.
  */
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
 /** Resolves the EAS project id used to mint Expo push tokens. */
 function projectId(): string | undefined {
   return (
@@ -32,6 +23,26 @@ function projectId(): string | undefined {
   );
 }
 
+function isNativePlatform(): boolean {
+  return Platform.OS === 'ios' || Platform.OS === 'android';
+}
+
+/**
+ * Initializes the notification handler. Safe to call multiple times.
+ * Only runs on native platforms (iOS/Android) to avoid SSR/build errors.
+ */
+export function initNotifications(): void {
+  if (!isNativePlatform()) return;
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
+
 /**
  * Requests permission, mints an Expo push token and registers it with the
  * API. Safe to call on every launch: the API upserts the token.
@@ -39,9 +50,11 @@ function projectId(): string | undefined {
 export async function registerForPushNotifications(): Promise<string | null> {
   // Simulators and Expo Go cannot hold a push token.
   if (!Device.isDevice) return null;
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;
+  if (!isNativePlatform()) return null;
 
   try {
+    initNotifications();
+
     // Android 13+ requires a channel to exist before the permission prompt.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -78,6 +91,9 @@ export async function registerForPushNotifications(): Promise<string | null> {
  * Re-registers the token when the push service rotates it.
  */
 export function watchPushToken(onToken: (token: string) => void) {
+  if (!isNativePlatform()) {
+    return { remove: () => {} };
+  }
   return Notifications.addPushTokenListener(({ data }) => {
     onToken(data);
   });
