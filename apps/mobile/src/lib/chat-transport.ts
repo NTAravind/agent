@@ -59,7 +59,7 @@ export class XhrChatTransport<UI_MESSAGE extends UIMessage> implements ChatTrans
       "Content-Type": "application/json",
       Accept: "text/event-stream",
       ...headersToObject(headers),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token.replace(/\s/g, '')}` } : {}),
     };
 
     const payload = JSON.stringify({
@@ -176,7 +176,7 @@ export class ResilientChatTransport<UI_MESSAGE extends UIMessage>
             // The device timezone: "every Monday at 9" means 9 where the user is.
             tz: deviceTimeZone(),
           },
-          headers: token ? ({ Authorization: `Bearer ${token}` } as Record<string, string>) : {},
+          headers: token ? ({ Authorization: `Bearer ${token.replace(/\s/g, '')}` } as Record<string, string>) : {},
         };
       },
     });

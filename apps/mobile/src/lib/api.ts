@@ -57,7 +57,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     Accept: 'application/json',
     ...((options.init?.headers as Record<string, string> | undefined) ?? {}),
     // Set last so it can never be shadowed by a spread above.
-    Authorization: `Bearer ${options.token}`,
+    // Strip ALL whitespace (incl. newlines) — OkHttp on Android rejects 0x0a
+    // in header values with IllegalArgumentException.
+    Authorization: `Bearer ${options.token?.replace(/\s/g, '')}`,
   };
 
   const response = await nativeFetch(`${API_BASE_URL}${path}`, {
@@ -136,7 +138,7 @@ export async function apiFetchDebug(
     'Content-Type': 'application/json',
     Accept: 'application/json',
     ...((options.init?.headers as Record<string, string> | undefined) ?? {}),
-    Authorization: `Bearer ${options.token ?? ''}`,
+    Authorization: `Bearer ${options.token?.replace(/\s/g, '') ?? ''}`,
   };
 
   const response = await nativeFetch(url, { ...options.init, headers });

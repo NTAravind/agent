@@ -23,7 +23,9 @@ export async function getAccessToken(forceRefresh = false): Promise<string | nul
   if (forceRefresh) {
     const { data, error } = await supabase.auth.refreshSession();
     if (error || !data.session) return null;
-    return data.session.access_token;
+    // Strip ALL whitespace incl. newlines — OkHttp (Android) rejects 0x0a in
+    // Authorization header values with IllegalArgumentException.
+    return data.session.access_token?.replace(/\s/g, '') ?? null;
   }
 
   const { data, error } = await supabase.auth.getSession();
@@ -34,11 +36,11 @@ export async function getAccessToken(forceRefresh = false): Promise<string | nul
     // The stored token is expired (or about to be) — refresh it.
     const refreshed = await supabase.auth.refreshSession();
     if (!refreshed.error && refreshed.data.session) {
-      return refreshed.data.session.access_token;
+      return refreshed.data.session.access_token?.replace(/\s/g, '') ?? null;
     }
   }
 
-  return data.session.access_token;
+  return data.session.access_token?.replace(/\s/g, '') ?? null;
 }
 
 /**
